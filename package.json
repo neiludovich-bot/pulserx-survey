@@ -32,7 +32,7 @@
     "replay:openai": "pnpm --filter @interview/engine replay:openai",
     "start": "npm run start:web",
     "start:api": "npm run start -w @interview/api",
-    "start:web": "npm run start -w @interview/web",
+    "start:web": "node scripts/hostinger-start-web.cjs",
     "postinstall": "prisma generate"
   },
   "prisma": {
