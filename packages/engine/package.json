@@ -22,8 +22,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@interview/prompts": "workspace:*",
-    "@interview/schemas": "workspace:*",
+    "@interview/prompts": "0.1.0",
+    "@interview/schemas": "0.1.0",
     "openai": "^4.0.0"
   }
 }

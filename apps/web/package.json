@@ -12,9 +12,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@interview/engine": "workspace:*",
-    "@interview/prompts": "workspace:*",
-    "@interview/schemas": "workspace:*",
+    "@interview/engine": "0.1.0",
+    "@interview/prompts": "0.1.0",
+    "@interview/schemas": "0.1.0",
     "next": "^15.3.1",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
