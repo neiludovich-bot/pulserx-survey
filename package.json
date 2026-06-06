@@ -1,0 +1,58 @@
+{
+  "name": "interview-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20.11.0",
+    "pnpm": ">=9.0.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "build:api": "corepack pnpm --filter @interview/api... run build",
+    "build:web": "corepack pnpm --filter @interview/web... run build",
+    "build:packages": "turbo run build --filter=@interview/schemas --filter=@interview/prompts --filter=@interview/engine --filter=@interview/evals",
+    "dev": "turbo run build --filter=@interview/schemas --filter=@interview/prompts --filter=@interview/engine --filter=@interview/evals && turbo run dev --parallel --filter=@interview/web --filter=@interview/api",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run build --filter=@interview/schemas --filter=@interview/prompts --filter=@interview/engine --filter=@interview/evals && turbo run typecheck",
+    "test": "turbo run test",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "eval": "tsx packages/evals/src/run-evals.ts",
+    "replay:openai": "pnpm --filter @interview/engine replay:openai",
+    "start:api": "corepack pnpm --filter @interview/api start",
+    "start:web": "corepack pnpm --filter @interview/web start",
+    "postinstall": "prisma generate"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
+  "devDependencies": {
+    "@prisma/client": "^6.5.0",
+    "@eslint/js": "^9.24.0",
+    "@next/eslint-plugin-next": "^15.3.1",
+    "@types/node": "^22.14.1",
+    "@types/react": "^19.1.1",
+    "@types/react-dom": "^19.1.2",
+    "dotenv-cli": "^8.0.0",
+    "eslint": "^9.24.0",
+    "eslint-config-prettier": "^10.1.1",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.3",
+    "prisma": "^6.5.0",
+    "tsx": "^4.19.3",
+    "tsup": "^8.4.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.29.0",
+    "vitest": "^3.1.1"
+  }
+}

@@ -1,0 +1,651 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum StudyStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum ModuleStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum AssetStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum QuestionNodeType {
+  OPEN_TEXT
+  SINGLE_SELECT
+  MULTI_SELECT
+  NUMERIC
+  REFLECT
+  CLOSE
+}
+
+enum BranchConditionType {
+  ALWAYS
+  ANSWER_EQUALS
+  ANSWER_CONTAINS
+  SCORE_GTE
+  SCORE_LTE
+}
+
+enum StudyAssetType {
+  PDF
+  SLIDE_DECK
+  IMAGE
+  PI_LABEL
+  VIDEO
+  TEXT
+}
+
+enum StudyActionType {
+  ASK_QUESTION
+  SHOW_ASSET
+  ASK_ASSET_REACTION
+  PROBE
+  REDIRECT
+  CLOSE
+}
+
+enum ActionRuleType {
+  ALWAYS
+  AFTER_ACTION
+  IF_FACT_PRESENT
+  IF_FACT_EQUALS
+  IF_CONTRADICTION
+  IF_OFF_TOPIC
+  IF_ASSET_SHOWN
+}
+
+enum AssetDisplayMode {
+  INLINE_PANE
+  MODAL
+  FULLSCREEN
+  DOWNLOAD_LINK
+}
+
+enum AssetStageTriggerType {
+  AFTER_ACTION
+  ON_MODULE_ENTRY
+  BEFORE_CLOSE
+  IF_FACT_PRESENT
+}
+
+enum RespondentStatus {
+  ACTIVE
+  OPTED_OUT
+  ARCHIVED
+}
+
+enum SessionChannel {
+  BROWSER_CHAT
+}
+
+enum SessionStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  ABANDONED
+}
+
+enum TurnRole {
+  SYSTEM
+  INTERVIEWER
+  PARTICIPANT
+}
+
+enum AnalysisKind {
+  ANSWER_EXTRACTION
+  SUMMARY
+  SENTIMENT
+  QUALITY_CHECK
+}
+
+enum AnalysisStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum DecisionKind {
+  SELECT_NEXT_QUESTION
+  PHRASE_QUESTION
+  CLOSE_SESSION
+}
+
+enum DecisionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+enum CandidateActionReasonCode {
+  ENTRY
+  MUST_ASK
+  BRANCH_PRIORITY
+  ASSET_STAGE
+  CONTRADICTION
+  OFF_TOPIC_REDIRECT
+  MODEL_RECOMMENDATION
+  RESEARCHER_OVERRIDE
+}
+
+enum ArtifactType {
+  TRANSCRIPT_SNAPSHOT
+  MODEL_INPUT
+  MODEL_OUTPUT
+  EVAL_REPORT
+  EXPORT
+}
+
+enum EvalCaseStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum EvalRunStatus {
+  QUEUED
+  RUNNING
+  PASSED
+  FAILED
+}
+
+enum AssetReactionKind {
+  COMPREHENSION
+  APPEAL
+  CONCERN
+  OBJECTION
+  COMPARISON
+  OPEN_FEEDBACK
+}
+
+enum AssetReactionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+}
+
+model Study {
+  id               String            @id @default(cuid())
+  slug             String            @unique
+  name             String
+  description      String?
+  status           StudyStatus       @default(DRAFT)
+  version          Int               @default(1)
+  config           Json?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  modules          StudyModule[]
+  assets           StudyAsset[]
+  questionNodes    QuestionNode[]
+  branchRules      BranchRule[]
+  actions          StudyAction[]
+  actionRules      ActionRule[]
+  assetStageRules  AssetStageRule[]
+  respondents      Respondent[]
+  sessions         Session[]
+  sessionAssets    SessionAsset[]
+  turns            Turn[]
+  analyses         Analysis[]
+  decisions        Decision[]
+  candidateActions CandidateAction[]
+  artifacts        Artifact[]
+  assetReactions   AssetReaction[]
+  evalCases        EvalCase[]
+  evalRuns         EvalRun[]
+
+  @@map("studies")
+}
+
+model StudyModule {
+  id              String           @id @default(cuid())
+  studyId         String           @map("study_id")
+  key             String
+  title           String
+  description     String?
+  status          ModuleStatus     @default(DRAFT)
+  position        Int              @default(0)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  updatedAt       DateTime         @updatedAt @map("updated_at")
+  study           Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  questionNodes   QuestionNode[]
+  actions         StudyAction[]
+  assetStageRules AssetStageRule[]
+
+  @@unique([studyId, key])
+  @@index([studyId])
+  @@map("study_modules")
+}
+
+model StudyAsset {
+  id               String            @id @default(cuid())
+  studyId          String            @map("study_id")
+  key              String
+  title            String
+  description      String?
+  assetType        StudyAssetType    @map("asset_type")
+  storageKey       String            @map("storage_key")
+  mimeType         String?           @map("mime_type")
+  metadata         Json?
+  status           AssetStatus       @default(DRAFT)
+  position         Int               @default(0)
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  study            Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  actions          StudyAction[]
+  stageRules       AssetStageRule[]
+  sessionAssets    SessionAsset[]
+  candidateActions CandidateAction[]
+  reactions        AssetReaction[]
+
+  @@unique([studyId, key])
+  @@index([studyId])
+  @@map("study_assets")
+}
+
+model QuestionNode {
+  id                String            @id @default(cuid())
+  studyId           String            @map("study_id")
+  moduleId          String?           @map("module_id")
+  key               String
+  nodeType          QuestionNodeType  @map("node_type")
+  title             String
+  prompt            String
+  helpText          String?           @map("help_text")
+  config            Json?
+  isEntry           Boolean           @default(false) @map("is_entry")
+  isTerminal        Boolean           @default(false) @map("is_terminal")
+  position          Int               @default(0)
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+  study             Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  module            StudyModule?      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  outgoingRules     BranchRule[]      @relation("BranchRuleFromNode")
+  incomingRules     BranchRule[]      @relation("BranchRuleToNode")
+  actions           StudyAction[]
+  turns             Turn[]
+  decisionsFrom     Decision[]        @relation("DecisionFromNode")
+  decisionsSelected Decision[]        @relation("DecisionSelectedNode")
+  candidateActions  CandidateAction[]
+
+  @@unique([studyId, key])
+  @@index([studyId])
+  @@index([moduleId])
+  @@map("question_nodes")
+}
+
+model BranchRule {
+  id              String              @id @default(cuid())
+  studyId         String              @map("study_id")
+  fromNodeId      String              @map("from_node_id")
+  toNodeId        String              @map("to_node_id")
+  conditionType   BranchConditionType @default(ALWAYS) @map("condition_type")
+  factKey         String?             @map("fact_key")
+  comparisonValue Json?               @map("comparison_value")
+  priority        Int                 @default(0)
+  rationale       String?
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+  study           Study               @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  fromNode        QuestionNode        @relation("BranchRuleFromNode", fields: [fromNodeId], references: [id], onDelete: Cascade)
+  toNode          QuestionNode        @relation("BranchRuleToNode", fields: [toNodeId], references: [id], onDelete: Cascade)
+
+  @@index([studyId])
+  @@index([fromNodeId])
+  @@index([toNodeId])
+  @@map("branch_rules")
+}
+
+model StudyAction {
+  id               String            @id @default(cuid())
+  studyId          String            @map("study_id")
+  moduleId         String?           @map("module_id")
+  nodeId           String?           @map("node_id")
+  assetId          String?           @map("asset_id")
+  key              String
+  actionType       StudyActionType   @map("action_type")
+  goal             String?
+  mustComplete     Boolean           @default(false) @map("must_complete")
+  priority         Int               @default(0)
+  config           Json?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  study            Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  module           StudyModule?      @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  node             QuestionNode?     @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  asset            StudyAsset?       @relation(fields: [assetId], references: [id], onDelete: SetNull)
+  outgoingRules    ActionRule[]      @relation("ActionRuleFromAction")
+  incomingRules    ActionRule[]      @relation("ActionRuleToAction")
+  assetStageRules  AssetStageRule[]
+  sessionAssets    SessionAsset[]
+  candidateActions CandidateAction[]
+
+  @@unique([studyId, key])
+  @@index([studyId])
+  @@index([moduleId])
+  @@index([nodeId])
+  @@index([assetId])
+  @@map("study_actions")
+}
+
+model ActionRule {
+  id            String         @id @default(cuid())
+  studyId       String         @map("study_id")
+  fromActionId  String?        @map("from_action_id")
+  toActionId    String         @map("to_action_id")
+  ruleType      ActionRuleType @default(ALWAYS) @map("rule_type")
+  priority      Int            @default(0)
+  conditionJson Json?          @map("condition_json")
+  rationale     String?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  study         Study          @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  fromAction    StudyAction?   @relation("ActionRuleFromAction", fields: [fromActionId], references: [id], onDelete: SetNull)
+  toAction      StudyAction    @relation("ActionRuleToAction", fields: [toActionId], references: [id], onDelete: Cascade)
+
+  @@index([studyId])
+  @@index([fromActionId])
+  @@index([toActionId])
+  @@map("action_rules")
+}
+
+model AssetStageRule {
+  id              String                @id @default(cuid())
+  studyId         String                @map("study_id")
+  assetId         String                @map("asset_id")
+  moduleId        String?               @map("module_id")
+  triggerActionId String?               @map("trigger_action_id")
+  triggerType     AssetStageTriggerType @map("trigger_type")
+  displayMode     AssetDisplayMode      @default(INLINE_PANE) @map("display_mode")
+  required        Boolean               @default(false)
+  priority        Int                   @default(0)
+  conditionJson   Json?                 @map("condition_json")
+  rationale       String?
+  createdAt       DateTime              @default(now()) @map("created_at")
+  updatedAt       DateTime              @updatedAt @map("updated_at")
+  study           Study                 @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  asset           StudyAsset            @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  module          StudyModule?          @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  triggerAction   StudyAction?          @relation(fields: [triggerActionId], references: [id], onDelete: SetNull)
+
+  @@index([studyId])
+  @@index([assetId])
+  @@index([moduleId])
+  @@index([triggerActionId])
+  @@map("asset_stage_rules")
+}
+
+model Respondent {
+  id          String           @id @default(cuid())
+  studyId     String           @map("study_id")
+  externalRef String?          @map("external_ref")
+  status      RespondentStatus @default(ACTIVE)
+  profile     Json?
+  attributes  Json?
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+  study       Study            @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  sessions    Session[]
+
+  @@unique([studyId, externalRef])
+  @@index([studyId])
+  @@map("respondents")
+}
+
+model Session {
+  id               String            @id @default(cuid())
+  studyId          String            @map("study_id")
+  respondentId     String?           @map("respondent_id")
+  channel          SessionChannel    @default(BROWSER_CHAT)
+  status           SessionStatus     @default(PENDING)
+  metadata         Json?
+  startedAt        DateTime?         @map("started_at")
+  completedAt      DateTime?         @map("completed_at")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  study            Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  respondent       Respondent?       @relation(fields: [respondentId], references: [id], onDelete: SetNull)
+  turns            Turn[]
+  analyses         Analysis[]
+  decisions        Decision[]
+  sessionAssets    SessionAsset[]
+  candidateActions CandidateAction[]
+  artifacts        Artifact[]
+  assetReactions   AssetReaction[]
+
+  @@index([studyId])
+  @@index([respondentId])
+  @@map("sessions")
+}
+
+model Turn {
+  id               String            @id @default(cuid())
+  studyId          String            @map("study_id")
+  sessionId        String            @map("session_id")
+  nodeId           String?           @map("node_id")
+  sequence         Int
+  role             TurnRole
+  content          String
+  payload          Json?
+  createdAt        DateTime          @default(now()) @map("created_at")
+  study            Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  session          Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  node             QuestionNode?     @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  analyses         Analysis[]
+  decisions        Decision[]
+  candidateActions CandidateAction[]
+  artifacts        Artifact[]
+  sessionAssets    SessionAsset[]
+  assetReactions   AssetReaction[]
+
+  @@unique([sessionId, sequence])
+  @@index([studyId])
+  @@index([sessionId])
+  @@index([nodeId])
+  @@map("turns")
+}
+
+model Analysis {
+  id            String         @id @default(cuid())
+  studyId       String         @map("study_id")
+  sessionId     String         @map("session_id")
+  turnId        String?        @map("turn_id")
+  kind          AnalysisKind
+  status        AnalysisStatus @default(PENDING)
+  schemaVersion Int            @default(1) @map("schema_version")
+  input         Json?
+  output        Json?
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  study         Study          @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  session       Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn          Turn?          @relation(fields: [turnId], references: [id], onDelete: SetNull)
+
+  @@index([studyId])
+  @@index([sessionId])
+  @@index([turnId])
+  @@map("analyses")
+}
+
+model Decision {
+  id             String         @id @default(cuid())
+  studyId        String         @map("study_id")
+  sessionId      String         @map("session_id")
+  turnId         String?        @map("turn_id")
+  fromNodeId     String?        @map("from_node_id")
+  selectedNodeId String?        @map("selected_node_id")
+  kind           DecisionKind
+  status         DecisionStatus @default(PENDING)
+  rationale      String?
+  input          Json?
+  output         Json?
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+  study          Study          @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  session        Session        @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn           Turn?          @relation(fields: [turnId], references: [id], onDelete: SetNull)
+  fromNode       QuestionNode?  @relation("DecisionFromNode", fields: [fromNodeId], references: [id], onDelete: SetNull)
+  selectedNode   QuestionNode?  @relation("DecisionSelectedNode", fields: [selectedNodeId], references: [id], onDelete: SetNull)
+
+  @@index([studyId])
+  @@index([sessionId])
+  @@index([turnId])
+  @@index([fromNodeId])
+  @@index([selectedNodeId])
+  @@map("decisions")
+}
+
+model CandidateAction {
+  id            String                    @id @default(cuid())
+  studyId       String                    @map("study_id")
+  sessionId     String                    @map("session_id")
+  turnId        String?                   @map("turn_id")
+  studyActionId String?                   @map("study_action_id")
+  nodeId        String?                   @map("node_id")
+  assetId       String?                   @map("asset_id")
+  actionType    StudyActionType           @map("action_type")
+  priority      Int                       @default(0)
+  allowed       Boolean                   @default(true)
+  reasonCode    CandidateActionReasonCode @map("reason_code")
+  input         Json?
+  createdAt     DateTime                  @default(now()) @map("created_at")
+  updatedAt     DateTime                  @updatedAt @map("updated_at")
+  study         Study                     @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  session       Session                   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn          Turn?                     @relation(fields: [turnId], references: [id], onDelete: SetNull)
+  studyAction   StudyAction?              @relation(fields: [studyActionId], references: [id], onDelete: SetNull)
+  node          QuestionNode?             @relation(fields: [nodeId], references: [id], onDelete: SetNull)
+  asset         StudyAsset?               @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@index([studyId])
+  @@index([sessionId])
+  @@index([turnId])
+  @@index([studyActionId])
+  @@index([nodeId])
+  @@index([assetId])
+  @@map("candidate_actions")
+}
+
+model Artifact {
+  id         String       @id @default(cuid())
+  studyId    String       @map("study_id")
+  sessionId  String?      @map("session_id")
+  turnId     String?      @map("turn_id")
+  type       ArtifactType
+  storageKey String       @map("storage_key")
+  mimeType   String?      @map("mime_type")
+  payload    Json?
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+  study      Study        @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  session    Session?     @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+  turn       Turn?        @relation(fields: [turnId], references: [id], onDelete: SetNull)
+
+  @@index([studyId])
+  @@index([sessionId])
+  @@index([turnId])
+  @@map("artifacts")
+}
+
+model SessionAsset {
+  id               String            @id @default(cuid())
+  studyId          String            @map("study_id")
+  sessionId        String            @map("session_id")
+  assetId          String            @map("asset_id")
+  sourceActionId   String?           @map("source_action_id")
+  turnId           String?           @map("turn_id")
+  displayMode      AssetDisplayMode? @map("display_mode")
+  shownAt          DateTime?         @map("shown_at")
+  dismissedAt      DateTime?         @map("dismissed_at")
+  exposureMetadata Json?             @map("exposure_metadata")
+  createdAt        DateTime          @default(now()) @map("created_at")
+  updatedAt        DateTime          @updatedAt @map("updated_at")
+  study            Study             @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  session          Session           @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  asset            StudyAsset        @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  sourceAction     StudyAction?      @relation(fields: [sourceActionId], references: [id], onDelete: SetNull)
+  turn             Turn?             @relation(fields: [turnId], references: [id], onDelete: SetNull)
+
+  @@index([studyId])
+  @@index([sessionId])
+  @@index([assetId])
+  @@index([sourceActionId])
+  @@index([turnId])
+  @@map("session_assets")
+}
+
+model AssetReaction {
+  id            String              @id @default(cuid())
+  studyId       String              @map("study_id")
+  sessionId     String              @map("session_id")
+  turnId        String?             @map("turn_id")
+  assetId       String              @map("asset_id")
+  kind          AssetReactionKind
+  status        AssetReactionStatus @default(PENDING)
+  schemaVersion Int                 @default(1) @map("schema_version")
+  input         Json?
+  output        Json?
+  createdAt     DateTime            @default(now()) @map("created_at")
+  updatedAt     DateTime            @updatedAt @map("updated_at")
+  study         Study               @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  session       Session             @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  turn          Turn?               @relation(fields: [turnId], references: [id], onDelete: SetNull)
+  asset         StudyAsset          @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([studyId])
+  @@index([sessionId])
+  @@index([turnId])
+  @@index([assetId])
+  @@map("asset_reactions")
+}
+
+model EvalCase {
+  id          String         @id @default(cuid())
+  studyId     String         @map("study_id")
+  key         String
+  name        String
+  description String?
+  status      EvalCaseStatus @default(ACTIVE)
+  input       Json
+  expected    Json?
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  study       Study          @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  evalRuns    EvalRun[]
+
+  @@unique([studyId, key])
+  @@index([studyId])
+  @@map("eval_cases")
+}
+
+model EvalRun {
+  id         String        @id @default(cuid())
+  studyId    String        @map("study_id")
+  evalCaseId String?       @map("eval_case_id")
+  status     EvalRunStatus @default(QUEUED)
+  score      Float?
+  summary    Json?
+  startedAt  DateTime?     @map("started_at")
+  finishedAt DateTime?     @map("finished_at")
+  createdAt  DateTime      @default(now()) @map("created_at")
+  updatedAt  DateTime      @updatedAt @map("updated_at")
+  study      Study         @relation(fields: [studyId], references: [id], onDelete: Cascade)
+  evalCase   EvalCase?     @relation(fields: [evalCaseId], references: [id], onDelete: SetNull)
+
+  @@index([studyId])
+  @@index([evalCaseId])
+  @@map("eval_runs")
+}

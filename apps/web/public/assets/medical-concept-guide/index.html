@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Medical Concept Guide</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #17201b;
+        --muted: #5d6962;
+        --accent: #0f766e;
+        --line: rgba(23, 32, 27, 0.14);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #fbfaf7;
+        color: var(--ink);
+        font-family: Arial, Helvetica, sans-serif;
+        overflow-x: hidden;
+      }
+
+      main {
+        width: min(760px, 100%);
+        margin: 0 auto;
+      }
+
+      section {
+        padding: 28px 0;
+        border-top: 1px solid var(--line);
+      }
+
+      section:first-child {
+        border-top: 0;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 100%;
+        font-size: 42px;
+        line-height: 1.05;
+        overflow-wrap: break-word;
+      }
+
+      h2 {
+        margin-bottom: 12px;
+        color: var(--accent);
+        font-size: 18px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      p,
+      li {
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.55;
+      }
+
+      ul {
+        margin: 12px 0 0;
+        padding-left: 22px;
+      }
+
+      .notice {
+        margin-top: 24px;
+        padding: 16px;
+        border: 1px solid rgba(15, 118, 110, 0.18);
+        border-radius: 8px;
+        background: rgba(15, 118, 110, 0.08);
+      }
+
+      @media (max-width: 360px) {
+        body {
+          padding: 20px 16px;
+        }
+
+        section {
+          padding: 22px 0;
+        }
+
+        h1 {
+          font-size: 30px;
+          line-height: 1.12;
+        }
+
+        h2 {
+          font-size: 15px;
+        }
+
+        p,
+        li {
+          font-size: 16px;
+          line-height: 1.5;
+        }
+
+        ul {
+          padding-left: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h1>Medical Information Guide</h1>
+        <p class="notice">
+          This seeded asset is for research prototype testing only. It is not
+          medical advice and should not be used for diagnosis or treatment.
+        </p>
+      </section>
+      <section>
+        <h2>What People Need To Know</h2>
+        <ul>
+          <li>What the condition or treatment is intended to address.</li>
+          <li>
+            What benefits, limitations, and uncertainties are clearly stated.
+          </li>
+          <li>What safety information is easy or difficult to understand.</li>
+        </ul>
+      </section>
+      <section>
+        <h2>Questions To Watch For</h2>
+        <ul>
+          <li>When would someone contact a clinician?</li>
+          <li>What terms need a plain-language explanation?</li>
+          <li>What practical barriers could slow action?</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
