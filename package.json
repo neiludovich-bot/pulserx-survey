@@ -15,7 +15,7 @@
   "scripts": {
     "build": "npm run build:web",
     "build:api": "npm run build -w @interview/prompts && npm run build -w @interview/schemas && npm run build -w @interview/engine && npm run build -w @interview/api",
-    "build:web": "npm run build -w @interview/prompts && npm run build -w @interview/schemas && npm run build -w @interview/engine && npm run build -w @interview/web",
+    "build:web": "npm run build -w @interview/prompts && npm run build -w @interview/schemas && npm run build -w @interview/engine && npm run build -w @interview/web && node scripts/hostinger-copy-next-output.cjs",
     "build:packages": "turbo run build --filter=@interview/schemas --filter=@interview/prompts --filter=@interview/engine --filter=@interview/evals",
     "dev": "turbo run build --filter=@interview/schemas --filter=@interview/prompts --filter=@interview/engine --filter=@interview/evals && turbo run dev --parallel --filter=@interview/web --filter=@interview/api",
     "lint": "turbo run lint",
