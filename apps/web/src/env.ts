@@ -6,5 +6,8 @@ const webEnvSchema = z.object({
 
 export const webEnv = webEnvSchema.parse({
   NEXT_PUBLIC_API_BASE_URL:
-    process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001"
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    (process.env.NODE_ENV === "production"
+      ? "https://api.pulserx.ai"
+      : "http://localhost:3001")
 });
