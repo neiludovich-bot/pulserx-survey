@@ -15,4 +15,4 @@ async function start() {
   }
 }
 
-await start();
+void start();
