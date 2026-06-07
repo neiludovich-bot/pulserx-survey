@@ -13,7 +13,7 @@
     "pnpm": ">=9.0.0"
   },
   "scripts": {
-    "build": "npm run build:web",
+    "build": "npm run build:api",
     "build:api": "npm run build -w @interview/prompts && npm run build -w @interview/schemas && npm run build -w @interview/engine && npm run build -w @interview/api",
     "build:web": "npm run build -w @interview/prompts && npm run build -w @interview/schemas && npm run build -w @interview/engine && npm run build -w @interview/web && node scripts/hostinger-copy-next-output.cjs",
     "build:packages": "turbo run build --filter=@interview/schemas --filter=@interview/prompts --filter=@interview/engine --filter=@interview/evals",
@@ -30,7 +30,7 @@
     "db:studio": "prisma studio",
     "eval": "tsx packages/evals/src/run-evals.ts",
     "replay:openai": "pnpm --filter @interview/engine replay:openai",
-    "start": "npm run start:web",
+    "start": "npm run start:api",
     "start:api": "npm run start -w @interview/api",
     "start:web": "node scripts/hostinger-start-web.cjs",
     "postinstall": "prisma generate"
