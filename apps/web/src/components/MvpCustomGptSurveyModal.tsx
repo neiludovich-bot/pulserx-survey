@@ -828,18 +828,16 @@ export function MvpCustomGptSurveyModal() {
     autoSourceLookupMessageIdRef.current = latestInterviewerMessage.id;
 
     async function openFirstVisualReference() {
-      const visualReferences = await Promise.all(
-        sourceReferences.map((sourceReference) =>
-          resolveVisualSourcePanelReference(sourceReference),
-        ),
-      );
-      if (isCancelled) {
-        return;
-      }
-
-      const visualReference = visualReferences.find(Boolean);
-      if (visualReference) {
-        setSourcePanel(visualReference);
+      for (const sourceReference of sourceReferences) {
+        const visualReference =
+          await resolveVisualSourcePanelReference(sourceReference);
+        if (isCancelled) {
+          return;
+        }
+        if (visualReference) {
+          setSourcePanel(visualReference);
+          return;
+        }
       }
     }
 
