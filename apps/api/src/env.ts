@@ -6,7 +6,14 @@ const apiEnvSchema = z.object({
     .default("development"),
   HOST: z.string().min(1).default("0.0.0.0"),
   PORT: z.coerce.number().int().positive().default(3001),
-  CORS_ORIGIN: z.string().url().default("http://localhost:3000"),
+  CORS_ORIGIN: z
+    .string()
+    .url()
+    .default(
+      process.env.NODE_ENV === "production"
+        ? "https://pulserx.ai"
+        : "http://localhost:3000",
+    ),
   DATABASE_URL: z
     .string()
     .min(1)
