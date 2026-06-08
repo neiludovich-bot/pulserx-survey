@@ -10,16 +10,29 @@ if (!fs.existsSync(nextOutput)) {
   throw new Error(`Next build output not found at ${nextOutput}`);
 }
 
-const mvpHtml = path.join(
-  nextOutput,
-  "server",
-  "app",
-  "mvp",
-  "customgpt-survey.html",
-);
+const staticRoutes = [
+  {
+    label: "/mvp/customgpt-survey/",
+    sourceParts: ["mvp", "customgpt-survey.html"],
+    targetParts: ["mvp", "customgpt-survey"],
+  },
+  {
+    label: "/surveys/padcev/",
+    sourceParts: ["surveys", "padcev.html"],
+    targetParts: ["surveys", "padcev"],
+  },
+];
 
-if (!fs.existsSync(mvpHtml)) {
-  throw new Error(`Static MVP page not found at ${mvpHtml}`);
+for (const route of staticRoutes) {
+  const htmlPath = path.join(
+    nextOutput,
+    "server",
+    "app",
+    ...route.sourceParts,
+  );
+  if (!fs.existsSync(htmlPath)) {
+    throw new Error(`Static page ${route.label} not found at ${htmlPath}`);
+  }
 }
 
 fs.rmSync(target, { recursive: true, force: true });
@@ -34,9 +47,17 @@ fs.cpSync(path.join(nextOutput, "static"), path.join(target, "_next", "static"),
   recursive: true,
 });
 
-const mvpDir = path.join(target, "mvp", "customgpt-survey");
-fs.mkdirSync(mvpDir, { recursive: true });
-fs.copyFileSync(mvpHtml, path.join(mvpDir, "index.html"));
+for (const route of staticRoutes) {
+  const htmlPath = path.join(
+    nextOutput,
+    "server",
+    "app",
+    ...route.sourceParts,
+  );
+  const routeDir = path.join(target, ...route.targetParts);
+  fs.mkdirSync(routeDir, { recursive: true });
+  fs.copyFileSync(htmlPath, path.join(routeDir, "index.html"));
+}
 
 fs.writeFileSync(
   path.join(target, "index.html"),
@@ -49,5 +70,7 @@ fs.writeFileSync(
 );
 
 console.log(
-  `Prepared static Hostinger output at ${path.relative(root, target)} with /mvp/customgpt-survey/.`,
+  `Prepared static Hostinger output at ${path.relative(root, target)} with ${staticRoutes
+    .map((route) => route.label)
+    .join(", ")}.`,
 );

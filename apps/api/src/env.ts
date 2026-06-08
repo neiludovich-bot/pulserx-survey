@@ -28,6 +28,7 @@ const apiEnvSchema = z.object({
     .url()
     .default("https://app.customgpt.ai/api/v1"),
   CUSTOMGPT_PROJECT_ID: z.string().optional(),
+  CUSTOMGPT_PADCEV_PROJECT_ID: z.string().optional(),
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

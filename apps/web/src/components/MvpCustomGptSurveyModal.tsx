@@ -721,7 +721,17 @@ function MessageBubble({
   );
 }
 
-export function MvpCustomGptSurveyModal() {
+type MvpCustomGptSurveyModalProps = {
+  surveySlug?: string;
+  studyName?: string;
+  targetDurationSeconds?: number;
+};
+
+export function MvpCustomGptSurveyModal({
+  surveySlug = "brukinsa",
+  studyName = "BRUKINSA HCP MVP",
+  targetDurationSeconds = 600,
+}: MvpCustomGptSurveyModalProps = {}) {
   const [survey, setSurvey] = useState<MvpCustomGptSurveyResponse | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -765,7 +775,9 @@ export function MvpCustomGptSurveyModal() {
         setError(null);
         setSurvey(
           await startMvpCustomGptSurvey({
-            targetDurationSeconds: 600,
+            surveySlug,
+            studyName,
+            targetDurationSeconds,
           }),
         );
       } catch (startError) {
@@ -780,7 +792,7 @@ export function MvpCustomGptSurveyModal() {
     }
 
     void start();
-  }, []);
+  }, [studyName, surveySlug, targetDurationSeconds]);
 
   useEffect(() => {
     setVoiceSupported(
@@ -1111,7 +1123,7 @@ export function MvpCustomGptSurveyModal() {
         <header className="mvp-survey-header">
           <div>
             <p className="mvp-kicker">CustomGPT Survey Bridge</p>
-            <h1>{survey?.studyName ?? "BRUKINSA HCP MVP"}</h1>
+            <h1>{survey?.studyName ?? studyName}</h1>
           </div>
           <div className="mvp-status-stack">
             <button
