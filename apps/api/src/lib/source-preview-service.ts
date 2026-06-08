@@ -18,6 +18,16 @@ type ImageCandidate = {
   score: number;
 };
 
+type DocumentCandidate = {
+  url: string;
+  title: string;
+  description: string | null;
+  isPdf: boolean;
+  source: "pdf_link" | "html_link";
+  context: string;
+  score: number;
+};
+
 function isPrivateIpv4(hostname: string) {
   const match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (!match) {
@@ -309,6 +319,121 @@ function uniqueTopImages(
     .map(({ score: _score, context: _context, ...candidate }) => candidate);
 }
 
+function documentLooksUseful(candidate: DocumentCandidate) {
+  const haystack =
+    `${candidate.url} ${candidate.title} ${candidate.description ?? ""} ${candidate.context}`.toLowerCase();
+  const clinicalDocumentPattern =
+    /\b(?:guide|checklist|monitoring|adverse reaction|adverse reactions|patient management|dosing and administration|dosing administration|dosing guide|administration guide|dose modification|dose modifications|peripheral neuropathy|informational resource|prescribing information|full prescribing information|important safety information|isi|brochure|support solutions|patient education|patient materials)\b/;
+  const lowValuePattern =
+    /\b(?:contact|representative|rep|cookie|privacy|terms|sitemap|site map|accessibility|unsubscribe|footer|header|logo|video library|social)\b/;
+
+  if (lowValuePattern.test(haystack) && !clinicalDocumentPattern.test(haystack)) {
+    return false;
+  }
+
+  return candidate.isPdf || clinicalDocumentPattern.test(haystack);
+}
+
+function scoreDocument(candidate: DocumentCandidate, sourceUrl: string) {
+  const parsedUrl = new URL(sourceUrl);
+  const sourcePath = parsedUrl.pathname.toLowerCase();
+  const haystack =
+    `${candidate.url} ${candidate.title} ${candidate.description ?? ""} ${candidate.context}`.toLowerCase();
+  let score = candidate.score;
+
+  if (candidate.isPdf) {
+    score += 40;
+  }
+
+  if (/\b(?:adverse reaction|adverse reactions|monitoring checklist|checklist|peripheral neuropathy|dose modification|dose modifications|dosing and administration|patient management)\b/.test(haystack)) {
+    score += 70;
+  }
+
+  if (/\b(?:guide|informational resource|prescribing information|important safety information|isi|support solutions|patient education|brochure)\b/.test(haystack)) {
+    score += 35;
+  }
+
+  if (/\b(?:neuropathy|rash|skin|hyperglycemia|pneumonitis|ocular|side effect|side effects|safety)\b/.test(haystack)) {
+    score += 30;
+  }
+
+  if (/\b(?:dosing|administration|dose|infusion|schedule)\b/.test(haystack)) {
+    score += 18;
+  }
+
+  if (/\b(?:resource|resources|support|patient)\b/.test(sourcePath)) {
+    score += 10;
+  }
+
+  if (/\b(?:contact|representative|rep|cookie|privacy|terms|sitemap|accessibility|video library)\b/.test(haystack)) {
+    score -= 60;
+  }
+
+  return score;
+}
+
+function uniqueTopDocuments(candidates: DocumentCandidate[], sourceUrl: string) {
+  const seen = new Set<string>();
+
+  return candidates
+    .filter((candidate) => documentLooksUseful(candidate))
+    .map((candidate) => ({
+      ...candidate,
+      score: scoreDocument(candidate, sourceUrl),
+    }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score)
+    .filter((candidate) => {
+      if (seen.has(candidate.url)) {
+        return false;
+      }
+      seen.add(candidate.url);
+      return true;
+    })
+    .slice(0, 8)
+    .map(({ score: _score, context: _context, ...candidate }) => candidate);
+}
+
+function extractDocumentCandidates(html: string, sourceUrl: string) {
+  const candidates: DocumentCandidate[] = [];
+
+  for (const match of html.matchAll(/<a\b[^>]*>[\s\S]*?<\/a>/gi)) {
+    const tag = match[0];
+    const start = match.index ?? 0;
+    const href = getAttribute(tag, "href");
+    const url = absoluteUrl(href, sourceUrl);
+
+    if (!url) {
+      continue;
+    }
+
+    const label =
+      stripHtml(tag)
+        .replace(/\b(?:download|pdf|opens in new tab)\b/gi, " ")
+        .replace(/\s+/g, " ")
+        .trim() || getAttribute(tag, "aria-label") || getAttribute(tag, "title");
+
+    if (!label) {
+      continue;
+    }
+
+    const context = getContextAround(html, start, start + tag.length);
+    const isPdf = /\.pdf(?:$|[?#])/i.test(url);
+
+    candidates.push({
+      url,
+      title: label,
+      description: context,
+      isPdf,
+      source: isPdf ? "pdf_link" : "html_link",
+      context,
+      score: isPdf ? 42 : 22,
+    });
+  }
+
+  return uniqueTopDocuments(candidates, sourceUrl);
+}
+
 function extractImageCandidates(html: string, sourceUrl: string, title: string | null) {
   const candidates: ImageCandidate[] = [];
   const ogImage = absoluteUrl(extractMetaContent(html, "og:image"), sourceUrl);
@@ -474,11 +599,16 @@ export async function previewSourceImages(
     const html = (await response.text()).slice(0, SOURCE_PREVIEW_MAX_HTML_CHARS);
     const title = extractTitle(html, input.title);
     const images = extractImageCandidates(html, url.toString(), title);
+    const documents = extractDocumentCandidates(html, url.toString());
     const result = mvpCustomGptSourcePreviewResponseSchema.parse({
       sourceUrl: url.toString(),
       title,
       images,
-      reason: images.length ? null : "No useful image assets were found on this source page.",
+      documents,
+      reason:
+        images.length || documents.length
+          ? null
+          : "No useful image or document assets were found on this source page.",
     });
 
     sourcePreviewCache.set(input.url, result);
@@ -488,6 +618,7 @@ export async function previewSourceImages(
       sourceUrl: url.toString(),
       title: input.title ?? null,
       images: [],
+      documents: [],
       reason:
         error instanceof Error
           ? error.message

@@ -175,7 +175,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     canonicalQuestion:
       "Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
     sourceContextRequirement:
-      "Before asking the safety/tolerability question, summarize the most relevant PADCEV HCP Important Safety Information, dose-modifications page, dosing/administration guide, Prescribing Information, and Peripheral Neuropathy Informational Resource if available in the indexed sources. Include source-supported warnings and precautions such as serious skin reactions including SJS/TEN, hyperglycemia, pneumonitis/ILD, peripheral neuropathy, ocular disorders, infusion site extravasation, embryo-fetal toxicity, common adverse reactions or labs when available, and dose interruption/reduction/discontinuation guidance where supported. Keep it concise and non-patient-specific.",
+      "Before asking the safety/tolerability question, summarize the most relevant PADCEV HCP Important Safety Information, dose-modifications page, dosing/administration guide, Prescribing Information, Adverse Reactions Monitoring Checklist, adverse-reaction management resources, and Peripheral Neuropathy Informational Resource if available in the indexed sources. Include source-supported warnings and precautions such as serious skin reactions including SJS/TEN, hyperglycemia, pneumonitis/ILD, peripheral neuropathy, ocular disorders, infusion site extravasation, embryo-fetal toxicity, common adverse reactions or labs when available, and dose interruption/reduction/discontinuation guidance where supported. If guide/checklist/PDF resources exist, cite the source most likely to expose them so the side panel can present the operational aid proactively. Keep it concise and non-patient-specific.",
     routeKeywords: ["safety", "skin", "sjs", "ten", "hyperglycemia", "neuropathy", "pneumonitis", "ocular"],
     completionSignals: ["safety concerns or comfort drivers are stated"],
     adaptiveProbes: [
@@ -191,7 +191,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     canonicalQuestion:
       "From an operational perspective, how does the PADCEV dosing and administration profile affect real-world feasibility?",
     sourceContextRequirement:
-      "Before asking the dosing/administration question, retrieve and summarize PADCEV HCP dosing and administration source material or dosing guide details, including schedule, weight-based dosing or dose caps, combination vs monotherapy schedule differences, dose modification, and operational considerations only when supported by the source.",
+      "Before asking the dosing/administration question, retrieve and summarize PADCEV HCP dosing and administration source material, dosing guide details, dose-modification guidance, Adverse Reactions Monitoring Checklist, and adverse-reaction management resources if available. Include schedule, weight-based dosing or dose caps, combination vs monotherapy schedule differences, dose modification, and operational considerations only when supported by the source. If the source has a guide/checklist/PDF that helps clinicians handle side effects across the treatment continuum, cite the source most likely to expose that asset so it can appear in the side panel.",
     routeKeywords: ["dose", "dosing", "administration", "schedule", "infusion", "day 1", "day 8"],
     completionSignals: ["operational reaction is stated"],
     adaptiveProbes: [],
@@ -204,7 +204,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     canonicalQuestion:
       "What practical barriers would most affect implementation: toxicity monitoring, infusion scheduling, patient education, coordination with pembrolizumab, access, or something else?",
     sourceContextRequirement:
-      "Before asking the practical barriers question, retrieve PADCEV HCP source material on support resources, patient materials, dosing resources, or access resources if available. If no meaningful support resource detail is available in the source, say that briefly and ask the question without inventing programs.",
+      "Before asking the practical barriers question, retrieve PADCEV HCP source material on support resources, adverse-reaction monitoring checklists, patient materials, dosing resources, side-effect management guides, or access resources if available. If a guide/checklist/PDF exists, cite the source most likely to expose it. If no meaningful support resource detail is available in the source, say that briefly and ask the question without inventing programs.",
     routeKeywords: ["barrier", "monitoring", "scheduling", "education", "access", "support"],
     completionSignals: ["implementation barriers are stated"],
     adaptiveProbes: [],
