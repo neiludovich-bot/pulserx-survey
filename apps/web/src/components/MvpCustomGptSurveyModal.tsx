@@ -6,7 +6,7 @@ import type {
   MvpCustomGptSurveyMessage,
   MvpCustomGptSurveyResponse,
 } from "@interview/schemas";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   previewMvpCustomGptSource,
   startMvpCustomGptSurvey,
@@ -89,6 +89,15 @@ function formatVoiceError(error: unknown) {
   }
 
   return error.message || "Unable to start voice recording.";
+}
+
+function isMissingMvpSessionError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+
+  return /MVP survey session was not found|survey session was not found|session was not found/i.test(
+    message,
+  );
 }
 
 type SourcePanelReference = {
@@ -890,6 +899,7 @@ export function MvpCustomGptSurveyModal({
   const [survey, setSurvey] = useState<MvpCustomGptSurveyResponse | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [recoveryNotice, setRecoveryNotice] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(true);
   const [isSending, setIsSending] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -918,6 +928,58 @@ export function MvpCustomGptSurveyModal({
     null,
   );
 
+  const startFreshSurvey = useCallback(
+    async (notice?: string) => {
+      try {
+        setIsStarting(true);
+        setError(null);
+        setRecoveryNotice(null);
+        setOptimisticMessage(null);
+        setSourcePanel(null);
+        setClosedSourceMessageId(null);
+        autoSourceLookupMessageIdRef.current = null;
+        speechAudioRef.current?.pause();
+        speechAudioRef.current = null;
+        setIsSpeaking(false);
+        setVoiceStatus(null);
+        setVoiceStatusTone("neutral");
+        const nextSurvey = await startMvpCustomGptSurvey({
+          surveySlug,
+          surveyIntentSlug: selectedIntentSlug ?? undefined,
+          studyName,
+          targetDurationSeconds,
+        });
+        setSurvey(nextSurvey);
+        if (notice) {
+          setRecoveryNotice(notice);
+        }
+        return nextSurvey;
+      } catch (startError) {
+        setError(
+          startError instanceof Error
+            ? startError.message
+            : "Unable to start the MVP survey.",
+        );
+        return null;
+      } finally {
+        setIsStarting(false);
+      }
+    },
+    [selectedIntentSlug, studyName, surveySlug, targetDurationSeconds],
+  );
+
+  const recoverExpiredSession = useCallback(
+    async (preservedDraft?: string) => {
+      const restartedSurvey = await startFreshSurvey(
+        "The API restarted and the previous MVP session expired, so I started a fresh session with the same survey focus.",
+      );
+      if (restartedSurvey && preservedDraft) {
+        setDraft(preservedDraft);
+      }
+    },
+    [startFreshSurvey],
+  );
+
   useEffect(() => {
     if (didStart.current) {
       return;
@@ -928,31 +990,8 @@ export function MvpCustomGptSurveyModal({
     }
     didStart.current = true;
 
-    async function start() {
-      try {
-        setIsStarting(true);
-        setError(null);
-        setSurvey(
-          await startMvpCustomGptSurvey({
-            surveySlug,
-            surveyIntentSlug: selectedIntentSlug ?? undefined,
-            studyName,
-            targetDurationSeconds,
-          }),
-        );
-      } catch (startError) {
-        setError(
-          startError instanceof Error
-            ? startError.message
-            : "Unable to start the MVP survey.",
-        );
-      } finally {
-        setIsStarting(false);
-      }
-    }
-
-    void start();
-  }, [intentOptions.length, selectedIntentSlug, studyName, surveySlug, targetDurationSeconds]);
+    void startFreshSurvey();
+  }, [intentOptions.length, selectedIntentSlug, startFreshSurvey]);
 
   useEffect(() => {
     setVoiceSupported(
@@ -1065,18 +1104,23 @@ export function MvpCustomGptSurveyModal({
       );
       await preserveResponsePacing(requestStartedAt);
       setSurvey(nextSurvey);
+      setRecoveryNotice(null);
       setOptimisticMessage(null);
       if (voicePlaybackEnabled) {
         void playLatestInterviewerSpeech(nextSurvey.sessionId);
       }
     } catch (sendError) {
+      setOptimisticMessage(null);
+      if (isMissingMvpSessionError(sendError)) {
+        await recoverExpiredSession(content);
+        return;
+      }
       setError(
         sendError instanceof Error
           ? sendError.message
           : "Unable to send that response.",
       );
       setDraft(content);
-      setOptimisticMessage(null);
     } finally {
       setIsSending(false);
     }
@@ -1161,6 +1205,10 @@ export function MvpCustomGptSurveyModal({
       setDraft(response.transcript);
       setVoiceStatus(`Heard: "${response.transcript}" Review, then Send.`);
     } catch (voiceError) {
+      if (isMissingMvpSessionError(voiceError)) {
+        await recoverExpiredSession();
+        return;
+      }
       setVoiceStatusTone("error");
       setVoiceStatus(
         voiceError instanceof Error
@@ -1213,6 +1261,10 @@ export function MvpCustomGptSurveyModal({
       await audio.play();
     } catch (speechError) {
       setIsSpeaking(false);
+      if (isMissingMvpSessionError(speechError)) {
+        await recoverExpiredSession();
+        return;
+      }
       setVoiceStatusTone("error");
       setVoiceStatus(
         speechError instanceof Error
@@ -1350,6 +1402,10 @@ export function MvpCustomGptSurveyModal({
             {survey.reason} Add the CustomGPT API key locally, then reload this
             page to test the live cited-answer behavior.
           </div>
+        ) : null}
+
+        {recoveryNotice ? (
+          <div className="mvp-setup-note">{recoveryNotice}</div>
         ) : null}
 
         {error ? <div className="mvp-error">{error}</div> : null}
