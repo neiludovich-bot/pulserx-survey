@@ -769,6 +769,16 @@ The controller should include the selected intent in the CustomGPT context and
 audit log. The intent changes prioritization and steering, but factual answers
 must still come from the configured CustomGPT source project.
 
+For safety-management turns, source and visual selection must be conservative.
+If the respondent asks about neuropathy, rash/skin reactions, hyperglycemia,
+pneumonitis/ILD, ocular issues, dose modification, monitoring, or intervention,
+the controller should prioritize ISI, Prescribing Information, and
+dosing/administration or dose-modification sources. Do not automatically show
+efficacy/PFS/OS charts in the side panel for a safety-management turn just
+because an efficacy page is cited or happens to contain a visual. If no
+topic-relevant safety visual exists, leave the panel closed or let the user
+open the citation manually.
+
 ## Why This Style
 
 This style preserves the strongest parts of CustomGPT, especially source
