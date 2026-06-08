@@ -236,6 +236,14 @@ function shouldEmbedSourceUrl(url: string) {
   }
 }
 
+function sourceUrlLooksLikePdf(url: string) {
+  try {
+    return new URL(url).pathname.toLowerCase().endsWith(".pdf");
+  } catch {
+    return /\.pdf(?:$|[?#])/i.test(url);
+  }
+}
+
 async function resolveVisualSourcePanelReference(
   input: SourcePanelReference,
 ): Promise<SourcePanelReference | null> {
@@ -665,6 +673,7 @@ function SourcePanel({
   const label = getReferenceLabel(source.reference, source.index);
   const sourceUrl = source.reference.url;
   const canEmbedSource = sourceUrl ? shouldEmbedSourceUrl(sourceUrl) : false;
+  const canDownloadPdf = sourceUrl ? sourceUrlLooksLikePdf(sourceUrl) : false;
   const [preview, setPreview] =
     useState<MvpCustomGptSourcePreviewResponse | null>(
       source.preview ?? null,
@@ -773,14 +782,26 @@ function SourcePanel({
               )}
             </div>
           )}
-          <a
-            className="mvp-source-open-link"
-            href={sourceUrl}
-            rel="noreferrer"
-            target="_blank"
-          >
-            Open source in new tab
-          </a>
+          <div className="mvp-source-actions">
+            <a
+              className="mvp-source-open-link"
+              href={sourceUrl}
+              rel="noreferrer"
+              target="_blank"
+            >
+              Open source in new tab
+            </a>
+            {canDownloadPdf ? (
+              <a
+                className="mvp-source-open-link"
+                download
+                href={sourceUrl}
+                rel="noreferrer"
+              >
+                Download PDF
+              </a>
+            ) : null}
+          </div>
         </>
       ) : (
         <div className="mvp-source-empty">

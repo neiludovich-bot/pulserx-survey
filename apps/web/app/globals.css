@@ -719,9 +719,15 @@ ul {
   font-size: 0.82rem !important;
 }
 
+.mvp-source-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0.75rem;
+}
+
 .mvp-source-open-link {
   display: block;
-  margin: 0.75rem;
   padding: 0.55rem 0.7rem;
   text-align: center;
 }
@@ -857,6 +863,10 @@ ul {
     height: 88vh;
     min-height: 0;
     border-radius: 8px 8px 0 0;
+  }
+
+  .mvp-source-actions {
+    grid-template-columns: 1fr;
   }
 
   .mvp-image-modal-backdrop {
