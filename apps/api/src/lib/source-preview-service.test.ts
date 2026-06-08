@@ -210,4 +210,45 @@ describe("source preview service", () => {
       "https://brukinsahcp.com/wp-content/uploads/mcl-adverse-reactions-table.png",
     ]);
   });
+
+  it("suppresses travel hero artwork while keeping dosing guide covers", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          `
+          <html>
+            <head>
+              <title>Official HCP Site for PADCEV</title>
+            </head>
+            <body>
+              <section>
+                <h1>Official HCP Site for PADCEV</h1>
+                <img src="/assets/hero-airplane.png" alt="Airplane flying through sky" />
+              </section>
+              <section>
+                <h2>Dosing and Administration Guide</h2>
+                <p>PADCEV dosing and administration guide for HCPs.</p>
+                <img src="/Content/hcp/pdf/dosing-admin-guide-cover.png" alt="PADCEV Dosing and Administration Guide cover" />
+              </section>
+            </body>
+          </html>
+          `,
+          {
+            headers: { "content-type": "text/html; charset=utf-8" },
+            status: 200,
+          },
+        ),
+      ),
+    );
+
+    const preview = await previewSourceImages({
+      url: "https://padcevhcp.com/",
+      title: "Official HCP Site for PADCEV",
+    });
+
+    expect(preview.images.map((image) => image.url)).toEqual([
+      "https://padcevhcp.com/Content/hcp/pdf/dosing-admin-guide-cover.png",
+    ]);
+  });
 });

@@ -164,18 +164,17 @@ function getContextAround(html: string, start: number, end: number) {
 function imageLooksUseful(candidate: ImageCandidate) {
   const directHaystack = `${candidate.url} ${candidate.alt ?? ""}`.toLowerCase();
   const haystack = `${directHaystack} ${candidate.context}`.toLowerCase();
+  const clinicalOrDocumentPattern =
+    /\b(?:sequoia|alpine|aspen|ev-302|ev 302|keynote-a39|keynote a39|ev-301|ev 301|ev-201|ev 201|pfs|progression-free|progression free|os|overall survival|orr|km curve|kaplan|curve|chart|graph|table|forest plot|hazard ratio|95% ci|cohort|study design|trial design|patient management guide|dosing and administration guide|dosing guide|administration guide|dose modification|dose modifications|peripheral neuropathy informational resource|informational resource|prescribing information|brochure|form|enrollment|specialty pharmacies|distributors)\b/;
+  const marketingPattern =
+    /\b(?:hero|lifestyle|brand|campaign|atmosphere|airplane|aircraft|plane|jet|flight|travel|runway|jumping|splash|water|boy|girl|family|street|building|portrait|person|people|caregiver)\b/;
   const directClinicalOrDocumentSignal =
-    /\b(?:sequoia|alpine|aspen|pfs|progression-free|progression free|km curve|kaplan|curve|chart|graph|table|forest plot|hazard ratio|95% ci|cohort|study design|trial design|patient management guide|dosing and administration guide|brochure|form|enrollment|specialty pharmacies|distributors)\b/.test(
-      directHaystack,
-    );
+    clinicalOrDocumentPattern.test(directHaystack);
   const contextualClinicalOrDocumentSignal =
-    /\b(?:km curve|kaplan|chart|graph|table|figure|forest plot|hazard ratio|95% ci|cohort\s+\d|study design|trial design|patient management guide|dosing and administration guide|brochure|form|enrollment|specialty pharmacies|distributors)\b/.test(
-      haystack,
-    );
+    clinicalOrDocumentPattern.test(haystack) ||
+    /\b(?:figure|cohort\s+\d)\b/.test(haystack);
   const marketingOnlySignal =
-    /\b(?:hero|lifestyle|brand|campaign|atmosphere|jumping|splash|water|boy|girl|family|street|building|portrait|person|people|caregiver)\b/.test(
-      directHaystack,
-    );
+    marketingPattern.test(directHaystack);
   const productShotSignal =
     /\b(?:tablet1|tablet|tablets|pill|pills|capsule|capsules|bottle|packshot|product shot|dosing options)\b/.test(
       directHaystack,
@@ -240,7 +239,7 @@ function scoreImage(
     score += 25;
   }
 
-  if (/\b(?:guide|brochure|form|enrollment|specialty pharmacies|distributors)\b/.test(haystack)) {
+  if (/\b(?:guide|brochure|form|enrollment|specialty pharmacies|distributors|dose modification|dose modifications|peripheral neuropathy informational resource|informational resource|prescribing information)\b/.test(haystack)) {
     score += 18;
   }
 
@@ -260,11 +259,11 @@ function scoreImage(
     score -= 35;
   }
 
-  if (/\b(?:hero|lifestyle|brand|campaign|jumping|splash|water|boy|girl|family|street|building|portrait|person|people|caregiver)\b/.test(haystack)) {
+  if (/\b(?:hero|lifestyle|brand|campaign|airplane|aircraft|plane|jet|flight|travel|runway|jumping|splash|water|boy|girl|family|street|building|portrait|person|people|caregiver)\b/.test(haystack)) {
     score -= 90;
   }
 
-  if (/\b(?:hero|lifestyle|brand|campaign|jumping|splash|water|boy|girl|family|street|building|portrait|person|people|caregiver)\b/.test(directHaystack)) {
+  if (/\b(?:hero|lifestyle|brand|campaign|airplane|aircraft|plane|jet|flight|travel|runway|jumping|splash|water|boy|girl|family|street|building|portrait|person|people|caregiver)\b/.test(directHaystack)) {
     score -= 90;
   }
 

@@ -785,6 +785,15 @@ stating that the source lacks intervention detail. The source may not provide a
 full clinical management algorithm, but it can still provide grade-based dose
 interruption, reduction, discontinuation, monitoring, and counseling language.
 
+Source preview image filtering should use each image's own metadata first:
+URL, `alt`, `srcset`, file name, and nearby HTML context. Suppress images whose
+direct metadata describes lifestyle or brand artwork such as airplanes, travel,
+people, buildings, generic hero imagery, product shots, or promotional campaign
+graphics unless the same direct metadata clearly identifies a clinical chart,
+table, dosing/admin guide, brochure, form, PI/ISI, or other useful document.
+Do not let generic page title text like "Official HCP Site" make a lifestyle
+hero image look clinically relevant.
+
 ## Why This Style
 
 This style preserves the strongest parts of CustomGPT, especially source
