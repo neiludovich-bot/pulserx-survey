@@ -931,6 +931,9 @@ function contentLooksLikeReactiveQuestion(content: string) {
     /\b(explain|what is|what are|tell me|source|reference|data|study|trial|sequoia|alpine|ev302|ev 302|keynote a39|keynote-a39|ev301|ev 301|ev201|ev 201|safety)\b/.test(
       normalized,
     ) ||
+    /\b(guide|checklist|resource|resources|how to handle|how do i handle|manage|management|continuum|monitor|monitoring|intervene|intervention)\b/.test(
+      normalized,
+    ) ||
     contentLooksLikePatientPopulationQuestion(content)
   );
 }
@@ -1345,7 +1348,7 @@ function sourceContextForReactiveQuestion(
       selectedQuestion?.id === "safety";
 
     if (safetyScoped) {
-      return "The participant asked a PADCEV safety-management question. Prioritize approved PADCEV HCP Important Safety Information, Prescribing Information, the PADCEV dose-modifications page, dosing/administration guide, and the PADCEV Peripheral Neuropathy Informational Resource if available in the indexed sources. For neuropathy, rash/skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, include only source-supported monitoring, dose interruption, dose reduction, discontinuation, counseling, or supportive-care guidance. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. If the source does not provide a detailed stepwise intervention algorithm, say that plainly while still summarizing the source-supported management steps. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
+      return "The participant asked a PADCEV safety-management or resource-guide question. Prioritize approved PADCEV HCP Important Safety Information, Prescribing Information, the PADCEV dose-modifications page, dosing/administration guide, Adverse Reactions Monitoring Checklist, adverse-reaction management guides, and the PADCEV Peripheral Neuropathy Informational Resource if available in the indexed sources. If the participant asks for a guide, checklist, continuum, operational aid, or how to handle adverse events, cite the source page most likely to expose that guide/checklist/PDF rather than a generic efficacy page. For neuropathy, rash/skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, include only source-supported monitoring, dose interruption, dose reduction, discontinuation, counseling, or supportive-care guidance. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. If the source does not provide a detailed stepwise intervention algorithm, say that plainly while still summarizing the source-supported management steps. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
     }
 
     return "The participant asked a source/detail question during the PADCEV urothelial cancer survey. Answer using only approved PADCEV HCP source material, including indication/positioning, EV-302/KEYNOTE-A39, EV-301/EV-201, safety, dosing/administration, patient fit, and access/support only where relevant to the participant's question. Then return to the selected survey question. Do not provide patient-specific treatment advice.";

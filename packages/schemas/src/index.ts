@@ -1682,10 +1682,19 @@ export const mvpCustomGptSourcePreviewImageSchema = z.object({
   source: z.enum(["open_graph", "twitter", "html_image"]),
 });
 
+export const mvpCustomGptSourcePreviewDocumentSchema = z.object({
+  url: z.string().url(),
+  title: z.string().min(1),
+  description: z.string().min(1).nullable(),
+  isPdf: z.boolean(),
+  source: z.enum(["pdf_link", "html_link"]),
+});
+
 export const mvpCustomGptSourcePreviewResponseSchema = z.object({
   sourceUrl: z.string().url(),
   title: z.string().min(1).nullable(),
   images: z.array(mvpCustomGptSourcePreviewImageSchema).max(6),
+  documents: z.array(mvpCustomGptSourcePreviewDocumentSchema).max(8),
   reason: z.string().min(1).nullable(),
 });
 
@@ -1934,6 +1943,9 @@ export type MvpCustomGptSourcePreviewRequest = z.infer<
 >;
 export type MvpCustomGptSourcePreviewImage = z.infer<
   typeof mvpCustomGptSourcePreviewImageSchema
+>;
+export type MvpCustomGptSourcePreviewDocument = z.infer<
+  typeof mvpCustomGptSourcePreviewDocumentSchema
 >;
 export type MvpCustomGptSourcePreviewResponse = z.infer<
   typeof mvpCustomGptSourcePreviewResponseSchema

@@ -167,7 +167,10 @@ describe("source preview service", () => {
     });
 
     expect(preview.images).toEqual([]);
-    expect(preview.reason).toBe("No useful image assets were found on this source page.");
+    expect(preview.documents).toEqual([]);
+    expect(preview.reason).toBe(
+      "No useful image or document assets were found on this source page.",
+    );
   });
 
   it("suppresses promotional mechanism graphics while keeping clinical tables", async () => {
@@ -249,6 +252,58 @@ describe("source preview service", () => {
 
     expect(preview.images.map((image) => image.url)).toEqual([
       "https://padcevhcp.com/Content/hcp/pdf/dosing-admin-guide-cover.png",
+    ]);
+  });
+
+  it("surfaces PADCEV clinical resource PDFs when marketing imagery is present", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          `
+          <html>
+            <head>
+              <title>Official HCP Site for PADCEV</title>
+            </head>
+            <body>
+              <section>
+                <h1>Official HCP Site for PADCEV</h1>
+                <img src="/assets/hero-airplane.png" alt="Airplane flying through sky" />
+              </section>
+              <section>
+                <h2>PADCEV resources</h2>
+                <p>Resources to help monitor adverse reactions during PADCEV treatment.</p>
+                <a href="/Content/hcp/pdf/adverse-reactions-monitoring-checklist.pdf">
+                  Adverse Reactions Monitoring Checklist
+                </a>
+                <a href="/Content/hcp/pdf/dosing-and-administration-guide.pdf">
+                  Dosing and Administration Guide
+                </a>
+              </section>
+            </body>
+          </html>
+          `,
+          {
+            headers: { "content-type": "text/html; charset=utf-8" },
+            status: 200,
+          },
+        ),
+      ),
+    );
+
+    const preview = await previewSourceImages({
+      url: "https://padcevhcp.com/",
+      title: "Official HCP Site for PADCEV",
+    });
+
+    expect(preview.images).toEqual([]);
+    expect(preview.documents.map((document) => document.title)).toEqual([
+      "Adverse Reactions Monitoring Checklist",
+      "Dosing and Administration Guide",
+    ]);
+    expect(preview.documents.map((document) => document.url)).toEqual([
+      "https://padcevhcp.com/Content/hcp/pdf/adverse-reactions-monitoring-checklist.pdf",
+      "https://padcevhcp.com/Content/hcp/pdf/dosing-and-administration-guide.pdf",
     ]);
   });
 });

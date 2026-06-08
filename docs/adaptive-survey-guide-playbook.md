@@ -779,6 +779,15 @@ because an efficacy page is cited or happens to contain a visual. If no
 topic-relevant safety visual exists, leave the panel closed or let the user
 open the citation manually.
 
+When a respondent asks for an operational aid such as a guide, checklist,
+resource, continuum, or "how to handle" adverse events, treat that as a
+source-detail request even if it is phrased as a comment rather than a question.
+The source context should cite the page most likely to expose the useful
+document or PDF, and the side panel should prefer guide/checklist/document cards
+over generic brand pages, hero artwork, product shots, or unrelated efficacy
+figures. For side-effect-management intents, the relevant guide/checklist should
+be pulled proactively before the respondent has to ask for it directly.
+
 For PADCEV neuropathy questions specifically, check for the HCP
 dose-modifications page and Peripheral Neuropathy Informational Resource before
 stating that the source lacks intervention detail. The source may not provide a

@@ -108,6 +108,8 @@ type SourcePanelReference = {
 };
 
 type SourcePreviewImage = MvpCustomGptSourcePreviewResponse["images"][number];
+type SourcePreviewDocument =
+  MvpCustomGptSourcePreviewResponse["documents"][number];
 
 type ExpandedSourceImage = {
   image: SourcePreviewImage;
@@ -182,6 +184,12 @@ function shouldAutoPreviewReference(input: SourcePanelReference, messageText: st
       "dose interruption",
       "dose reduction",
       "dose modification",
+      "guide",
+      "checklist",
+      "resource",
+      "resources",
+      "continuum",
+      "how to handle",
     ]) &&
     !sourceTextIncludesAny(topicText, [
       "pfs",
@@ -203,7 +211,16 @@ function shouldAutoPreviewReference(input: SourcePanelReference, messageText: st
     "prescribing information",
     "dosing",
     "administration",
+    "official hcp site",
+    "padcev hcp",
     "dose modification",
+    "guide",
+    "checklist",
+    "monitoring",
+    "resource",
+    "resources",
+    "support solutions",
+    "patient education",
     "adverse",
     "neuropathy",
     "rash",
@@ -266,8 +283,11 @@ async function resolveVisualSourcePanelReference(
       url: sourceUrl,
       title: getReferenceLabel(input.reference, input.index),
     });
+    const documents = preview.documents ?? [];
 
-    return preview.images.length > 0 ? { ...input, preview } : null;
+    return preview.images.length > 0 || documents.length > 0
+      ? { ...input, preview }
+      : null;
   } catch {
     return null;
   }
@@ -293,7 +313,9 @@ function SourcePreviewGallery({
   label: string;
   onExpandImage: (image: ExpandedSourceImage) => void;
 }) {
-  if (preview.images.length === 0) {
+  const documents = preview.documents ?? [];
+
+  if (preview.images.length === 0 && documents.length === 0) {
     return (
       <div className="mvp-source-preview-card">
         <p className="mvp-kicker">Preview unavailable</p>
@@ -309,44 +331,82 @@ function SourcePreviewGallery({
 
   return (
     <div className="mvp-source-preview-gallery">
-      <p className="mvp-kicker">Source figures</p>
+      <p className="mvp-kicker">
+        {preview.images.length > 0 ? "Source figures" : "Source resources"}
+      </p>
       <h3>{label}</h3>
-      <div className="mvp-source-image-list">
-        {preview.images.map((image, index) => {
-          const caption =
-            image.alt ??
-            `Figure ${index + 1} from ${getSourceHost(preview.sourceUrl)}`;
-          return (
-            <figure className="mvp-source-image" key={image.url}>
-              <div className="mvp-source-image-preview">
-                <a href={image.url} rel="noreferrer" target="_blank">
-                  <img
-                    alt={image.alt ?? `${label} figure ${index + 1}`}
-                    onError={(event) => {
-                      event.currentTarget.hidden = true;
-                    }}
-                    referrerPolicy="no-referrer"
-                    src={image.url}
-                  />
-                </a>
-                <button
-                  aria-label={`Expand figure: ${caption}`}
-                  className="mvp-source-image-expand"
-                  onClick={() => onExpandImage({ image, caption, label })}
-                  type="button"
-                >
-                  Expand
-                </button>
-              </div>
-              <figcaption>{caption}</figcaption>
-            </figure>
-          );
-        })}
-      </div>
+      {documents.length > 0 ? (
+        <SourcePreviewDocuments documents={documents} />
+      ) : null}
+      {preview.images.length > 0 ? (
+        <div className="mvp-source-image-list">
+          {preview.images.map((image, index) => {
+            const caption =
+              image.alt ??
+              `Figure ${index + 1} from ${getSourceHost(preview.sourceUrl)}`;
+            return (
+              <figure className="mvp-source-image" key={image.url}>
+                <div className="mvp-source-image-preview">
+                  <a href={image.url} rel="noreferrer" target="_blank">
+                    <img
+                      alt={image.alt ?? `${label} figure ${index + 1}`}
+                      onError={(event) => {
+                        event.currentTarget.hidden = true;
+                      }}
+                      referrerPolicy="no-referrer"
+                      src={image.url}
+                    />
+                  </a>
+                  <button
+                    aria-label={`Expand figure: ${caption}`}
+                    className="mvp-source-image-expand"
+                    onClick={() => onExpandImage({ image, caption, label })}
+                    type="button"
+                  >
+                    Expand
+                  </button>
+                </div>
+                <figcaption>{caption}</figcaption>
+              </figure>
+            );
+          })}
+        </div>
+      ) : null}
       <p className="mvp-source-preview-note">
         These are pulled from the cited page assets. Use the source link below
         for the full page context and prescribing information.
       </p>
+    </div>
+  );
+}
+
+function SourcePreviewDocuments({
+  documents,
+}: {
+  documents: SourcePreviewDocument[];
+}) {
+  return (
+    <div className="mvp-source-document-list">
+      {documents.map((document) => (
+        <article className="mvp-source-document" key={document.url}>
+          <div>
+            <p className="mvp-kicker">
+              {document.isPdf ? "PDF resource" : "Source resource"}
+            </p>
+            <h4>{document.title}</h4>
+          </div>
+          <div className="mvp-source-document-actions">
+            <a href={document.url} rel="noreferrer" target="_blank">
+              Open
+            </a>
+            {document.isPdf ? (
+              <a download href={document.url} rel="noreferrer">
+                Download PDF
+              </a>
+            ) : null}
+          </div>
+        </article>
+      ))}
     </div>
   );
 }
