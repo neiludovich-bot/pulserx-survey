@@ -175,7 +175,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     canonicalQuestion:
       "Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
     sourceContextRequirement:
-      "Before asking the safety/tolerability question, summarize the most relevant PADCEV HCP Important Safety Information and safety topics. Include source-supported warnings and precautions such as serious skin reactions including SJS/TEN, hyperglycemia, pneumonitis/ILD, peripheral neuropathy, ocular disorders, infusion site extravasation, embryo-fetal toxicity, common adverse reactions or labs when available, and dose-modification framing. Keep it concise and non-patient-specific.",
+      "Before asking the safety/tolerability question, summarize the most relevant PADCEV HCP Important Safety Information, dose-modifications page, dosing/administration guide, Prescribing Information, and Peripheral Neuropathy Informational Resource if available in the indexed sources. Include source-supported warnings and precautions such as serious skin reactions including SJS/TEN, hyperglycemia, pneumonitis/ILD, peripheral neuropathy, ocular disorders, infusion site extravasation, embryo-fetal toxicity, common adverse reactions or labs when available, and dose interruption/reduction/discontinuation guidance where supported. Keep it concise and non-patient-specific.",
     routeKeywords: ["safety", "skin", "sjs", "ten", "hyperglycemia", "neuropathy", "pneumonitis", "ocular"],
     completionSignals: ["safety concerns or comfort drivers are stated"],
     adaptiveProbes: [

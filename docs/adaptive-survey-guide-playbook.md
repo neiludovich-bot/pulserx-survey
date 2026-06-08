@@ -779,6 +779,12 @@ because an efficacy page is cited or happens to contain a visual. If no
 topic-relevant safety visual exists, leave the panel closed or let the user
 open the citation manually.
 
+For PADCEV neuropathy questions specifically, check for the HCP
+dose-modifications page and Peripheral Neuropathy Informational Resource before
+stating that the source lacks intervention detail. The source may not provide a
+full clinical management algorithm, but it can still provide grade-based dose
+interruption, reduction, discontinuation, monitoring, and counseling language.
+
 ## Why This Style
 
 This style preserves the strongest parts of CustomGPT, especially source
