@@ -1307,6 +1307,10 @@ describe("MVP CustomGPT survey service", () => {
       "Do not repeat source context already given in recent interviewer turns",
     );
     expect(repeatedAePrompt).toContain(
+      "do not produce a full label-style safety inventory",
+    );
+    expect(repeatedAePrompt).toContain("2-4 focused bullets");
+    expect(repeatedAePrompt).toContain(
       "Recent interviewer source context already covered",
     );
     expect(repeatedAePrompt).toContain(

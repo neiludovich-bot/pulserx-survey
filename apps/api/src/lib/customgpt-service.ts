@@ -929,13 +929,13 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     input.conversationId ?? (await createConversation(config.projectId));
   const selectedSourceContext = clipText(
     input.selectedQuestionSourceContext,
-    1500,
+    1000,
   );
   const currentQuestion = clipText(input.currentQuestion, 500);
   const selectedNextQuestion = clipText(input.selectedNextQuestion, 700);
-  const surveyContext = clipText(input.surveyContext, 1400);
-  const participantMessage = clipText(input.participantMessage, 1800);
-  const recentInterviewerContext = clipText(input.recentInterviewerContext, 1200);
+  const surveyContext = clipText(input.surveyContext, 1600);
+  const participantMessage = clipText(input.participantMessage, 800);
+  const recentInterviewerContext = clipText(input.recentInterviewerContext, 600);
   const askedQuestions = input.askedQuestions
     .slice(-6)
     .map((question) => clipText(question, 180))
@@ -948,6 +948,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     "Place inline citation markers like [1] immediately after the specific source-supported claim or sentence. Do not dump all citation markers only at the end of the answer.",
     "If the participant asked a source/evidence/safety/detail question, answer it, then return to the selected survey question in the same message.",
     "Do not repeat source context already given in recent interviewer turns. If the participant returns to the same evidence, adverse-event, safety, dosing, or resource topic, acknowledge that it was already covered at a high level and answer only the new angle or delta. Do not restate the same adverse-event list, warning list, study summary, or resource inventory unless the participant explicitly asks you to repeat it.",
+    "For safety or adverse-event turns, do not produce a full label-style safety inventory. Default to 2-4 focused bullets or one short paragraph about the specific adverse event, monitoring/management issue, resource, or operational concern raised. Group broad risks into categories instead of listing every common adverse reaction, serious adverse reaction, lab abnormality, and dose-modification cause.",
     "Respect the active disease lane in the survey controller context. For broad follow-ups such as 'what's new,' 'what else is new,' or 'what information is new,' scope the source answer to the active disease lane unless the participant explicitly names another disease area or the source-context requirement asks for cross-disease breadth. Do not cite off-lane disease pages for broad questions.",
     "If the participant answered adequately, acknowledge briefly and continue.",
     "Do not answer evidence requests with vague framing such as only saying a study is an anchor, flagship story, or key evidence. Give the actual useful study details.",
@@ -957,7 +958,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     "If the participant asks what the data show, prioritize concrete study results over website-section summaries.",
     "Avoid repetitive acknowledgements. Do not start every turn with generic thanks.",
     selectedSourceContext
-      ? "A source-context requirement applies to this turn. Explain the relevant source detail first, cite it, then ask the selected question. Do not ask the question naked."
+      ? "A source-context requirement applies to this turn. Explain only the relevant source detail first, cite it, then ask the selected question. Do not ask the question naked, and do not turn a broad requirement into an exhaustive source recap."
       : "No mandatory source-context requirement was selected for this turn.",
     selectedSourceContext
       ? `Source-context requirement: ${selectedSourceContext}`
