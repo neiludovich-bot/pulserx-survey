@@ -262,6 +262,59 @@ ul {
   color: #852424;
 }
 
+.mvp-intent-picker {
+  padding: 1rem;
+  border-bottom: 1px solid rgba(24, 32, 29, 0.08);
+}
+
+.mvp-intent-eyebrow {
+  margin: 0 0 0.7rem;
+  color: #5c6a63;
+  font-size: 0.76rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.mvp-intent-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.mvp-intent-card {
+  min-height: 6.1rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 0.35rem;
+  padding: 0.85rem;
+  border: 1px solid rgba(24, 32, 29, 0.12);
+  border-radius: 8px;
+  background: #ffffff;
+  color: #18201d;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mvp-intent-card:hover {
+  border-color: rgba(23, 79, 72, 0.32);
+  background: #f3f8f6;
+}
+
+.mvp-intent-card span {
+  color: #113f39;
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.mvp-intent-card small {
+  color: #5c6a63;
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .mvp-thread {
   min-height: 0;
   display: flex;
@@ -831,6 +884,10 @@ ul {
     flex-direction: column;
     align-items: flex-end;
     gap: 0.35rem;
+  }
+
+  .mvp-intent-grid {
+    grid-template-columns: 1fr;
   }
 
   .mvp-message {
