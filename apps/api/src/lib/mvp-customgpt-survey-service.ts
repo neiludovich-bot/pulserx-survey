@@ -956,6 +956,14 @@ function contentLooksLikeSurveyStop(content: string) {
   );
 }
 
+function contentLooksLikePadcevSafetyQuestion(content: string) {
+  const normalized = normalizeText(content);
+
+  return /\b(safety|tolerability|adverse|side effect|side effects|toxicity|neuropathy|peripheral neuropathy|rash|skin|hyperglycemia|pneumonitis|ild|ocular|dose interruption|dose reduction|dose modification|manage|management|intervene|intervention|monitor|monitoring)\b/.test(
+    normalized,
+  );
+}
+
 function areaTerms(area: DiseaseArea) {
   return {
     cll: ["cll", "sll", "chronic lymphocytic", "small lymphocytic", "sequoia", "alpine"],
@@ -1332,6 +1340,14 @@ function sourceContextForReactiveQuestion(
   }
 
   if (session.surveySlug === "padcev") {
+    const safetyScoped =
+      contentLooksLikePadcevSafetyQuestion(participantContent) ||
+      selectedQuestion?.id === "safety";
+
+    if (safetyScoped) {
+      return "The participant asked a PADCEV safety-management question. Prioritize approved PADCEV HCP Important Safety Information, Prescribing Information, and dosing/administration or dose-modification source material. For neuropathy, rash/skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, include only source-supported monitoring, dose interruption, dose reduction, discontinuation, counseling, or supportive-care guidance. If the source does not provide a detailed stepwise intervention algorithm, say that plainly while still summarizing the source-supported management steps. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
+    }
+
     return "The participant asked a source/detail question during the PADCEV urothelial cancer survey. Answer using only approved PADCEV HCP source material, including indication/positioning, EV-302/KEYNOTE-A39, EV-301/EV-201, safety, dosing/administration, patient fit, and access/support only where relevant to the participant's question. Then return to the selected survey question. Do not provide patient-specific treatment advice.";
   }
 

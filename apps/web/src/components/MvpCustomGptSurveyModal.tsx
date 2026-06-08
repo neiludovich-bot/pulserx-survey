@@ -126,6 +126,101 @@ function getReferenceLabel(
   return reference.title ?? reference.description ?? `Reference ${index}`;
 }
 
+function normalizeSourceText(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function sourceTextIncludesAny(value: string, terms: string[]) {
+  const normalized = ` ${normalizeSourceText(value)} `;
+
+  return terms.some((term) =>
+    normalized.includes(` ${normalizeSourceText(term)} `),
+  );
+}
+
+function referenceSearchText(
+  reference: MvpCustomGptSurveyMessage["references"][number],
+  index: number,
+) {
+  return [
+    getReferenceLabel(reference, index),
+    reference.description,
+    reference.url,
+    reference.citationId,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+}
+
+function shouldAutoPreviewReference(input: SourcePanelReference, messageText: string) {
+  const topicText = messageText;
+  const referenceText = referenceSearchText(input.reference, input.index);
+  const safetyTopic =
+    sourceTextIncludesAny(topicText, [
+      "safety",
+      "tolerability",
+      "adverse",
+      "side effect",
+      "side effects",
+      "neuropathy",
+      "peripheral neuropathy",
+      "rash",
+      "skin",
+      "hyperglycemia",
+      "pneumonitis",
+      "ild",
+      "ocular",
+      "dose interruption",
+      "dose reduction",
+      "dose modification",
+    ]) &&
+    !sourceTextIncludesAny(topicText, [
+      "pfs",
+      "progression free",
+      "overall survival",
+      "os",
+      "efficacy graph",
+      "survival graph",
+    ]);
+
+  if (!safetyTopic) {
+    return true;
+  }
+
+  const safetyReference = sourceTextIncludesAny(referenceText, [
+    "safety",
+    "important safety",
+    "isi",
+    "prescribing information",
+    "dosing",
+    "administration",
+    "dose modification",
+    "adverse",
+    "neuropathy",
+    "rash",
+    "skin",
+    "hyperglycemia",
+    "pneumonitis",
+    "ocular",
+  ]);
+  const efficacyReference = sourceTextIncludesAny(referenceText, [
+    "efficacy",
+    "pfs",
+    "progression free",
+    "overall survival",
+    "survival",
+    "orr",
+    "response",
+    "monotherapy efficacy",
+    "ev-302",
+    "ev 302",
+    "ev-301",
+    "ev 301",
+  ]);
+
+  return safetyReference && !efficacyReference;
+}
+
 function shouldEmbedSourceUrl(url: string) {
   try {
     const parsed = new URL(url);
@@ -866,17 +961,27 @@ export function MvpCustomGptSurveyModal({
       return;
     }
 
+    const latestMessageId = latestInterviewerMessage.id;
+    const latestMessageContent = latestInterviewerMessage.content;
     const sourceReferences = latestInterviewerMessage.references
       .map((reference, index) => ({
-        messageId: latestInterviewerMessage.id,
+        messageId: latestMessageId,
         index: index + 1,
         reference,
       }))
       .filter((source): source is SourcePanelReference =>
         Boolean(source.reference.url),
+      )
+      .filter((source) =>
+        shouldAutoPreviewReference(source, latestMessageContent),
       );
 
     if (sourceReferences.length === 0) {
+      setSourcePanel((currentPanel) =>
+        currentPanel?.messageId === latestMessageId
+          ? currentPanel
+          : null,
+      );
       return;
     }
 
@@ -895,6 +1000,11 @@ export function MvpCustomGptSurveyModal({
           return;
         }
       }
+      setSourcePanel((currentPanel) =>
+        currentPanel?.messageId === latestMessageId
+          ? currentPanel
+          : null,
+      );
     }
 
     void openFirstVisualReference();
