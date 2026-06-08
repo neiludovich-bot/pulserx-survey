@@ -323,7 +323,11 @@ function SourcePreviewGallery({
   return (
     <div className="mvp-source-preview-gallery">
       <p className="mvp-kicker">
-        {preview.images.length > 0 ? "Source figures" : "Source resources"}
+        {documents.length > 0 && preview.images.length > 0
+          ? "Source assets"
+          : preview.images.length > 0
+            ? "Source figures"
+            : "Source resources"}
       </p>
       <h3>{label}</h3>
       {documents.length > 0 ? (

@@ -65,11 +65,21 @@ function assertPreviewUrlAllowed(url: URL) {
 
 function decodeHtmlEntities(value: string) {
   return value
+    .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/g, "&")
     .replace(/&quot;/g, "\"")
     .replace(/&#39;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#x2f;/gi, "/")
+    .replace(/&#(\d+);/g, (_match, code: string) =>
+      String.fromCharCode(Number(code)),
+    )
+    .replace(/&#x([0-9a-f]+);/gi, (_match, code: string) =>
+      String.fromCharCode(Number.parseInt(code, 16)),
+    )
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
+    .replace(/\s+/g, " ")
     .trim();
 }
 
@@ -320,12 +330,23 @@ function uniqueTopImages(
 }
 
 function documentLooksUseful(candidate: DocumentCandidate) {
+  const directHaystack = `${candidate.url} ${candidate.title}`.toLowerCase();
   const haystack =
-    `${candidate.url} ${candidate.title} ${candidate.description ?? ""} ${candidate.context}`.toLowerCase();
+    `${directHaystack} ${candidate.description ?? ""} ${candidate.context}`.toLowerCase();
   const clinicalDocumentPattern =
     /\b(?:guide|checklist|monitoring|adverse reaction|adverse reactions|patient management|dosing and administration|dosing administration|dosing guide|administration guide|dose modification|dose modifications|peripheral neuropathy|informational resource|prescribing information|full prescribing information|important safety information|isi|brochure|support solutions|patient education|patient materials)\b/;
   const lowValuePattern =
-    /\b(?:contact|representative|rep|cookie|privacy|terms|sitemap|site map|accessibility|unsubscribe|footer|header|logo|video library|social)\b/;
+    /\b(?:overview|contact|representative|rep|cookie|privacy|terms|sitemap|site map|accessibility|unsubscribe|footer|header|logo|video library|social)\b/;
+  const directClinicalSignal = clinicalDocumentPattern.test(directHaystack);
+  const directLowValueSignal = lowValuePattern.test(directHaystack);
+
+  if (!candidate.isPdf && !directClinicalSignal) {
+    return false;
+  }
+
+  if (!candidate.isPdf && directLowValueSignal) {
+    return false;
+  }
 
   if (lowValuePattern.test(haystack) && !clinicalDocumentPattern.test(haystack)) {
     return false;
@@ -408,7 +429,7 @@ function extractDocumentCandidates(html: string, sourceUrl: string) {
     }
 
     const label =
-      stripHtml(tag)
+      decodeHtmlEntities(stripHtml(tag))
         .replace(/\b(?:download|pdf|opens in new tab)\b/gi, " ")
         .replace(/\s+/g, " ")
         .trim() || getAttribute(tag, "aria-label") || getAttribute(tag, "title");
