@@ -1220,4 +1220,97 @@ describe("MVP CustomGPT survey service", () => {
     expect(lastPrompt).toContain("prioritize concrete study results");
     expect(lastPrompt).toContain("SEQUOIA and ALPINE highlights");
   });
+
+  it("passes recent source context so repeated PADCEV AE follow-ups do not restate the same safety dump", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+
+    const prompts: string[] = [];
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (href.endsWith("/projects/97350/conversations") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: `padcev-session-${fetchMock.mock.calls.length}`,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        const prompt = body.prompt ?? "";
+        prompts.push(prompt);
+
+        const answer =
+          prompts.length === 1
+            ? "Peripheral neuropathy and rash were already summarized with monitoring and dose modification guidance. Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?"
+            : "Since we already covered the broad adverse-event profile, the added point is to focus on the respondent's specific rash workflow rather than restating the full AE list. For which locally advanced or metastatic urothelial cancer patient types, if any, would the PADCEV evidence make treatment more attractive, and where would you be cautious?";
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response: answer,
+              citations: [
+                {
+                  id: "padcev-safety",
+                  title: "PADCEV Monotherapy Safety",
+                  url: "https://padcevhcp.com/monotherapy-safety/",
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/citations/padcev-safety") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: "padcev-safety",
+              title: "PADCEV Monotherapy Safety",
+              url: "https://padcevhcp.com/monotherapy-safety/",
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 600,
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Can you say more about adverse events, specifically rash?",
+    });
+
+    const repeatedAePrompt = prompts.at(-1) ?? "";
+    expect(repeatedAePrompt).toContain(
+      "Do not repeat source context already given in recent interviewer turns",
+    );
+    expect(repeatedAePrompt).toContain(
+      "Recent interviewer source context already covered",
+    );
+    expect(repeatedAePrompt).toContain(
+      "Peripheral neuropathy and rash were already summarized",
+    );
+  });
 });

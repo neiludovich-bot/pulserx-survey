@@ -350,6 +350,32 @@ function latestInterviewerMessage(session: MvpSurveySession) {
     .find((message) => message.role === "interviewer");
 }
 
+function compactHistoryText(value: string, maxLength = 320) {
+  const compacted = cleanTextForSpeech(value)
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return compacted.length > maxLength
+    ? `${compacted.slice(0, maxLength - 1).trim()}...`
+    : compacted;
+}
+
+function recentInterviewerSourceContext(session: MvpSurveySession) {
+  const previousInterviewerMessages = session.messages
+    .filter((message) => message.role === "interviewer")
+    .slice(-4)
+    .map((message) => compactHistoryText(message.content, 260))
+    .filter(Boolean);
+
+  if (previousInterviewerMessages.length === 0) {
+    return null;
+  }
+
+  return previousInterviewerMessages
+    .map((message, index) => `${index + 1}. ${message}`)
+    .join(" ");
+}
+
 function configuredProjectId(
   definition: MvpSurveyDefinition,
   inputProjectId?: string,
@@ -1841,6 +1867,7 @@ export async function submitMvpCustomGptSurveyTurn(
         currentQuestion: questionText(currentQuestion(session)),
         selectedNextQuestion: selectedQuestionText,
         selectedQuestionSourceContext: sourceContextRequirement,
+        recentInterviewerContext: recentInterviewerSourceContext(session),
         remainingSeconds: remaining,
         askedQuestions: askedQuestions(session),
       });
