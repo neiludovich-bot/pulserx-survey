@@ -37,6 +37,7 @@ type MvpSurveyDefinition = {
   defaultStudyName: string;
   sourceBrand: string;
   guide: MvpGuideQuestion[];
+  projectIdEnvName: string;
   defaultProjectId: () => string | null;
 };
 
@@ -46,6 +47,7 @@ type MvpSurveySession = {
   sourceBrand: string;
   studyName: string;
   projectId: string | null;
+  projectIdEnvName: string;
   targetDurationSeconds: number;
   startedAt: Date;
   guide: MvpGuideQuestion[];
@@ -67,6 +69,7 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     defaultStudyName: "BRUKINSA HCP MVP",
     sourceBrand: "BRUKINSA",
     guide: BRUKINSA_HCP_MVP_GUIDE,
+    projectIdEnvName: "CUSTOMGPT_PROJECT_ID",
     defaultProjectId: () => env.CUSTOMGPT_PROJECT_ID ?? BRUKINSA_DEFAULT_PROJECT_ID,
   },
   padcev: {
@@ -74,6 +77,7 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     defaultStudyName: "PADCEV HCP MVP",
     sourceBrand: "PADCEV",
     guide: PADCEV_HCP_MVP_GUIDE,
+    projectIdEnvName: "CUSTOMGPT_PADCEV_PROJECT_ID",
     defaultProjectId: () => env.CUSTOMGPT_PADCEV_PROJECT_ID ?? null,
   },
 };
@@ -179,13 +183,16 @@ function configuredProjectId(
   return inputProjectId ?? definition.defaultProjectId();
 }
 
-function customGptMissingReason(projectId: string | null) {
+function customGptMissingReason(
+  projectId: string | null,
+  projectIdEnvName = "CUSTOMGPT_PROJECT_ID",
+) {
   if (!env.CUSTOMGPT_API_KEY) {
     return "CUSTOMGPT_API_KEY is not configured.";
   }
 
   if (!projectId) {
-    return "CUSTOMGPT_PROJECT_ID is not configured.";
+    return `${projectIdEnvName} is not configured.`;
   }
 
   return null;
@@ -1443,13 +1450,17 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     : definition.guide;
   const firstQuestion = guide[0] ?? definition.guide[0];
   const projectId = configuredProjectId(definition, input.projectId);
-  const missingReason = customGptMissingReason(projectId);
+  const missingReason = customGptMissingReason(
+    projectId,
+    definition.projectIdEnvName,
+  );
   const session: MvpSurveySession = {
     sessionId: randomUUID(),
     surveySlug: definition.slug,
     sourceBrand: definition.sourceBrand,
     studyName: input.studyName ?? definition.defaultStudyName,
     projectId,
+    projectIdEnvName: definition.projectIdEnvName,
     targetDurationSeconds: input.targetDurationSeconds ?? 600,
     startedAt: new Date(),
     guide,
@@ -1567,7 +1578,10 @@ export async function submitMvpCustomGptSurveyTurn(
   );
   const selectedQuestionText = questionText(selectedQuestion);
   let actualAskedQuestion = selectedQuestion;
-  const missingReason = customGptMissingReason(session.projectId);
+  const missingReason = customGptMissingReason(
+    session.projectId,
+    session.projectIdEnvName,
+  );
   const remaining = remainingSeconds(session);
   const needsCustomGpt =
     Boolean(sourceContextRequirement) ||
