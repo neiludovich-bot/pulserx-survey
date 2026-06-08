@@ -38,14 +38,25 @@ type MvpSurveyDefinition = {
   defaultStudyName: string;
   sourceBrand: string;
   guide: MvpGuideQuestion[];
+  intents?: MvpSurveyIntent[];
   projectIdEnvName: string;
   defaultProjectId: () => string | null;
+};
+
+type MvpSurveyIntent = {
+  slug: string;
+  label: string;
+  primaryIntent: string;
+  requiredCoverage: string[];
+  steeringRule: string;
+  questionOrder: string[];
 };
 
 type MvpSurveySession = {
   sessionId: string;
   surveySlug: MvpSurveySlug;
   sourceBrand: string;
+  surveyIntent: MvpSurveyIntent | null;
   studyName: string;
   projectId: string | null;
   projectIdEnvName: string;
@@ -64,6 +75,135 @@ type MvpSurveySession = {
 
 const sessions = new Map<string, MvpSurveySession>();
 
+const PADCEV_SURVEY_INTENTS: MvpSurveyIntent[] = [
+  {
+    slug: "general-padcev-reaction",
+    label: "General PADCEV Reaction",
+    primaryIntent:
+      "Understand the respondent's overall reaction to PADCEV source information across evidence, safety, patient fit, and implementation.",
+    requiredCoverage: [
+      "baseline familiarity",
+      "current indication and positioning",
+      "EV-302/KEYNOTE-A39 first-line evidence",
+      "patient fit",
+      "safety/tolerability",
+      "overall perception",
+    ],
+    steeringRule:
+      "Keep the discussion balanced across source-supported efficacy, safety, patient fit, dosing/admin, and implementation. Do not dwell on intake demographics.",
+    questionOrder: [
+      "intro_consent",
+      "familiarity",
+      "indication_positioning",
+      "ev302",
+      "patient_fit",
+      "safety",
+      "dosing_admin",
+      "overall",
+      "close",
+    ],
+  },
+  {
+    slug: "ev302-first-line-evidence",
+    label: "EV-302 / First-Line Evidence",
+    primaryIntent:
+      "Guide the respondent through the PADCEV plus pembrolizumab first-line evidence and identify what the EV-302/KEYNOTE-A39 data changes or fails to change.",
+    requiredCoverage: [
+      "EV-302/KEYNOTE-A39 design",
+      "key efficacy outcomes",
+      "patient types where evidence is compelling",
+      "safety caveats tied to first-line use",
+      "remaining evidence questions",
+    ],
+    steeringRule:
+      "Prioritize concrete EV-302/KEYNOTE-A39 study details and first-line implications. Answer other source questions briefly, then return to first-line evidence.",
+    questionOrder: [
+      "intro_consent",
+      "ev302",
+      "patient_fit",
+      "safety",
+      "overall",
+      "close",
+    ],
+  },
+  {
+    slug: "side-effect-management",
+    label: "Side Effect Management",
+    primaryIntent:
+      "Understand how practitioners think about monitoring, counseling, mitigating, and operationalizing PADCEV-associated adverse events.",
+    requiredCoverage: [
+      "baseline safety concern",
+      "skin reaction management",
+      "peripheral neuropathy",
+      "hyperglycemia",
+      "pneumonitis/ILD and ocular issues when relevant",
+      "dose modification confidence",
+      "patient counseling and monitoring barriers",
+    ],
+    steeringRule:
+      "Prioritize safety-management confidence, monitoring workflow, dose modification comfort, and practical barriers. Keep efficacy context concise unless needed to frame risk-benefit.",
+    questionOrder: [
+      "intro_consent",
+      "safety",
+      "dosing_admin",
+      "patient_fit",
+      "support_barriers",
+      "overall",
+      "close",
+    ],
+  },
+  {
+    slug: "patient-selection-barriers",
+    label: "Patient Selection & Barriers",
+    primaryIntent:
+      "Identify where PADCEV feels appropriate, where clinicians are cautious, and which practical barriers prevent adoption.",
+    requiredCoverage: [
+      "appropriate patient populations",
+      "caution or avoidance segments",
+      "comorbidity and toxicity-risk concerns",
+      "implementation barriers",
+      "access/support needs",
+      "what would increase confidence",
+    ],
+    steeringRule:
+      "Prioritize patient-fit, caution segments, and barriers. Use source evidence to probe why the respondent would or would not use PADCEV in specific scenarios.",
+    questionOrder: [
+      "intro_consent",
+      "patient_fit",
+      "indication_positioning",
+      "ev302",
+      "safety",
+      "support_barriers",
+      "overall",
+      "close",
+    ],
+  },
+  {
+    slug: "familiar-whats-new",
+    label: "Already Familiar: What's New",
+    primaryIntent:
+      "Orient familiar respondents to newer or emphasized PADCEV information and determine what, if anything, would change behavior.",
+    requiredCoverage: [
+      "current indication or positioning updates",
+      "EV-302/KEYNOTE-A39 first-line evidence",
+      "later-line monotherapy context",
+      "safety-management details that may be underappreciated",
+      "remaining information gaps",
+    ],
+    steeringRule:
+      "Assume basic familiarity. Avoid basic intake and introductory education; focus on what is new, underappreciated, or practice-changing.",
+    questionOrder: [
+      "intro_consent",
+      "indication_positioning",
+      "ev302",
+      "monotherapy_evidence",
+      "safety",
+      "overall",
+      "close",
+    ],
+  },
+];
+
 const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
   brukinsa: {
     slug: "brukinsa",
@@ -78,6 +218,7 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     defaultStudyName: "PADCEV HCP MVP",
     sourceBrand: "PADCEV",
     guide: PADCEV_HCP_MVP_GUIDE,
+    intents: PADCEV_SURVEY_INTENTS,
     projectIdEnvName: "CUSTOMGPT_PADCEV_PROJECT_ID",
     defaultProjectId: () => env.CUSTOMGPT_PADCEV_PROJECT_ID ?? PADCEV_DEFAULT_PROJECT_ID,
   },
@@ -91,6 +232,38 @@ function surveyDefinitionForSlug(slug?: string): MvpSurveyDefinition {
   }
 
   return SURVEY_DEFINITIONS.brukinsa;
+}
+
+function surveyIntentForSlug(
+  definition: MvpSurveyDefinition,
+  slug?: string,
+) {
+  if (!definition.intents?.length) {
+    return null;
+  }
+
+  return (
+    definition.intents.find((intent) => intent.slug === slug) ??
+    definition.intents[0] ??
+    null
+  );
+}
+
+function guideForIntent(
+  definition: MvpSurveyDefinition,
+  intent: MvpSurveyIntent | null,
+) {
+  if (!intent) {
+    return definition.guide;
+  }
+
+  const guideById = new Map(
+    definition.guide.map((question) => [question.id, question]),
+  );
+
+  return intent.questionOrder
+    .map((questionId) => guideById.get(questionId))
+    .filter((question): question is MvpGuideQuestion => Boolean(question));
 }
 
 function workspaceRoot() {
@@ -1350,6 +1523,15 @@ function surveyContext(
     `Study: ${session.studyName}`,
     "Mode: CustomGPT-first adaptive medical market research MVP.",
     `Approved source brand: ${session.sourceBrand}.`,
+    session.surveyIntent
+      ? `Selected survey intention: ${session.surveyIntent.label}. ${session.surveyIntent.primaryIntent}`
+      : "Selected survey intention: default guide.",
+    session.surveyIntent
+      ? `Intention steering rule: ${session.surveyIntent.steeringRule}`
+      : null,
+    session.surveyIntent?.requiredCoverage.length
+      ? `Required intent coverage: ${session.surveyIntent.requiredCoverage.join(" | ")}`
+      : null,
     "Controller guardrails: answer reactive source questions once, return to the survey, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
     activeDiseaseLane
       ? `Active disease lane: ${activeDiseaseLane}.`
@@ -1446,9 +1628,13 @@ export function resetMvpCustomGptSurveySessions() {
 
 export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
   const definition = surveyDefinitionForSlug(input.surveySlug);
+  const surveyIntent = surveyIntentForSlug(
+    definition,
+    input.surveyIntentSlug,
+  );
   const guide = input.guide?.length
     ? guideFromQuestionStrings(input.guide)
-    : definition.guide;
+    : guideForIntent(definition, surveyIntent);
   const firstQuestion = guide[0] ?? definition.guide[0];
   const projectId = configuredProjectId(definition, input.projectId);
   const missingReason = customGptMissingReason(
@@ -1459,6 +1645,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     sessionId: randomUUID(),
     surveySlug: definition.slug,
     sourceBrand: definition.sourceBrand,
+    surveyIntent,
     studyName: input.studyName ?? definition.defaultStudyName,
     projectId,
     projectIdEnvName: definition.projectIdEnvName,
@@ -1490,6 +1677,9 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     eventType: "session_started",
     surveySlug: session.surveySlug,
     sourceBrand: session.sourceBrand,
+    surveyIntentSlug: session.surveyIntent?.slug ?? null,
+    surveyIntentLabel: session.surveyIntent?.label ?? null,
+    surveyIntentCoverage: session.surveyIntent?.requiredCoverage ?? [],
     projectId: session.projectId,
     targetDurationSeconds: session.targetDurationSeconds,
     currentQuestionId: session.currentQuestionId,
@@ -1525,6 +1715,7 @@ export async function submitMvpCustomGptSurveyTurn(
       eventType: "turn_rejected",
       participantMessage: input.content,
       currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
+      surveyIntentSlug: session.surveyIntent?.slug ?? null,
       activeDiseaseAreas: [...session.activeDiseaseAreas],
       primaryDiseaseArea: session.primaryDiseaseArea,
       rejectionReason: answerQuality.message,
@@ -1549,6 +1740,7 @@ export async function submitMvpCustomGptSurveyTurn(
       eventType: "turn_completed",
       participantMessage: input.content,
       currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
+      surveyIntentSlug: session.surveyIntent?.slug ?? null,
       selectedQuestionId: null,
       selectedQuestion: null,
       actualAskedQuestionId: null,
@@ -1694,6 +1886,7 @@ export async function submitMvpCustomGptSurveyTurn(
     eventType: "turn_completed",
     participantMessage: input.content,
     currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
+    surveyIntentSlug: session.surveyIntent?.slug ?? null,
     selectedQuestionId: selectedQuestion?.id ?? null,
     selectedQuestion: selectedQuestionText,
     actualAskedQuestionId: actualAskedQuestion?.id ?? null,

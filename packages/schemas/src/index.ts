@@ -1576,6 +1576,12 @@ export const mvpCustomGptSurveyStartRequestSchema = z.object({
     .toLowerCase()
     .regex(/^[a-z0-9-]+$/)
     .default("brukinsa"),
+  surveyIntentSlug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
   studyName: z.string().trim().min(1).max(160).default("BRUKINSA HCP MVP"),
   targetDurationSeconds: z.number().int().min(60).max(3600).default(600),
   guide: z.array(z.string().trim().min(1)).min(1).max(20).optional(),

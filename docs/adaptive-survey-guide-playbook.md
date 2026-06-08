@@ -734,6 +734,41 @@ and approved assets before live testing. Source-dependent questions deliberately
 ask CustomGPT to retrieve and summarize the current HCP material rather than
 hardcoding clinical claims into the app.
 
+For fast MVP testing, the public PADCEV route starts with an intent picker and
+skips early intake questions such as respondent role, practice setting, disease
+exposure, and patient volume. Those questions can be restored later for
+production research runs, but they are intentionally excluded from the current
+intent-specific PADCEV paths so test turns reach source-backed content quickly.
+
+Current PADCEV intent options:
+
+- **General PADCEV Reaction**: balanced coverage across positioning, EV-302,
+  patient fit, safety, dosing/admin, and overall perception.
+- **EV-302 / First-Line Evidence**: prioritizes EV-302/KEYNOTE-A39 design,
+  concrete outcomes, first-line implications, patient fit, and evidence gaps.
+- **Side Effect Management**: prioritizes adverse-event monitoring,
+  mitigation, dose modification confidence, counseling, and implementation
+  barriers.
+- **Patient Selection & Barriers**: prioritizes appropriate patient types,
+  caution segments, adoption barriers, access/support needs, and confidence
+  gaps.
+- **Already Familiar: What's New**: assumes basic familiarity and focuses on
+  current positioning, newer or underappreciated evidence, and what might
+  change behavior.
+
+Each intent should define:
+
+- public picker label
+- internal slug
+- primary objective
+- required coverage
+- steering rule
+- ordered question path
+
+The controller should include the selected intent in the CustomGPT context and
+audit log. The intent changes prioritization and steering, but factual answers
+must still come from the configured CustomGPT source project.
+
 ## Why This Style
 
 This style preserves the strongest parts of CustomGPT, especially source

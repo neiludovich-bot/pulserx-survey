@@ -727,11 +727,50 @@ type MvpCustomGptSurveyModalProps = {
   targetDurationSeconds?: number;
 };
 
+type SurveyIntentOption = {
+  slug: string;
+  label: string;
+  description: string;
+};
+
+const PADCEV_INTENT_OPTIONS: SurveyIntentOption[] = [
+  {
+    slug: "general-padcev-reaction",
+    label: "General PADCEV Reaction",
+    description: "Balanced pass across evidence, safety, fit, and implementation.",
+  },
+  {
+    slug: "ev302-first-line-evidence",
+    label: "EV-302 / First-Line Evidence",
+    description: "Focus on first-line PADCEV plus pembrolizumab evidence.",
+  },
+  {
+    slug: "side-effect-management",
+    label: "Side Effect Management",
+    description: "Focus on monitoring, counseling, and managing adverse events.",
+  },
+  {
+    slug: "patient-selection-barriers",
+    label: "Patient Selection & Barriers",
+    description: "Focus on patient fit, cautions, barriers, and confidence gaps.",
+  },
+  {
+    slug: "familiar-whats-new",
+    label: "Already Familiar: What's New",
+    description: "Skip the basics and focus on newer or underappreciated points.",
+  },
+];
+
 export function MvpCustomGptSurveyModal({
   surveySlug = "brukinsa",
   studyName = "BRUKINSA HCP MVP",
   targetDurationSeconds = 600,
 }: MvpCustomGptSurveyModalProps = {}) {
+  const intentOptions =
+    surveySlug === "padcev" ? PADCEV_INTENT_OPTIONS : [];
+  const [selectedIntentSlug, setSelectedIntentSlug] = useState<string | null>(
+    null,
+  );
   const [survey, setSurvey] = useState<MvpCustomGptSurveyResponse | null>(null);
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -767,6 +806,10 @@ export function MvpCustomGptSurveyModal({
     if (didStart.current) {
       return;
     }
+    if (intentOptions.length > 0 && !selectedIntentSlug) {
+      setIsStarting(false);
+      return;
+    }
     didStart.current = true;
 
     async function start() {
@@ -776,6 +819,7 @@ export function MvpCustomGptSurveyModal({
         setSurvey(
           await startMvpCustomGptSurvey({
             surveySlug,
+            surveyIntentSlug: selectedIntentSlug ?? undefined,
             studyName,
             targetDurationSeconds,
           }),
@@ -792,7 +836,7 @@ export function MvpCustomGptSurveyModal({
     }
 
     void start();
-  }, [studyName, surveySlug, targetDurationSeconds]);
+  }, [intentOptions.length, selectedIntentSlug, studyName, surveySlug, targetDurationSeconds]);
 
   useEffect(() => {
     setVoiceSupported(
@@ -1089,6 +1133,8 @@ export function MvpCustomGptSurveyModal({
         ...(optimisticMessage ? [optimisticMessage] : []),
       ]
     : [];
+  const isChoosingIntent =
+    intentOptions.length > 0 && !survey && !selectedIntentSlug;
 
   function handleOpenReference(
     input: SourcePanelReference,
@@ -1149,6 +1195,25 @@ export function MvpCustomGptSurveyModal({
           </div>
         </header>
 
+        {isChoosingIntent ? (
+          <div className="mvp-intent-picker">
+            <p className="mvp-intent-eyebrow">Choose interview focus</p>
+            <div className="mvp-intent-grid">
+              {intentOptions.map((intent) => (
+                <button
+                  className="mvp-intent-card"
+                  key={intent.slug}
+                  onClick={() => setSelectedIntentSlug(intent.slug)}
+                  type="button"
+                >
+                  <span>{intent.label}</span>
+                  <small>{intent.description}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
         {survey?.status === "needs_setup" ? (
           <div className="mvp-setup-note">
             {survey.reason} Add the CustomGPT API key locally, then reload this
@@ -1159,7 +1224,7 @@ export function MvpCustomGptSurveyModal({
         {error ? <div className="mvp-error">{error}</div> : null}
 
         <div className="mvp-thread" ref={threadRef}>
-          {isStarting ? (
+          {isChoosingIntent ? null : isStarting ? (
             <div className="mvp-loading">Starting survey...</div>
           ) : (
             displayedMessages.map((message) => (
@@ -1176,17 +1241,22 @@ export function MvpCustomGptSurveyModal({
         <form className="mvp-composer" onSubmit={handleSubmit}>
           <textarea
             aria-label="Survey response"
-            disabled={textDisabled}
+            disabled={textDisabled || isChoosingIntent}
             onChange={(event) => setDraft(event.target.value)}
             placeholder={
-              survey?.status === "completed"
+              isChoosingIntent
+                ? "Choose a focus above to begin"
+                : survey?.status === "completed"
                 ? "Survey complete"
                 : "Answer the question, or ask about a study/source..."
             }
             rows={2}
             value={draft}
           />
-          <button disabled={textDisabled || !draft.trim()} type="submit">
+          <button
+            disabled={textDisabled || isChoosingIntent || !draft.trim()}
+            type="submit"
+          >
             {isSending ? "Sending" : "Send"}
           </button>
           <button
