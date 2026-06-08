@@ -22,16 +22,28 @@ import {
   type MvpGuideQuestion,
   guideFromQuestionStrings,
 } from "./mvp-brukinsa-guide";
+import { PADCEV_HCP_MVP_GUIDE } from "./mvp-padcev-guide";
 import { transcriptLooksNonEnglishOrGarbled } from "./transcript-quality";
 import { decodeAudio, synthesizeSpeech, transcribeAudio } from "./voice-service";
 
-const DEFAULT_PROJECT_ID = "96737";
+const BRUKINSA_DEFAULT_PROJECT_ID = "96737";
 const MVP_AUDIT_DIR_NAME = "mvp-turn-audits";
 
 type DiseaseArea = "cll" | "wm" | "mcl" | "mzl" | "fl";
+type MvpSurveySlug = "brukinsa" | "padcev";
+
+type MvpSurveyDefinition = {
+  slug: MvpSurveySlug;
+  defaultStudyName: string;
+  sourceBrand: string;
+  guide: MvpGuideQuestion[];
+  defaultProjectId: () => string | null;
+};
 
 type MvpSurveySession = {
   sessionId: string;
+  surveySlug: MvpSurveySlug;
+  sourceBrand: string;
   studyName: string;
   projectId: string | null;
   targetDurationSeconds: number;
@@ -48,6 +60,33 @@ type MvpSurveySession = {
 };
 
 const sessions = new Map<string, MvpSurveySession>();
+
+const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
+  brukinsa: {
+    slug: "brukinsa",
+    defaultStudyName: "BRUKINSA HCP MVP",
+    sourceBrand: "BRUKINSA",
+    guide: BRUKINSA_HCP_MVP_GUIDE,
+    defaultProjectId: () => env.CUSTOMGPT_PROJECT_ID ?? BRUKINSA_DEFAULT_PROJECT_ID,
+  },
+  padcev: {
+    slug: "padcev",
+    defaultStudyName: "PADCEV HCP MVP",
+    sourceBrand: "PADCEV",
+    guide: PADCEV_HCP_MVP_GUIDE,
+    defaultProjectId: () => env.CUSTOMGPT_PADCEV_PROJECT_ID ?? null,
+  },
+};
+
+function surveyDefinitionForSlug(slug?: string): MvpSurveyDefinition {
+  const normalized = slug?.toLowerCase();
+
+  if (normalized === "padcev") {
+    return SURVEY_DEFINITIONS.padcev;
+  }
+
+  return SURVEY_DEFINITIONS.brukinsa;
+}
 
 function workspaceRoot() {
   const cwd = process.cwd();
@@ -110,7 +149,7 @@ function cleanTextForSpeech(content: string) {
       : "";
 
   if (
-    /\b(?:BRUKINSA|Citation|HCP|source|homepage|page)\b/i.test(
+    /\b(?:BRUKINSA|PADCEV|Citation|HCP|source|homepage|page)\b/i.test(
       textAfterLastQuestion,
     )
   ) {
@@ -133,8 +172,11 @@ function latestInterviewerMessage(session: MvpSurveySession) {
     .find((message) => message.role === "interviewer");
 }
 
-function configuredProjectId(inputProjectId?: string) {
-  return inputProjectId ?? env.CUSTOMGPT_PROJECT_ID ?? DEFAULT_PROJECT_ID;
+function configuredProjectId(
+  definition: MvpSurveyDefinition,
+  inputProjectId?: string,
+) {
+  return inputProjectId ?? definition.defaultProjectId();
 }
 
 function customGptMissingReason(projectId: string | null) {
@@ -408,7 +450,8 @@ function queuePriorityFollowUps(
     !answeredQuestion ||
     !["btki_decision_framework", "cll_orientation", "evidence_overview"].includes(
       answeredQuestion.id,
-    )
+    ) &&
+      !(session.surveySlug === "padcev" && answeredQuestion.id === "decision_framework")
   ) {
     return;
   }
@@ -483,6 +526,65 @@ function queuePriorityFollowUps(
     {
       questionIds: ["support_resources"],
       patterns: [/\baccess\b/, /\bsupport\b/, /\bresource\b/, /\bresources\b/],
+    },
+    {
+      questionIds: ["ev302"],
+      patterns: [
+        /\bev 302\b/,
+        /\bev302\b/,
+        /\bkeynote a39\b/,
+        /\bkeynote-a39\b/,
+        /\boverall survival\b/,
+        /\bos\b/,
+        /\bprogression free\b/,
+        /\bpfs\b/,
+        /\befficacy\b/,
+        /\bfirst line\b/,
+        /\bfrontline\b/,
+      ],
+    },
+    {
+      questionIds: ["patient_fit"],
+      patterns: [
+        /\bpatient fit\b/,
+        /\bpatient population\b/,
+        /\bpatient populations\b/,
+        /\bpatient type\b/,
+        /\bpatient types\b/,
+        /\bcisplatin\b/,
+        /\brenal\b/,
+        /\bdiabetes\b/,
+      ],
+    },
+    {
+      questionIds: ["monotherapy_evidence"],
+      patterns: [
+        /\bmonotherapy\b/,
+        /\bev 301\b/,
+        /\bev301\b/,
+        /\bev 201\b/,
+        /\bev201\b/,
+        /\blater line\b/,
+        /\bpost platinum\b/,
+      ],
+    },
+    {
+      questionIds: ["safety"],
+      patterns: [
+        /\bsafety\b/,
+        /\btolerability\b/,
+        /\bside effect\b/,
+        /\bside effects\b/,
+        /\btoxicity\b/,
+        /\bneuropathy\b/,
+        /\bskin\b/,
+        /\bhyperglycemia\b/,
+        /\bpneumonitis\b/,
+      ],
+    },
+    {
+      questionIds: ["dosing_admin"],
+      patterns: [/\bdosing\b/, /\bdose\b/, /\badministration\b/, /\binfusion\b/, /\bschedule\b/],
     },
   ];
 
@@ -620,6 +722,7 @@ function selectNextQuestion(
     "role",
     "practice_setting",
     "disease_involvement",
+    "uc_involvement",
     "primary_disease_focus",
     "patient_volume",
     "familiarity",
@@ -644,7 +747,7 @@ function contentLooksLikeReactiveQuestion(content: string) {
   const normalized = normalizeText(content);
   return (
     content.includes("?") ||
-    /\b(explain|what is|what are|tell me|source|reference|data|study|trial|sequoia|alpine|safety)\b/.test(
+    /\b(explain|what is|what are|tell me|source|reference|data|study|trial|sequoia|alpine|ev302|ev 302|keynote a39|keynote-a39|ev301|ev 301|ev201|ev 201|safety)\b/.test(
       normalized,
     ) ||
     contentLooksLikePatientPopulationQuestion(content)
@@ -655,10 +758,10 @@ function contentLooksLikePatientPopulationQuestion(content: string) {
   const normalized = normalizeText(content);
 
   return (
-    /\b(appropriate patient|patient population|patient populations|patient type|patient types|inclusion|exclusion|exclude|gene mutation|mutation|tp53|del17p|del 17p|comorbid|comorbidity|high risk|side effect|adverse)\b/.test(
+    /\b(appropriate patient|patient population|patient populations|patient type|patient types|inclusion|exclusion|exclude|gene mutation|mutation|tp53|del17p|del 17p|comorbid|comorbidity|high risk|side effect|adverse|neuropathy|diabetes|renal|cisplatin)\b/.test(
       normalized,
     ) &&
-    /\b(who|which|what|patient|population|appropriate|exclusion|inclusion|mutation|risk)\b/.test(
+    /\b(who|which|what|patient|population|appropriate|exclusion|inclusion|mutation|risk|caution|avoid)\b/.test(
       normalized,
     )
   );
@@ -1047,6 +1150,10 @@ function sourceContextForReactiveQuestion(
     return null;
   }
 
+  if (session.surveySlug === "padcev") {
+    return "The participant asked a source/detail question during the PADCEV urothelial cancer survey. Answer using only approved PADCEV HCP source material, including indication/positioning, EV-302/KEYNOTE-A39, EV-301/EV-201, safety, dosing/administration, patient fit, and access/support only where relevant to the participant's question. Then return to the selected survey question. Do not provide patient-specific treatment advice.";
+  }
+
   const explicitlyRequestedAreas = extractDiseaseAreas(participantContent);
   const scopedAreas = explicitlyRequestedAreas.length
     ? explicitlyRequestedAreas
@@ -1123,6 +1230,13 @@ function answerMentionsQuestionSpecificSignal(
     wm_aspen: ["aspen", "waldenstrom"],
     accelerated_approval_indolent: ["accelerated approval", "mcl", "mzl", "fl"],
     support_resources: ["support resources", "mybeone", "access"],
+    indication_positioning: ["indication", "first line", "combination", "monotherapy"],
+    ev302: ["ev 302", "ev302", "keynote a39", "overall survival", "progression free"],
+    patient_fit: ["patient population", "patient type", "patient fit", "cisplatin", "neuropathy"],
+    monotherapy_evidence: ["monotherapy", "ev 301", "ev301", "ev 201", "ev201"],
+    safety: ["safety", "neuropathy", "skin", "hyperglycemia", "pneumonitis"],
+    dosing_admin: ["dosing", "administration", "infusion", "schedule"],
+    support_barriers: ["barrier", "monitoring", "access", "support"],
   };
   const signals = signalsByQuestionId[question.id] ?? [];
 
@@ -1177,6 +1291,7 @@ function fallbackInterviewerTurn(input: {
   selectedQuestion: string | null;
   customGptReason: string;
   sourceContextRequirement: string | null;
+  sourceBrand: string;
 }) {
   if (!input.selectedQuestion) {
     return "Thanks, that gives us enough to close this MVP pass.";
@@ -1190,7 +1305,7 @@ function fallbackInterviewerTurn(input: {
     setupIssue
       ? `CustomGPT is not connected in this local environment yet (${input.customGptReason}).`
       : `CustomGPT could not complete this turn (${input.customGptReason}).`,
-    "In the live bridge, this turn would answer from the BRUKINSA HCP source material with references and then continue.",
+    `In the live bridge, this turn would answer from the ${input.sourceBrand} HCP source material with references and then continue.`,
     input.sourceContextRequirement
       ? `This turn requires source context first: ${input.sourceContextRequirement}`
       : null,
@@ -1226,6 +1341,7 @@ function surveyContext(
   return [
     `Study: ${session.studyName}`,
     "Mode: CustomGPT-first adaptive medical market research MVP.",
+    `Approved source brand: ${session.sourceBrand}.`,
     "Controller guardrails: answer reactive source questions once, return to the survey, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
     activeDiseaseLane
       ? `Active disease lane: ${activeDiseaseLane}.`
@@ -1321,15 +1437,18 @@ export function resetMvpCustomGptSurveySessions() {
 }
 
 export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
+  const definition = surveyDefinitionForSlug(input.surveySlug);
   const guide = input.guide?.length
     ? guideFromQuestionStrings(input.guide)
-    : BRUKINSA_HCP_MVP_GUIDE;
-  const firstQuestion = guide[0] ?? BRUKINSA_HCP_MVP_GUIDE[0];
-  const projectId = configuredProjectId(input.projectId);
+    : definition.guide;
+  const firstQuestion = guide[0] ?? definition.guide[0];
+  const projectId = configuredProjectId(definition, input.projectId);
   const missingReason = customGptMissingReason(projectId);
   const session: MvpSurveySession = {
     sessionId: randomUUID(),
-    studyName: input.studyName ?? "BRUKINSA HCP MVP",
+    surveySlug: definition.slug,
+    sourceBrand: definition.sourceBrand,
+    studyName: input.studyName ?? definition.defaultStudyName,
     projectId,
     targetDurationSeconds: input.targetDurationSeconds ?? 600,
     startedAt: new Date(),
@@ -1357,6 +1476,8 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
   sessions.set(session.sessionId, session);
   void appendMvpAuditEvent(session, {
     eventType: "session_started",
+    surveySlug: session.surveySlug,
+    sourceBrand: session.sourceBrand,
     projectId: session.projectId,
     targetDurationSeconds: session.targetDurationSeconds,
     currentQuestionId: session.currentQuestionId,
@@ -1476,6 +1597,7 @@ export async function submitMvpCustomGptSurveyTurn(
       selectedQuestion: selectedQuestionText,
       customGptReason: missingReason,
       sourceContextRequirement,
+      sourceBrand: session.sourceBrand,
     });
     customGptStatus = "skipped_setup";
     customGptReason = missingReason;
@@ -1504,6 +1626,7 @@ export async function submitMvpCustomGptSurveyTurn(
           selectedQuestion: selectedQuestionText,
           customGptReason,
           sourceContextRequirement,
+          sourceBrand: session.sourceBrand,
         });
         nextAction = "setup_required";
       } else {
@@ -1534,6 +1657,7 @@ export async function submitMvpCustomGptSurveyTurn(
         selectedQuestion: selectedQuestionText,
         customGptReason,
         sourceContextRequirement,
+        sourceBrand: session.sourceBrand,
       });
       nextAction = "setup_required";
     }

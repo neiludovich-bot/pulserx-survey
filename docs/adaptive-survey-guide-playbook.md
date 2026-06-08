@@ -679,6 +679,61 @@ ask this next, and why did those sources appear?**
    - excessive probing
    - timebox failure
 
+## Adding A New Brand Survey
+
+Use a survey slug instead of creating a separate app when the same interview
+shell, citation UI, source panel, voice behavior, and audit capture are
+appropriate.
+
+1. Create a dedicated CustomGPT project for the brand/source universe.
+2. Add a product-specific API environment variable such as
+   `CUSTOMGPT_PADCEV_PROJECT_ID`. Do not let a new product fall back to another
+   brand's CustomGPT project.
+3. Add a typed guide file under `apps/api/src/lib/` with canonical questions,
+   route keywords, completion signals, analyzable outputs, and
+   `sourceContextRequirement` text for every source-dependent question.
+4. Register the guide in the MVP survey definitions with:
+   - slug
+   - default study name
+   - source brand
+   - guide
+   - project-id resolver
+5. Add a public web route such as `/surveys/padcev/` that passes `surveySlug`
+   and `studyName` into the reusable MVP modal.
+6. Add the route to the Hostinger static-copy script so the deployed static
+   folder includes the page.
+7. Add brand-specific keyword hooks only where they support routing and
+   non-repetition. Keep generic interview control in the shared controller.
+8. Deploy the web branch and the API branch, then verify:
+   - public route loads
+   - `/health` works on the API host
+   - start returns the correct `studyName`
+   - missing CustomGPT configuration names the new project variable
+   - source turns cite the correct brand/project
+
+### PADCEV MVP Setup
+
+The PADCEV MVP uses `/surveys/padcev/` and the `padcev` survey slug. Its guide
+focuses on:
+
+- role and practice context
+- urothelial cancer/bladder cancer exposure
+- baseline familiarity
+- pre-PADCEV systemic therapy decision drivers
+- current indication/positioning
+- EV-302/KEYNOTE-A39 first-line evidence
+- patient fit and caution areas
+- later-line monotherapy evidence, including EV-301/EV-201 when supported
+- safety/tolerability
+- dosing and administration
+- implementation barriers
+- overall reaction and close
+
+The PADCEV CustomGPT project should be loaded with the official PADCEV HCP site
+and approved assets before live testing. Source-dependent questions deliberately
+ask CustomGPT to retrieve and summarize the current HCP material rather than
+hardcoding clinical claims into the app.
+
 ## Why This Style
 
 This style preserves the strongest parts of CustomGPT, especially source
