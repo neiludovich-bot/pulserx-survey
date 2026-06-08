@@ -279,6 +279,13 @@ describe("source preview service", () => {
                 <a href="/Content/hcp/pdf/dosing-and-administration-guide.pdf">
                   Dosing and Administration Guide
                 </a>
+                <a href="/monotherapy-safety/overview">Overview</a>
+                <a href="/monotherapy-safety/dose-modifications">
+                  Dose Modifications Due to Adverse Reactions
+                </a>
+                <a href="/Content/hcp/pdf/full-prescribing-information.pdf">
+                  full&nbsp;Prescribing&nbsp;Information
+                </a>
               </section>
             </body>
           </html>
@@ -300,10 +307,17 @@ describe("source preview service", () => {
     expect(preview.documents.map((document) => document.title)).toEqual([
       "Adverse Reactions Monitoring Checklist",
       "Dosing and Administration Guide",
+      "full Prescribing Information",
+      "Dose Modifications Due to Adverse Reactions",
     ]);
     expect(preview.documents.map((document) => document.url)).toEqual([
       "https://padcevhcp.com/Content/hcp/pdf/adverse-reactions-monitoring-checklist.pdf",
       "https://padcevhcp.com/Content/hcp/pdf/dosing-and-administration-guide.pdf",
+      "https://padcevhcp.com/Content/hcp/pdf/full-prescribing-information.pdf",
+      "https://padcevhcp.com/monotherapy-safety/dose-modifications",
     ]);
+    expect(preview.documents.map((document) => document.title)).not.toContain(
+      "Overview",
+    );
   });
 });
