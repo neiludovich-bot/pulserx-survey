@@ -788,6 +788,15 @@ over generic brand pages, hero artwork, product shots, or unrelated efficacy
 figures. For side-effect-management intents, the relevant guide/checklist should
 be pulled proactively before the respondent has to ask for it directly.
 
+Do not repeat the same source summary every time a respondent mentions a topic
+such as adverse events, guidelines, study data, dosing, or access. The
+interviewer should keep recent source context in the model input and instruct
+the model to answer only the new angle or delta. If the respondent returns to a
+previously covered topic, briefly acknowledge that the broad point was already
+covered, add the incremental detail requested, and move the interview forward.
+Avoid repeating full AE lists, warning lists, study summaries, or resource
+inventories unless the respondent explicitly asks to hear them again.
+
 For PADCEV neuropathy questions specifically, check for the HCP
 dose-modifications page and Peripheral Neuropathy Informational Resource before
 stating that the source lacks intervention detail. The source may not provide a

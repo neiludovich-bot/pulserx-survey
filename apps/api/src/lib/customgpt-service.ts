@@ -907,6 +907,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
   currentQuestion: string | null;
   selectedNextQuestion: string | null;
   selectedQuestionSourceContext: string | null;
+  recentInterviewerContext?: string | null;
   remainingSeconds: number;
   askedQuestions: string[];
 }) {
@@ -934,6 +935,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
   const selectedNextQuestion = clipText(input.selectedNextQuestion, 700);
   const surveyContext = clipText(input.surveyContext, 1400);
   const participantMessage = clipText(input.participantMessage, 1800);
+  const recentInterviewerContext = clipText(input.recentInterviewerContext, 1200);
   const askedQuestions = input.askedQuestions
     .slice(-6)
     .map((question) => clipText(question, 180))
@@ -945,6 +947,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     "Use only the approved source material named in the survey controller context for factual/site/study detail and cite source-supported claims.",
     "Place inline citation markers like [1] immediately after the specific source-supported claim or sentence. Do not dump all citation markers only at the end of the answer.",
     "If the participant asked a source/evidence/safety/detail question, answer it, then return to the selected survey question in the same message.",
+    "Do not repeat source context already given in recent interviewer turns. If the participant returns to the same evidence, adverse-event, safety, dosing, or resource topic, acknowledge that it was already covered at a high level and answer only the new angle or delta. Do not restate the same adverse-event list, warning list, study summary, or resource inventory unless the participant explicitly asks you to repeat it.",
     "Respect the active disease lane in the survey controller context. For broad follow-ups such as 'what's new,' 'what else is new,' or 'what information is new,' scope the source answer to the active disease lane unless the participant explicitly names another disease area or the source-context requirement asks for cross-disease breadth. Do not cite off-lane disease pages for broad questions.",
     "If the participant answered adequately, acknowledge briefly and continue.",
     "Do not answer evidence requests with vague framing such as only saying a study is an anchor, flagship story, or key evidence. Give the actual useful study details.",
@@ -973,6 +976,9 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     askedQuestions
       ? `Recently asked survey questions: ${askedQuestions}`
       : "Already asked survey questions: none.",
+    recentInterviewerContext
+      ? `Recent interviewer source context already covered; avoid repeating this content: ${recentInterviewerContext}`
+      : "Recent interviewer source context already covered: none.",
     `Seconds remaining: ${input.remainingSeconds}`,
     surveyContext ? `Survey controller context: ${surveyContext}` : null,
     participantMessage ? `Participant message: ${participantMessage}` : null,
