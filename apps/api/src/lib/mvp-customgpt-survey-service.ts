@@ -27,6 +27,7 @@ import { transcriptLooksNonEnglishOrGarbled } from "./transcript-quality";
 import { decodeAudio, synthesizeSpeech, transcribeAudio } from "./voice-service";
 
 const BRUKINSA_DEFAULT_PROJECT_ID = "96737";
+const PADCEV_DEFAULT_PROJECT_ID = "97350";
 const MVP_AUDIT_DIR_NAME = "mvp-turn-audits";
 
 type DiseaseArea = "cll" | "wm" | "mcl" | "mzl" | "fl";
@@ -78,7 +79,7 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     sourceBrand: "PADCEV",
     guide: PADCEV_HCP_MVP_GUIDE,
     projectIdEnvName: "CUSTOMGPT_PADCEV_PROJECT_ID",
-    defaultProjectId: () => env.CUSTOMGPT_PADCEV_PROJECT_ID ?? null,
+    defaultProjectId: () => env.CUSTOMGPT_PADCEV_PROJECT_ID ?? PADCEV_DEFAULT_PROJECT_ID,
   },
 };
 
