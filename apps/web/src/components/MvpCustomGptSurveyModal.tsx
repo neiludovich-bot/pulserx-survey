@@ -172,7 +172,31 @@ function referenceSearchText(
 function shouldAutoPreviewReference(input: SourcePanelReference, messageText: string) {
   const topicText = messageText;
   const referenceText = referenceSearchText(input.reference, input.index);
-  const safetyTopic =
+  const evidenceOrPositioningTopic = sourceTextIncludesAny(topicText, [
+    "efficacy",
+    "data",
+    "study",
+    "trial",
+    "evidence",
+    "pfs",
+    "progression free",
+    "overall survival",
+    "os",
+    "orr",
+    "response rate",
+    "first line",
+    "first-line",
+    "combination therapy",
+    "monotherapy",
+    "later line",
+    "later-line",
+    "current role",
+    "treatment framework",
+    "clinical story",
+    "patient types",
+    "treatment more attractive",
+  ]);
+  const safetySignal =
     sourceTextIncludesAny(topicText, [
       "safety",
       "tolerability",
@@ -196,17 +220,17 @@ function shouldAutoPreviewReference(input: SourcePanelReference, messageText: st
       "resources",
       "continuum",
       "how to handle",
-    ]) &&
-    !sourceTextIncludesAny(topicText, [
-      "pfs",
-      "progression free",
-      "overall survival",
-      "os",
-      "efficacy graph",
-      "survival graph",
+    ]);
+  const primarySafetyTopic =
+    safetySignal &&
+    !evidenceOrPositioningTopic &&
+    sourceTextMatches(topicText, [
+      /\b(?:which|what).{0,80}(?:safety|tolerability|side effect|adverse|monitoring|dose modification|guide|checklist|resource)\b/,
+      /\b(?:adverse event emerges|side effect management|safety management|manage side effects|handle side effects|monitoring checklist|dose modification guidance)\b/,
+      /\b(?:neuropathy|rash|hyperglycemia|pneumonitis|ocular).{0,80}(?:manage|monitor|intervene|dose|reduce|interrupt|discontinue|guide|checklist)\b/,
     ]);
 
-  if (!safetyTopic) {
+  if (!primarySafetyTopic) {
     return true;
   }
 
@@ -867,6 +891,11 @@ function SourcePanel({
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [expandedImage, setExpandedImage] =
     useState<ExpandedSourceImage | null>(null);
+  const previewPaneRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    previewPaneRef.current?.scrollTo({ top: 0 });
+  }, [preview?.sourceUrl, source.index, source.messageId, sourceUrl]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -940,7 +969,7 @@ function SourcePanel({
               title={label}
             />
           ) : (
-            <div className="mvp-source-preview-fallback">
+            <div className="mvp-source-preview-fallback" ref={previewPaneRef}>
               {isPreviewLoading ? (
                 <div className="mvp-source-preview-card">
                   <p className="mvp-kicker">Looking for figures</p>
