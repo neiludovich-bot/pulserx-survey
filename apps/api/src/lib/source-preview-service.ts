@@ -199,6 +199,10 @@ function imageLooksUseful(candidate: ImageCandidate) {
     /\b(?:tablet1|tablet|tablets|pill|pills|capsule|capsules|bottle|packshot|product shot|dosing options)\b/.test(
       directHaystack,
     );
+  const genericMarketingUrlSignal =
+    /(?:^|[\/_-])(?:hero|home|homepage|banner|brand|campaign|lifestyle|airplane|aircraft|plane|jet|flight|travel|runway|splash|background|bg|key-visual|kv)(?:[\/_.-]|$)/i.test(
+      candidate.url,
+    );
   const promotionalGraphicSignal =
     /\b(?:stays on|stays off|btk stays|up to 100|100%|potency|inhibition|selective|selectivity|off-target|off target|on-target|on target)\b/.test(
       directHaystack,
@@ -225,6 +229,10 @@ function imageLooksUseful(candidate: ImageCandidate) {
   }
 
   if (marketingOnlySignal && !directClinicalOrDocumentSignal) {
+    return false;
+  }
+
+  if (genericMarketingUrlSignal && !directClinicalOrDocumentSignal) {
     return false;
   }
 

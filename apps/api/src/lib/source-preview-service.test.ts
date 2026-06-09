@@ -255,6 +255,47 @@ describe("source preview service", () => {
     ]);
   });
 
+  it("does not let nearby clinical text rescue generic marketing art", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          `
+          <html>
+            <head>
+              <title>PADCEV Monotherapy Safety</title>
+            </head>
+            <body>
+              <section>
+                <h1>Peripheral neuropathy and dose modifications</h1>
+                <p>Monitor patients for new or worsening peripheral neuropathy, rash, and dose interruption needs.</p>
+                <img src="/-/media/padcev/homepage-banner-desktop.png" alt="" />
+              </section>
+              <section>
+                <h2>Adverse Reactions Monitoring Checklist</h2>
+                <img src="/Content/hcp/pdf/adverse-reactions-monitoring-checklist-cover.png" alt="Adverse Reactions Monitoring Checklist cover" />
+              </section>
+            </body>
+          </html>
+          `,
+          {
+            headers: { "content-type": "text/html; charset=utf-8" },
+            status: 200,
+          },
+        ),
+      ),
+    );
+
+    const preview = await previewSourceImages({
+      url: "https://padcevhcp.com/monotherapy-safety/",
+      title: "PADCEV Monotherapy Safety",
+    });
+
+    expect(preview.images.map((image) => image.url)).toEqual([
+      "https://padcevhcp.com/Content/hcp/pdf/adverse-reactions-monitoring-checklist-cover.png",
+    ]);
+  });
+
   it("surfaces PADCEV clinical resource PDFs when marketing imagery is present", async () => {
     vi.stubGlobal(
       "fetch",

@@ -339,9 +339,6 @@ function SourcePreviewGallery({
             : "Source resources"}
       </p>
       <h3>{label}</h3>
-      {documents.length > 0 ? (
-        <SourcePreviewDocuments documents={documents} />
-      ) : null}
       {preview.images.length > 0 ? (
         <div className="mvp-source-image-list">
           {preview.images.map((image, index) => {
@@ -376,6 +373,16 @@ function SourcePreviewGallery({
           })}
         </div>
       ) : null}
+      {documents.length > 0 ? (
+        <SourcePreviewDocuments
+          documents={documents}
+          heading={
+            preview.images.length > 0
+              ? "Related source resources"
+              : "Source resources"
+          }
+        />
+      ) : null}
       <p className="mvp-source-preview-note">
         These are pulled from the cited page assets. Use the source link below
         for the full page context and prescribing information.
@@ -386,11 +393,14 @@ function SourcePreviewGallery({
 
 function SourcePreviewDocuments({
   documents,
+  heading = "Source resources",
 }: {
   documents: SourcePreviewDocument[];
+  heading?: string;
 }) {
   return (
     <div className="mvp-source-document-list">
+      <p className="mvp-kicker">{heading}</p>
       {documents.map((document) => (
         <article className="mvp-source-document" key={document.url}>
           <div>
@@ -1113,6 +1123,8 @@ export function MvpCustomGptSurveyModal({
     autoSourceLookupMessageIdRef.current = latestInterviewerMessage.id;
 
     async function openFirstVisualReference() {
+      let resourceFallback: SourcePanelReference | null = null;
+
       for (const sourceReference of sourceReferences) {
         const visualReference =
           await resolveVisualSourcePanelReference(sourceReference);
@@ -1120,10 +1132,21 @@ export function MvpCustomGptSurveyModal({
           return;
         }
         if (visualReference) {
-          setSourcePanel(visualReference);
-          return;
+          if ((visualReference.preview?.images.length ?? 0) > 0) {
+            setSourcePanel(visualReference);
+            return;
+          }
+          resourceFallback ??= visualReference;
         }
       }
+
+      if (resourceFallback) {
+        if (!isCancelled) {
+          setSourcePanel(resourceFallback);
+        }
+        return;
+      }
+
       setSourcePanel((currentPanel) =>
         currentPanel?.messageId === latestMessageId
           ? currentPanel
