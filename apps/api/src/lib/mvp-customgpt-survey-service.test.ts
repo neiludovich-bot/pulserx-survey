@@ -38,7 +38,16 @@ describe("MVP CustomGPT survey service", () => {
 
     expect(next.nextAction).toBe("setup_required");
     expect(next.currentQuestion).toContain("SEQUOIA");
-    expect(next.messages.at(-1)?.content).toContain("guarded survey flow");
+    expect(next.messages.at(-1)?.content).toContain(
+      "CUSTOMGPT_API_KEY is not configured",
+    );
+    expect(next.messages.at(-1)?.content).toContain("Source context needed");
+    expect(next.messages.at(-1)?.content).toContain(
+      "How does the SEQUOIA evidence affect your view",
+    );
+    expect(next.messages.at(-1)?.content).not.toContain(
+      "guarded survey flow",
+    );
   });
 
   it("does not call CustomGPT for plain non-source survey navigation", async () => {

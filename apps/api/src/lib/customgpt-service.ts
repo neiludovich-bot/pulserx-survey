@@ -929,16 +929,16 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     input.conversationId ?? (await createConversation(config.projectId));
   const selectedSourceContext = clipText(
     input.selectedQuestionSourceContext,
-    1000,
+    650,
   );
-  const currentQuestion = clipText(input.currentQuestion, 500);
-  const selectedNextQuestion = clipText(input.selectedNextQuestion, 700);
-  const surveyContext = clipText(input.surveyContext, 1600);
-  const participantMessage = clipText(input.participantMessage, 800);
-  const recentInterviewerContext = clipText(input.recentInterviewerContext, 600);
+  const currentQuestion = clipText(input.currentQuestion, 280);
+  const selectedNextQuestion = clipText(input.selectedNextQuestion, 420);
+  const surveyContext = clipText(input.surveyContext, 900);
+  const participantMessage = clipText(input.participantMessage, 500);
+  const recentInterviewerContext = clipText(input.recentInterviewerContext, 520);
   const askedQuestions = input.askedQuestions
-    .slice(-6)
-    .map((question) => clipText(question, 180))
+    .slice(-4)
+    .map((question) => clipText(question, 120))
     .filter((question): question is string => Boolean(question))
     .join(" | ");
   const prompt = [
