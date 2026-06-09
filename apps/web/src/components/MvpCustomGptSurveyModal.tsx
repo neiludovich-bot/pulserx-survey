@@ -100,6 +100,15 @@ function isMissingMvpSessionError(error: unknown) {
   );
 }
 
+function participantTurnContents(
+  survey: MvpCustomGptSurveyResponse | null,
+) {
+  return (survey?.messages ?? [])
+    .filter((message) => message.role === "participant")
+    .map((message) => message.content.trim())
+    .filter(Boolean);
+}
+
 type SourcePanelReference = {
   messageId: string;
   index: number;
@@ -1196,14 +1205,72 @@ export function MvpCustomGptSurveyModal({
 
   const recoverExpiredSession = useCallback(
     async (preservedDraft?: string) => {
-      const restartedSurvey = await startFreshSurvey(
-        "The API restarted and the previous MVP session expired, so I started a fresh session with the same survey focus.",
-      );
-      if (restartedSurvey && preservedDraft) {
-        setDraft(preservedDraft);
+      const replayTurns = [
+        ...participantTurnContents(survey),
+        ...(preservedDraft?.trim() ? [preservedDraft.trim()] : []),
+      ];
+
+      if (replayTurns.length === 0) {
+        await startFreshSurvey(
+          "The API restarted and the previous MVP session expired, so I started a fresh session with the same survey focus.",
+        );
+        return;
+      }
+
+      try {
+        setIsStarting(true);
+        setError(null);
+        setRecoveryNotice(
+          "The API restarted, so I rebuilt the survey session from this browser's transcript.",
+        );
+        setOptimisticMessage(null);
+        setSourcePanel(null);
+        setClosedSourceMessageId(null);
+        autoSourceLookupMessageIdRef.current = null;
+        speechAudioRef.current?.pause();
+        speechAudioRef.current = null;
+        setIsSpeaking(false);
+
+        let rebuiltSurvey = await startMvpCustomGptSurvey({
+          surveySlug,
+          surveyIntentSlug: selectedIntentSlug ?? undefined,
+          studyName,
+          targetDurationSeconds,
+        });
+
+        for (const turnContent of replayTurns) {
+          rebuiltSurvey = await submitMvpCustomGptSurveyTurn(
+            rebuiltSurvey.sessionId,
+            turnContent,
+          );
+        }
+
+        setSurvey(rebuiltSurvey);
+        setDraft("");
+      } catch (recoveryError) {
+        const restartedSurvey = await startFreshSurvey(
+          "The API restarted and I could not rebuild the previous session, so I started a fresh session with the same survey focus.",
+        );
+        if (restartedSurvey && preservedDraft) {
+          setDraft(preservedDraft);
+        }
+        setError(
+          recoveryError instanceof Error
+            ? recoveryError.message
+            : "Unable to rebuild the expired survey session.",
+        );
+      } finally {
+        setIsStarting(false);
       }
     },
-    [startFreshSurvey],
+    [
+      selectedIntentSlug,
+      startFreshSurvey,
+      studyName,
+      survey,
+      surveySlug,
+      targetDurationSeconds,
+    ],
   );
 
   useEffect(() => {
