@@ -181,6 +181,75 @@ function getContextAround(html: string, start: number, end: number) {
   return stripHtml(html.slice(contextStart, contextEnd));
 }
 
+function cleanDocumentTitle(value: string | null | undefined) {
+  return decodeHtmlEntities(value ?? "")
+    .replace(/\b(?:download|pdf|opens in new tab)\b/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function documentTitleLooksGeneric(value: string | null | undefined) {
+  const normalized = cleanDocumentTitle(value).toLowerCase();
+
+  return (
+    !normalized ||
+    /^(?:preview|open|view|learn more|read more|resource|resources|download|click here)$/i.test(
+      normalized,
+    )
+  );
+}
+
+function titleFromUrl(value: string) {
+  try {
+    const url = new URL(value);
+    const filename = decodeURIComponent(
+      url.pathname.split("/").filter(Boolean).at(-1) ?? "",
+    )
+      .replace(/\.(?:pdf|html?|aspx?)$/i, "")
+      .replace(/[-_]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    if (documentTitleLooksGeneric(filename)) {
+      return null;
+    }
+
+    return filename.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  } catch {
+    return null;
+  }
+}
+
+function nearestHeadingBefore(html: string, start: number) {
+  const previousHtml = html.slice(Math.max(0, start - 2_000), start);
+  const headings = Array.from(
+    previousHtml.matchAll(/<h[1-4]\b[^>]*>([\s\S]*?)<\/h[1-4]>/gi),
+  )
+    .map((match) => cleanDocumentTitle(stripHtml(match[1] ?? "")))
+    .filter((heading) => !documentTitleLooksGeneric(heading));
+
+  return headings.at(-1) ?? null;
+}
+
+function resolveDocumentTitle(input: {
+  tag: string;
+  html: string;
+  start: number;
+  url: string;
+}) {
+  const visibleLabel = cleanDocumentTitle(stripHtml(input.tag));
+  const ariaLabel = cleanDocumentTitle(getAttribute(input.tag, "aria-label"));
+  const titleAttribute = cleanDocumentTitle(getAttribute(input.tag, "title"));
+  const heading = nearestHeadingBefore(input.html, input.start);
+  const urlTitle = titleFromUrl(input.url);
+
+  return (
+    [visibleLabel, ariaLabel, titleAttribute, heading, urlTitle].find(
+      (candidate) => !documentTitleLooksGeneric(candidate),
+    ) ?? null
+  );
+}
+
 function imageLooksUseful(candidate: ImageCandidate) {
   const directHaystack = `${candidate.url} ${candidate.alt ?? ""}`.toLowerCase();
   const haystack = `${directHaystack} ${candidate.context}`.toLowerCase();
@@ -338,6 +407,10 @@ function uniqueTopImages(
 }
 
 function documentLooksUseful(candidate: DocumentCandidate) {
+  if (documentTitleLooksGeneric(candidate.title)) {
+    return false;
+  }
+
   const directHaystack = `${candidate.url} ${candidate.title}`.toLowerCase();
   const haystack =
     `${directHaystack} ${candidate.description ?? ""} ${candidate.context}`.toLowerCase();
@@ -436,17 +509,18 @@ function extractDocumentCandidates(html: string, sourceUrl: string) {
       continue;
     }
 
-    const label =
-      decodeHtmlEntities(stripHtml(tag))
-        .replace(/\b(?:download|pdf|opens in new tab)\b/gi, " ")
-        .replace(/\s+/g, " ")
-        .trim() || getAttribute(tag, "aria-label") || getAttribute(tag, "title");
+    const context = getContextAround(html, start, start + tag.length);
+    const label = resolveDocumentTitle({
+      tag,
+      html,
+      start,
+      url,
+    });
 
     if (!label) {
       continue;
     }
 
-    const context = getContextAround(html, start, start + tag.length);
     const isPdf = /\.pdf(?:$|[?#])/i.test(url);
 
     candidates.push({
