@@ -300,6 +300,13 @@ function diseaseMatchIndex(content: string, patterns: string[]) {
   );
 }
 
+function normalizedPhraseIncludes(content: string, phrase: string) {
+  const normalizedContent = ` ${normalizeText(content)} `;
+  const normalizedPhrase = normalizeText(phrase);
+
+  return Boolean(normalizedPhrase) && normalizedContent.includes(` ${normalizedPhrase} `);
+}
+
 function extractDiseaseAreas(content: string): DiseaseArea[] {
   const candidates: Array<{ area: DiseaseArea; index: number }> = [
     {
@@ -890,6 +897,10 @@ function selectQuestionForKeyword(
   const cursor = furthestAskedIndex(session);
 
   for (const [index, question] of session.guide.entries()) {
+    if (question.close) {
+      continue;
+    }
+
     if (questionWasAsked(session, question)) {
       continue;
     }
@@ -907,7 +918,7 @@ function selectQuestionForKeyword(
     }
 
     const matchingKeywords = question.routeKeywords.filter((keyword) =>
-      lowerContent.includes(normalizeText(keyword)),
+      normalizedPhraseIncludes(lowerContent, keyword),
     );
     if (matchingKeywords.length === 0) {
       continue;

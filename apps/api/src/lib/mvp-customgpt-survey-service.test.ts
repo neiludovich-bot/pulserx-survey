@@ -1413,6 +1413,147 @@ describe("MVP CustomGPT survey service", () => {
     );
   });
 
+  it("does not route early PADCEV side-effect concerns to the closing question", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (href.endsWith("/projects/97350/conversations") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: `padcev-session-${fetchMock.mock.calls.length}`,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        const selectedQuestion =
+          body.prompt?.match(
+            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+          )?.[1] ?? "Thanks, that gives us enough.";
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response: selectedQuestion,
+              citations: [],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "general-padcev-reaction",
+      targetDurationSeconds: 600,
+    });
+
+    const familiarityTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+    expect(familiarityTurn.currentQuestion).toContain(
+      "How familiar are you with PADCEV",
+    );
+
+    const positioningTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Very familiar.",
+    });
+    expect(positioningTurn.currentQuestion).toContain(
+      "current role across first-line combination therapy",
+    );
+
+    const safetyTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "It sounds good but I'm concerned about the side effects.",
+    });
+
+    expect(safetyTurn.currentQuestion).toContain(
+      "Which safety or tolerability details",
+    );
+    expect(safetyTurn.currentQuestion).not.toContain("To close");
+  });
+
+  it("does not keyword-route terminal questions from generic partial words", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (href.endsWith("/projects/97350/conversations") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: `padcev-session-${fetchMock.mock.calls.length}`,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        const selectedQuestion =
+          body.prompt?.match(
+            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+          )?.[1] ?? "Thanks, that gives us enough.";
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response: selectedQuestion,
+              citations: [],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "general-padcev-reaction",
+      targetDurationSeconds: 600,
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Very familiar.",
+    });
+
+    const nextTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "I am concerned about how the clinical story fits, but I am not wrapping up.",
+    });
+
+    expect(nextTurn.currentQuestion).not.toContain("To close");
+  });
+
   it("does not mark later PADCEV safety-lane questions as asked when CustomGPT mentions their topics", async () => {
     env.CUSTOMGPT_API_KEY = "test-customgpt-key";
 

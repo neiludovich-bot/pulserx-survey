@@ -176,7 +176,21 @@ export const PADCEV_HCP_MVP_GUIDE = [
       "Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
     sourceContextRequirement:
       "Before asking the safety/tolerability question, provide a compact source-grounded orientation to the specific safety-management angle most relevant to the respondent's last answer or the selected intent. Do not list every PADCEV warning, common adverse reaction, serious adverse reaction, lab abnormality, and dose-modification cause. Use 2-4 focused bullets or one short paragraph grouped around practical themes such as monitoring, dose interruption/reduction/discontinuation, patient counseling, or operational resources. Prioritize Important Safety Information, Prescribing Information, dose-modifications page, dosing/administration guide, Adverse Reactions Monitoring Checklist, adverse-reaction management resources, and Peripheral Neuropathy Informational Resource if available. If guide/checklist/PDF resources exist, cite the source most likely to expose them so the side panel can present the operational aid proactively. Keep it concise and non-patient-specific.",
-    routeKeywords: ["safety", "skin", "sjs", "ten", "hyperglycemia", "neuropathy", "pneumonitis", "ocular"],
+    routeKeywords: [
+      "safety",
+      "tolerability",
+      "side effect",
+      "side effects",
+      "adverse",
+      "toxicity",
+      "skin",
+      "sjs",
+      "ten",
+      "hyperglycemia",
+      "neuropathy",
+      "pneumonitis",
+      "ocular",
+    ],
     completionSignals: ["safety concerns or comfort drivers are stated"],
     adaptiveProbes: [
       "If concern is high: What mitigation, monitoring, or evidence would reduce that concern?",
