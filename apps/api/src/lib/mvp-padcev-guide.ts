@@ -198,6 +198,87 @@ export const PADCEV_HCP_MVP_GUIDE = [
     analyzableOutputs: ["dosing_feasibility", "implementation_barriers"],
   },
   {
+    id: "safety_management_workflow",
+    module: "Safety management",
+    objective:
+      "Understand what AE-management guidance would make clinicians more comfortable continuing or supporting therapy.",
+    canonicalQuestion:
+      "When a PADCEV adverse event emerges, what guidance would most help you decide whether to monitor, interrupt dosing, reduce dosing, discontinue, counsel the patient, or involve additional support?",
+    sourceContextRequirement:
+      "Before asking the AE-management workflow question, retrieve only the PADCEV source material relevant to practical adverse-event management, dose modifications, monitoring checklists, adverse-reaction management resources, dosing/administration guide, or Peripheral Neuropathy Informational Resource. If the respondent named a specific AE, focus on that AE and do not recap unrelated warnings. Do not cite efficacy/PFS/OS pages unless the respondent explicitly asks about risk-benefit.",
+    routeKeywords: [
+      "manage",
+      "management",
+      "monitor",
+      "monitoring",
+      "dose modification",
+      "dose interruption",
+      "dose reduction",
+      "discontinue",
+      "counsel",
+      "neuropathy",
+      "rash",
+      "skin",
+    ],
+    completionSignals: ["AE-management guidance needs are stated"],
+    adaptiveProbes: [
+      "If neuropathy is mentioned: What would you need to see around monitoring, grade-based modification, or residual symptoms?",
+      "If rash or skin reaction is mentioned: What would make early recognition and escalation easier operationally?",
+    ],
+    analyzableOutputs: ["ae_management_needs", "dose_modification_confidence"],
+  },
+  {
+    id: "safety_patient_caution",
+    module: "Safety management",
+    objective:
+      "Identify patient profiles that create caution specifically because of AE monitoring or management burden.",
+    canonicalQuestion:
+      "From a safety-management standpoint, which patient profiles would make you more cautious with PADCEV, and what monitoring or mitigation plan would make you more comfortable?",
+    sourceContextRequirement:
+      "Before asking the safety-caution patient profile question, answer only source-supported safety-risk, monitoring, dose modification, or counseling considerations relevant to patient caution. Keep this framed around safety-management feasibility, not broad efficacy-based patient selection. Do not ask which patients are most attractive based on evidence, and do not show efficacy graphs unless the respondent asks about benefit-risk.",
+    routeKeywords: [
+      "patient",
+      "profile",
+      "cautious",
+      "caution",
+      "avoid",
+      "risk",
+      "comorbidity",
+      "diabetes",
+      "neuropathy",
+      "ocular",
+      "skin",
+      "hyperglycemia",
+    ],
+    completionSignals: ["safety-caution patient profiles are stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["safety_caution_profiles", "monitoring_mitigation_needs"],
+  },
+  {
+    id: "safety_resources",
+    module: "Safety management",
+    objective:
+      "Assess whether operational safety resources would reduce barriers.",
+    canonicalQuestion:
+      "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
+    sourceContextRequirement:
+      "Before asking the safety-resource question, retrieve PADCEV HCP source material most likely to expose monitoring checklists, adverse-reaction management guides, dosing/administration guides, patient counseling materials, or downloadable PDFs. Prefer resource pages and PDF assets over efficacy pages. If no usable resource is available, say that briefly and ask the question without inventing resources.",
+    routeKeywords: [
+      "resource",
+      "resources",
+      "guide",
+      "checklist",
+      "pdf",
+      "patient education",
+      "counseling",
+      "support",
+      "workflow",
+    ],
+    completionSignals: ["resource usefulness or remaining gap is stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["safety_resource_value", "resource_gap"],
+  },
+  {
     id: "support_barriers",
     module: "Implementation",
     objective: "Identify practical adoption barriers.",
@@ -209,6 +290,19 @@ export const PADCEV_HCP_MVP_GUIDE = [
     completionSignals: ["implementation barriers are stated"],
     adaptiveProbes: [],
     analyzableOutputs: ["implementation_barriers", "support_needs"],
+  },
+  {
+    id: "safety_close",
+    module: "Safety management",
+    objective:
+      "Synthesize the respondent's safety-management confidence and remaining barrier.",
+    canonicalQuestion:
+      "After reviewing the PADCEV safety-management information and resources, what is the main side-effect concern that still remains, and what would most increase your confidence managing it?",
+    sourceContextRequirement: null,
+    routeKeywords: ["remaining", "confidence", "concern", "barrier"],
+    completionSignals: ["remaining safety concern and confidence driver are stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["remaining_safety_concern", "confidence_driver"],
   },
   {
     id: "overall",

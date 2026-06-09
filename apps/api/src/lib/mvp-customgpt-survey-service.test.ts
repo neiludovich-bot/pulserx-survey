@@ -1317,4 +1317,99 @@ describe("MVP CustomGPT survey service", () => {
       "Peripheral neuropathy and rash were already summarized",
     );
   });
+
+  it("keeps the PADCEV side-effect intent inside safety-management questions", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+
+    const prompts: string[] = [];
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (href.endsWith("/projects/97350/conversations") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: `padcev-session-${fetchMock.mock.calls.length}`,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        const prompt = body.prompt ?? "";
+        prompts.push(prompt);
+        const selectedQuestion =
+          prompt.match(
+            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+          )?.[1] ?? "Thanks, that gives us enough.";
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response: selectedQuestion,
+              citations: [],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 600,
+    });
+
+    const safetyTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    expect(safetyTurn.currentQuestion).toContain(
+      "Which safety or tolerability details",
+    );
+    expect(prompts.at(-1) ?? "").toContain(
+      "Intent-blocked question ids unless respondent explicitly asks off-lane",
+    );
+    expect(prompts.at(-1) ?? "").toContain("patient_fit");
+
+    const managementTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Peripheral neuropathy is the biggest practical concern.",
+    });
+
+    expect(managementTurn.currentQuestion).toContain(
+      "When a PADCEV adverse event emerges",
+    );
+    expect(managementTurn.currentQuestion).not.toContain(
+      "would the PADCEV evidence make treatment more attractive",
+    );
+    expect(prompts.at(-1) ?? "").toContain(
+      "Do not cite efficacy/PFS/OS pages unless the respondent explicitly asks about risk-benefit",
+    );
+    expect(prompts.at(-1) ?? "").toContain(
+      "broad patient-attractiveness modules are off-lane",
+    );
+
+    const resourceTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "I would need dose modification guidance and a monitoring checklist.",
+    });
+
+    expect(resourceTurn.currentQuestion).toContain(
+      "monitoring checklists, adverse-reaction management guides",
+    );
+    expect(resourceTurn.currentQuestion).not.toContain(
+      "would the PADCEV evidence make treatment more attractive",
+    );
+  });
 });

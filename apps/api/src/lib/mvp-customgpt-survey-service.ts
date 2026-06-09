@@ -50,6 +50,9 @@ type MvpSurveyIntent = {
   requiredCoverage: string[];
   steeringRule: string;
   questionOrder: string[];
+  allowedQuestionIds?: string[];
+  blockedQuestionIds?: string[];
+  offLaneSourceRule?: string;
 };
 
 type MvpSurveySession = {
@@ -74,6 +77,15 @@ type MvpSurveySession = {
 };
 
 const sessions = new Map<string, MvpSurveySession>();
+
+const PADCEV_SAFETY_LANE_QUESTION_IDS = new Set([
+  "safety",
+  "safety_management_workflow",
+  "safety_patient_caution",
+  "safety_resources",
+  "support_barriers",
+  "safety_close",
+]);
 
 const PADCEV_SURVEY_INTENTS: MvpSurveyIntent[] = [
   {
@@ -141,16 +153,36 @@ const PADCEV_SURVEY_INTENTS: MvpSurveyIntent[] = [
       "patient counseling and monitoring barriers",
     ],
     steeringRule:
-      "Prioritize safety-management confidence, monitoring workflow, dose modification comfort, and practical barriers. Keep efficacy context concise unless needed to frame risk-benefit.",
+      "Prioritize safety-management confidence, monitoring workflow, dose modification comfort, and practical barriers. Do not route into broad efficacy, PFS/OS, or general patient-attractiveness questions unless the respondent explicitly asks about efficacy or risk-benefit.",
     questionOrder: [
       "intro_consent",
       "safety",
-      "dosing_admin",
-      "patient_fit",
+      "safety_management_workflow",
+      "safety_patient_caution",
+      "safety_resources",
       "support_barriers",
-      "overall",
+      "safety_close",
       "close",
     ],
+    allowedQuestionIds: [
+      "intro_consent",
+      "safety",
+      "safety_management_workflow",
+      "safety_patient_caution",
+      "safety_resources",
+      "support_barriers",
+      "safety_close",
+      "close",
+    ],
+    blockedQuestionIds: [
+      "indication_positioning",
+      "ev302",
+      "patient_fit",
+      "monotherapy_evidence",
+      "overall",
+    ],
+    offLaneSourceRule:
+      "For the side-effect-management intent, efficacy/PFS/OS and broad patient-attractiveness modules are off-lane unless the respondent explicitly asks about efficacy, clinical benefit, or risk-benefit tradeoff.",
   },
   {
     slug: "patient-selection-barriers",
@@ -264,6 +296,27 @@ function guideForIntent(
   return intent.questionOrder
     .map((questionId) => guideById.get(questionId))
     .filter((question): question is MvpGuideQuestion => Boolean(question));
+}
+
+function questionAllowedByIntent(
+  session: MvpSurveySession,
+  question: MvpGuideQuestion,
+) {
+  const intent = session.surveyIntent;
+
+  if (!intent) {
+    return true;
+  }
+
+  if (intent.blockedQuestionIds?.includes(question.id)) {
+    return false;
+  }
+
+  if (intent.allowedQuestionIds?.length) {
+    return intent.allowedQuestionIds.includes(question.id);
+  }
+
+  return true;
 }
 
 function workspaceRoot() {
@@ -612,6 +665,7 @@ function selectableQuestions(
   participantContent = "",
 ) {
   return questions.filter((question) =>
+    questionAllowedByIntent(session, question) &&
     questionAllowedByDiseaseLane(session, question, participantContent),
   );
 }
@@ -639,6 +693,7 @@ function enqueueQuestionIds(
       !question ||
       questionWasAsked(session, question) ||
       session.queuedQuestionIds.includes(questionId) ||
+      !questionAllowedByIntent(session, question) ||
       !questionAllowedByDiseaseLane(session, question, participantContent)
     ) {
       continue;
@@ -820,6 +875,7 @@ function dequeueNextQuestion(
     if (
       question &&
       !questionWasAsked(session, question) &&
+      questionAllowedByIntent(session, question) &&
       questionAllowedByDiseaseLane(session, question, participantContent)
     ) {
       session.queuedQuestionIds.shift();
@@ -864,6 +920,10 @@ function selectQuestionForKeyword(
     }
 
     if (!questionAllowedByDiseaseLane(session, question, lowerContent)) {
+      continue;
+    }
+
+    if (!questionAllowedByIntent(session, question)) {
       continue;
     }
 
@@ -1369,12 +1429,18 @@ function sourceContextForReactiveQuestion(
   }
 
   if (session.surveySlug === "padcev") {
+    const sideEffectIntent =
+      session.surveyIntent?.slug === "side-effect-management";
+    const selectedSafetyLaneQuestion = Boolean(
+      selectedQuestion && PADCEV_SAFETY_LANE_QUESTION_IDS.has(selectedQuestion.id),
+    );
     const safetyScoped =
       contentLooksLikePadcevSafetyQuestion(participantContent) ||
-      selectedQuestion?.id === "safety";
+      selectedSafetyLaneQuestion ||
+      (sideEffectIntent && contentLooksLikePatientPopulationQuestion(participantContent));
 
     if (safetyScoped) {
-      return "The participant asked a PADCEV safety-management or resource-guide question. Answer the specific adverse-event, monitoring, management, or resource angle they raised; do not provide a full label-style safety inventory. Use 2-4 focused bullets or one short paragraph. Prioritize approved PADCEV HCP Important Safety Information, Prescribing Information, the PADCEV dose-modifications page, dosing/administration guide, Adverse Reactions Monitoring Checklist, adverse-reaction management guides, and the PADCEV Peripheral Neuropathy Informational Resource if available in the indexed sources. If the participant asks for a guide, checklist, continuum, operational aid, or how to handle adverse events, cite the source page most likely to expose that guide/checklist/PDF rather than a generic efficacy page. For neuropathy, rash/skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, include only source-supported monitoring, dose interruption, dose reduction, discontinuation, counseling, or supportive-care guidance for the relevant topic. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. If the source does not provide a detailed stepwise intervention algorithm, say that plainly while still summarizing the source-supported management steps. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
+      return "The participant is in a PADCEV safety-management lane or asked a PADCEV safety-management/resource question. Answer the specific adverse-event, monitoring, management, safety-caution patient-profile, or resource angle they raised; do not provide a full label-style safety inventory. Use 2-4 focused bullets or one short paragraph. If patient profiles are discussed in this lane, frame them as safety-management caution profiles and monitoring/mitigation needs, not broad efficacy-based patient selection. Prioritize approved PADCEV HCP Important Safety Information, Prescribing Information, the PADCEV dose-modifications page, dosing/administration guide, Adverse Reactions Monitoring Checklist, adverse-reaction management guides, and the PADCEV Peripheral Neuropathy Informational Resource if available in the indexed sources. If the participant asks for a guide, checklist, continuum, operational aid, or how to handle adverse events, cite the source page most likely to expose that guide/checklist/PDF rather than a generic efficacy page. For neuropathy, rash/skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, include only source-supported monitoring, dose interruption, dose reduction, discontinuation, counseling, or supportive-care guidance for the relevant topic. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. If the source does not provide a detailed stepwise intervention algorithm, say that plainly while still summarizing the source-supported management steps. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
     }
 
     return "The participant asked a source/detail question during the PADCEV urothelial cancer survey. Answer using only approved PADCEV HCP source material, including indication/positioning, EV-302/KEYNOTE-A39, EV-301/EV-201, safety, dosing/administration, patient fit, and access/support only where relevant to the participant's question. Then return to the selected survey question. Do not provide patient-specific treatment advice.";
@@ -1573,6 +1639,15 @@ function surveyContext(
       : "Selected survey intention: default guide.",
     session.surveyIntent
       ? `Intention steering rule: ${session.surveyIntent.steeringRule}`
+      : null,
+    session.surveyIntent?.allowedQuestionIds?.length
+      ? `Intent-allowed question ids: ${session.surveyIntent.allowedQuestionIds.join(" | ")}`
+      : null,
+    session.surveyIntent?.blockedQuestionIds?.length
+      ? `Intent-blocked question ids unless respondent explicitly asks off-lane: ${session.surveyIntent.blockedQuestionIds.join(" | ")}`
+      : null,
+    session.surveyIntent?.offLaneSourceRule
+      ? `Intent off-lane source rule: ${session.surveyIntent.offLaneSourceRule}`
       : null,
     session.surveyIntent?.requiredCoverage.length
       ? `Required intent coverage: ${session.surveyIntent.requiredCoverage.join(" | ")}`
