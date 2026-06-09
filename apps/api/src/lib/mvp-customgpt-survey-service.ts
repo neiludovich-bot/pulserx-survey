@@ -37,7 +37,6 @@ import {
   type MvpSurveySlug,
   guideForIntent,
   questionAllowedByIntent as intentAllowsQuestion,
-  surveyIntentContextLines,
   surveyIntentForSlug,
   validateMvpSurveyDefinition,
 } from "./mvp-survey-definition";
@@ -1511,6 +1510,18 @@ function ensureReturnToSurvey(answer: string, selectedQuestion: string | null) {
   return `${answer.trim()}\n\nReturning to the survey: ${selectedQuestion}`;
 }
 
+function clipControllerText(value: string | null | undefined, maxChars: number) {
+  if (!value) {
+    return null;
+  }
+
+  if (value.length <= maxChars) {
+    return value;
+  }
+
+  return `${value.slice(0, Math.max(0, maxChars - 28)).trimEnd()} [truncated]`;
+}
+
 function fallbackInterviewerTurn(input: {
   selectedQuestion: string | null;
   customGptReason: string;
@@ -1528,15 +1539,40 @@ function fallbackInterviewerTurn(input: {
   return [
     setupIssue
       ? `CustomGPT is not connected in this local environment yet (${input.customGptReason}).`
-      : `CustomGPT could not complete this turn (${input.customGptReason}).`,
-    `In the live bridge, this turn would answer from the ${input.sourceBrand} HCP source material with references and then continue.`,
-    input.sourceContextRequirement
-      ? `This turn requires source context first: ${input.sourceContextRequirement}`
+      : `I could not retrieve the ${input.sourceBrand} source detail for this turn, so I am keeping the interview moving.`,
+    setupIssue && input.sourceContextRequirement
+      ? `Source context needed: ${clipControllerText(input.sourceContextRequirement, 240)}`
       : null,
-    `For now, the guarded survey flow continues here: ${input.selectedQuestion}`,
+    input.selectedQuestion,
   ]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function compactSurveyIntentContextLines(intent: MvpSurveyIntent | null) {
+  if (!intent) {
+    return ["Selected survey intention: default guide."];
+  }
+
+  return [
+    intent.blockedQuestionIds?.length
+      ? `Intent-blocked question ids unless respondent explicitly asks off-lane: ${intent.blockedQuestionIds.join(" | ")}`
+      : null,
+    intent.offLaneSourceRule
+      ? "Intent off-lane source rule: efficacy/PFS/OS and broad patient-attractiveness modules are off-lane unless explicitly asked."
+      : null,
+    intent.allowedQuestionIds?.length
+      ? `Intent-allowed question ids: ${intent.allowedQuestionIds.join(" | ")}`
+      : null,
+    `Selected survey intention: ${intent.label}. ${clipControllerText(
+      intent.primaryIntent,
+      120,
+    )}`,
+    `Intention steering rule: ${clipControllerText(intent.steeringRule, 180)}`,
+    intent.requiredCoverage.length
+      ? `Required intent coverage: ${intent.requiredCoverage.join(" | ")}`
+      : null,
+  ].filter((line): line is string => Boolean(line));
 }
 
 function surveyContext(
@@ -1572,22 +1608,25 @@ function surveyContext(
     selectedQuestionIsExcursion
       ? "Selected next question is an explicit respondent-requested off-lane excursion. Answer that requested module for this turn, then the controller will return to the selected home intention."
       : null,
-    ...surveyIntentContextLines(session.surveyIntent),
-    "Controller guardrails: answer reactive source questions once, return to the survey, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
     activeDiseaseLane
       ? `Active disease lane: ${activeDiseaseLane}.`
       : "Active disease lane: not established yet.",
     activeDiseaseLane
       ? `Broad reactive source questions are scoped to ${activeDiseaseLane}; do not answer from or cite other disease pages unless the participant explicitly names them or the selected module requires cross-disease comparison.`
       : null,
-    sourceContextRequirement
-      ? `Source-context requirement for this turn: ${sourceContextRequirement}`
-      : "Source-context requirement for this turn: none.",
     `Current module: ${currentModule}`,
     `Selected next module: ${selectedModule}`,
     queuedModules
       ? `Queued respondent-priority modules after this turn: ${queuedModules}`
       : "Queued respondent-priority modules after this turn: none.",
+    ...compactSurveyIntentContextLines(session.surveyIntent),
+    "Controller guardrails: answer reactive source questions once, return to the survey, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
+    sourceContextRequirement
+      ? `Source-context requirement for this turn: ${clipControllerText(
+          sourceContextRequirement,
+          360,
+        )}`
+      : "Source-context requirement for this turn: none.",
     current
       ? `Current question: ${current.canonicalQuestion}`
       : "Current question: none.",
