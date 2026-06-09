@@ -25,6 +25,7 @@ type MvpPersistenceSessionSnapshot = {
   activeDiseaseAreas: string[];
   primaryDiseaseArea: string | null;
   queuedQuestionIds: string[];
+  excursionQuestionIds: string[];
   askedQuestionIds: string[];
   completedReason: string | null;
 };
@@ -78,6 +79,7 @@ function metadataForSession(
     activeDiseaseAreas: session.activeDiseaseAreas,
     primaryDiseaseArea: session.primaryDiseaseArea,
     queuedQuestionIds: session.queuedQuestionIds,
+    excursionQuestionIds: session.excursionQuestionIds,
     askedQuestionIds: session.askedQuestionIds,
     completedReason: session.completedReason,
   };

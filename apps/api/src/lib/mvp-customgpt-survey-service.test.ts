@@ -1492,4 +1492,94 @@ describe("MVP CustomGPT survey service", () => {
       "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
     );
   });
+
+  it("allows explicit off-lane PADCEV excursions and then returns to the selected intent lane", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+
+    const prompts: string[] = [];
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (href.endsWith("/projects/97350/conversations") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: `padcev-session-${fetchMock.mock.calls.length}`,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        const prompt = body.prompt ?? "";
+        prompts.push(prompt);
+        const selectedQuestion =
+          prompt.match(
+            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+          )?.[1] ?? "Thanks, that gives us enough.";
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response: selectedQuestion,
+              citations: [],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 600,
+    });
+
+    const safetyTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    expect(safetyTurn.currentQuestion).toContain(
+      "Which safety or tolerability details",
+    );
+
+    const excursionTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "Before we go further, which patient populations are appropriate and where would you be cautious?",
+    });
+
+    expect(excursionTurn.currentQuestion).toContain(
+      "For which locally advanced or metastatic urothelial cancer patient types",
+    );
+    expect(prompts.at(-1) ?? "").toContain(
+      "explicit respondent-requested off-lane excursion",
+    );
+    expect(prompts.at(-1) ?? "").not.toContain(
+      "Do not use or cite efficacy/PFS/OS pages",
+    );
+
+    const returnTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "I would be cautious with baseline neuropathy but otherwise consider appropriate la/mUC patients.",
+    });
+
+    expect(returnTurn.currentQuestion).toContain(
+      "When a PADCEV adverse event emerges",
+    );
+    expect(returnTurn.currentQuestion).not.toContain(
+      "For which locally advanced or metastatic urothelial cancer patient types",
+    );
+  });
 });
