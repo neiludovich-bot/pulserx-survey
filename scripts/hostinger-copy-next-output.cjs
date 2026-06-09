@@ -21,6 +21,11 @@ const staticRoutes = [
     sourceParts: ["surveys", "padcev.html"],
     targetParts: ["surveys", "padcev"],
   },
+  {
+    label: "/research/mvp-audit/",
+    sourceParts: ["research", "mvp-audit.html"],
+    targetParts: ["research", "mvp-audit"],
+  },
 ];
 
 for (const route of staticRoutes) {
