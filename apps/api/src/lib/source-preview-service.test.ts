@@ -361,4 +361,59 @@ describe("source preview service", () => {
       "Overview",
     );
   });
+
+  it("derives useful PDF titles instead of showing repeated generic preview cards", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          `
+          <html>
+            <head>
+              <title>PADCEV Monotherapy Safety</title>
+            </head>
+            <body>
+              <section>
+                <h2>Adverse Reactions Monitoring Checklist</h2>
+                <a href="/Content/hcp/pdf/adverse-reactions-monitoring-checklist.pdf">
+                  Preview
+                </a>
+              </section>
+              <section>
+                <h2>Peripheral Neuropathy Informational Resource</h2>
+                <a href="/Content/hcp/pdf/peripheral-neuropathy-informational-resource.pdf">
+                  Preview
+                </a>
+              </section>
+              <section>
+                <h2>Dosing and Administration Guide</h2>
+                <a href="/Content/hcp/pdf/dosing-and-administration-guide.pdf">
+                  Preview
+                </a>
+              </section>
+            </body>
+          </html>
+          `,
+          {
+            headers: { "content-type": "text/html; charset=utf-8" },
+            status: 200,
+          },
+        ),
+      ),
+    );
+
+    const preview = await previewSourceImages({
+      url: "https://padcevhcp.com/monotherapy-safety/",
+      title: "PADCEV Monotherapy Safety",
+    });
+
+    expect(preview.documents.map((document) => document.title)).toEqual([
+      "Adverse Reactions Monitoring Checklist",
+      "Peripheral Neuropathy Informational Resource",
+      "Dosing and Administration Guide",
+    ]);
+    expect(preview.documents.map((document) => document.title)).not.toContain(
+      "Preview",
+    );
+  });
 });
