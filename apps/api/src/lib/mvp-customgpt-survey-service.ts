@@ -46,6 +46,8 @@ import { decodeAudio, synthesizeSpeech, transcribeAudio } from "./voice-service"
 const BRUKINSA_DEFAULT_PROJECT_ID = "96737";
 const PADCEV_DEFAULT_PROJECT_ID = "97350";
 const MVP_AUDIT_DIR_NAME = "mvp-turn-audits";
+const TIMEBOX_WRAP_UP_THRESHOLD_SECONDS = 90;
+const TIMEBOX_GRACE_SECONDS = 300;
 
 type DiseaseArea = "cll" | "wm" | "mcl" | "mzl" | "fl";
 
@@ -275,6 +277,17 @@ function elapsedSeconds(session: MvpSurveySession) {
 
 function remainingSeconds(session: MvpSurveySession) {
   return Math.max(0, session.targetDurationSeconds - elapsedSeconds(session));
+}
+
+function graceRemainingSeconds(session: MvpSurveySession) {
+  return Math.max(
+    0,
+    session.targetDurationSeconds + TIMEBOX_GRACE_SECONDS - elapsedSeconds(session),
+  );
+}
+
+function hardTimeboxExpired(session: MvpSurveySession) {
+  return graceRemainingSeconds(session) === 0;
 }
 
 function normalizeText(value: string) {
@@ -960,7 +973,11 @@ function selectNextQuestion(
     return queuedQuestion;
   }
 
-  if (remaining <= 90) {
+  if (
+    hardTimeboxExpired(session) ||
+    (remaining <= TIMEBOX_WRAP_UP_THRESHOLD_SECONDS &&
+      !contentLooksLikeReactiveQuestion(participantContent))
+  ) {
     return (
       unasked.find((question) => question.close) ??
       unasked[0] ??
@@ -1922,11 +1939,15 @@ export async function submitMvpCustomGptSurveyTurn(
   let nextAction: MvpCustomGptSurveyResponse["nextAction"] =
     needsCustomGpt ? "answer_then_ask" : "ask";
 
-  if (remaining === 0 || !selectedQuestion) {
+  if (hardTimeboxExpired(session) || !selectedQuestion) {
     session.completedReason =
-      remaining === 0 ? "Timebox reached." : "Guide questions completed.";
+      hardTimeboxExpired(session)
+        ? "Timebox plus grace period reached."
+        : "Guide questions completed.";
     assistantContent =
-      "Thanks, that gives us enough for this MVP pass. We can stop there.";
+      hardTimeboxExpired(session)
+        ? "We are past the planned interview time plus the grace window, so we will stop here. Thank you for your time."
+        : "Thanks, that gives us enough for this MVP pass. We can stop there.";
     customGptStatus = "not_needed";
     nextAction = "wrap_up";
   } else if (!needsCustomGpt) {
