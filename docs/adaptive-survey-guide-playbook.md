@@ -660,6 +660,25 @@ MVP sessions and opens the turn/decision trace for a single session. This is the
 preferred way to review repeated-source issues, wrong-lane pivots, rejected
 answers, and "why did it ask that next?" behavior across any new survey bot.
 
+## Source Side-Panel Priority
+
+When the source panel opens automatically, prioritize clinically salient figures
+and visual aids before text resources. The resolver should scan cited sources
+for useful images first, then fall back to PDF/resource links only when no
+figure-bearing source is available.
+
+Display order inside the panel should be:
+
+1. Clinical figures, charts, tables, study diagrams, or guide/checklist covers.
+2. Related PDF/resource links such as dosing guides, monitoring checklists, or
+   prescribing information.
+3. Generic source links only when no useful visual or document resource exists.
+
+Suppress generic hero, lifestyle, product-shot, brand, and campaign imagery even
+when it appears near clinical text. Do not let surrounding page copy rescue a
+non-clinical image unless the image URL, alt text, or filename itself indicates
+it is a clinical figure, table, guide, checklist, or similar useful asset.
+
 ## Import Workflow For A New Site
 
 1. Load the website, PDF, label, study pages, and related approved assets into

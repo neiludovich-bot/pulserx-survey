@@ -330,9 +330,6 @@ function SourcePreviewGallery({
             : "Source resources"}
       </p>
       <h3>{label}</h3>
-      {documents.length > 0 ? (
-        <SourcePreviewDocuments documents={documents} />
-      ) : null}
       {preview.images.length > 0 ? (
         <div className="mvp-source-image-list">
           {preview.images.map((image, index) => {
@@ -367,6 +364,16 @@ function SourcePreviewGallery({
           })}
         </div>
       ) : null}
+      {documents.length > 0 ? (
+        <SourcePreviewDocuments
+          documents={documents}
+          heading={
+            preview.images.length > 0
+              ? "Related source resources"
+              : "Source resources"
+          }
+        />
+      ) : null}
       <p className="mvp-source-preview-note">
         These are pulled from the cited page assets. Use the source link below
         for the full page context and prescribing information.
@@ -377,11 +384,14 @@ function SourcePreviewGallery({
 
 function SourcePreviewDocuments({
   documents,
+  heading = "Source resources",
 }: {
   documents: SourcePreviewDocument[];
+  heading?: string;
 }) {
   return (
     <div className="mvp-source-document-list">
+      <p className="mvp-kicker">{heading}</p>
       {documents.map((document) => (
         <article className="mvp-source-document" key={document.url}>
           <div>
@@ -1083,10 +1093,19 @@ export function MvpCustomGptSurveyModal({
         return;
       }
 
-      const visualReference = visualReferences.find(Boolean);
+      const resolvedReferences = visualReferences.filter(
+        (reference): reference is SourcePanelReference => Boolean(reference),
+      );
+      const visualReference =
+        resolvedReferences.find(
+          (reference) => (reference.preview?.images.length ?? 0) > 0,
+        ) ?? resolvedReferences[0];
+
       if (visualReference) {
         setSourcePanel(visualReference);
+        return;
       }
+
       setSourcePanel((currentPanel) =>
         currentPanel?.messageId === latestMessageId
           ? currentPanel
