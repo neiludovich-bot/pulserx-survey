@@ -149,6 +149,12 @@ function sourceTextIncludesAny(value: string, terms: string[]) {
   );
 }
 
+function sourceTextMatches(value: string, patterns: RegExp[]) {
+  const normalized = normalizeSourceText(value);
+
+  return patterns.some((pattern) => pattern.test(normalized));
+}
+
 function referenceSearchText(
   reference: MvpCustomGptSurveyMessage["references"][number],
   index: number,
@@ -291,6 +297,102 @@ async function resolveVisualSourcePanelReference(
   } catch {
     return null;
   }
+}
+
+function scoreResolvedSourcePanelReference(
+  input: SourcePanelReference,
+  messageText: string,
+) {
+  const preview = input.preview;
+  const referenceText = referenceSearchText(input.reference, input.index);
+  const text = [
+    messageText,
+    referenceText,
+    preview?.title,
+    preview?.sourceUrl,
+    ...(preview?.images ?? []).flatMap((image) => [
+      image.alt,
+      image.url,
+      image.source,
+    ]),
+    ...(preview?.documents ?? []).flatMap((document) => [
+      document.title,
+      document.description,
+      document.url,
+    ]),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  let score = Math.max(0, 100 - input.index);
+
+  if ((preview?.images.length ?? 0) > 0) {
+    score += 200;
+  }
+
+  if (
+    sourceTextMatches(text, [
+      /\b(?:graph|chart|curve|kaplan|km curve|table|forest plot|swimmer plot)\b/,
+      /\b(?:pfs|progression free|overall survival|survival|os|orr|response rate)\b/,
+      /\b(?:hazard ratio|confidence interval|95 ci|hr)\b/,
+      /\b(?:efficacy|study|trial|data|endpoint|cohort|ev 302|keynote a39|ev 301|ev 201|sequoia|alpine|aspen)\b/,
+    ])
+  ) {
+    score += 350;
+  }
+
+  if (
+    sourceTextMatches(text, [
+      /\b(?:dosing and administration guide|dose modification|monitoring checklist|adverse reaction management|peripheral neuropathy informational resource|patient management guide)\b/,
+    ])
+  ) {
+    score += 120;
+  }
+
+  if ((preview?.documents.length ?? 0) > 0) {
+    score += 50;
+  }
+
+  if (
+    sourceTextMatches(text, [
+      /\b(?:hero|lifestyle|brand campaign|airplane|aircraft|plane|jet|flight|travel|jumping|splash|product shot|pill|tablet|capsule|stays on|stays off|up to 100)\b/,
+    ])
+  ) {
+    score -= 250;
+  }
+
+  if (
+    sourceTextIncludesAny(messageText, [
+      "pfs",
+      "progression free",
+      "overall survival",
+      "os",
+      "efficacy",
+      "data",
+      "study",
+      "trial",
+      "graph",
+      "chart",
+      "table",
+    ]) &&
+    (preview?.images.length ?? 0) === 0
+  ) {
+    score -= 175;
+  }
+
+  return score;
+}
+
+function chooseBestResolvedSourcePanelReference(
+  references: SourcePanelReference[],
+  messageText: string,
+) {
+  return [...references].sort((left, right) => {
+    const scoreDelta =
+      scoreResolvedSourcePanelReference(right, messageText) -
+      scoreResolvedSourcePanelReference(left, messageText);
+
+    return scoreDelta || left.index - right.index;
+  })[0] ?? null;
 }
 
 function openSourceUrlInNewTab(url: string) {
@@ -1135,10 +1237,10 @@ export function MvpCustomGptSurveyModal({
       const resolvedReferences = visualReferences.filter(
         (reference): reference is SourcePanelReference => Boolean(reference),
       );
-      const visualReference =
-        resolvedReferences.find(
-          (reference) => (reference.preview?.images.length ?? 0) > 0,
-        ) ?? resolvedReferences[0];
+      const visualReference = chooseBestResolvedSourcePanelReference(
+        resolvedReferences,
+        latestMessageContent,
+      );
 
       if (visualReference) {
         setSourcePanel(visualReference);
