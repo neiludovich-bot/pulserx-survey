@@ -18,6 +18,8 @@ import type {
   MvpCustomGptSurveyVoiceTranscribeResponse,
   MvpCustomGptSurveyVoiceTurnRequest,
   MvpCustomGptSurveyVoiceTurnResponse,
+  MvpSurveyAuditDetailResponse,
+  MvpSurveyAuditListResponse,
   MvpCustomGptSourcePreviewRequest,
   MvpCustomGptSourcePreviewResponse,
   PreviewSurveyImportRequest,
@@ -516,5 +518,17 @@ export function previewMvpCustomGptSource(
       method: "POST",
       body: JSON.stringify(input),
     },
+  );
+}
+
+export function getMvpSurveyAuditSessions(limit = 50) {
+  return apiFetch<MvpSurveyAuditListResponse>(
+    `/mvp/customgpt-survey/audit/sessions?limit=${limit}`,
+  );
+}
+
+export function getMvpSurveyAuditSession(sessionId: string) {
+  return apiFetch<MvpSurveyAuditDetailResponse>(
+    `/mvp/customgpt-survey/audit/sessions/${sessionId}`,
   );
 }

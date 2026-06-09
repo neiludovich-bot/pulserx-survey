@@ -31,6 +31,9 @@ export default async function ResearchPage() {
           <Link className="button-primary" href="/research/import">
             Import Survey
           </Link>
+          <Link className="button-secondary" href="/research/mvp-audit">
+            MVP Audit
+          </Link>
           <Link className="button-secondary" href="/research/setup">
             Setup Checklist
           </Link>

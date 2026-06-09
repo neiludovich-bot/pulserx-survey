@@ -60,6 +60,10 @@ import {
   synthesizeMvpCustomGptSurveyLatestInterviewer,
   transcribeMvpCustomGptSurveyVoice,
 } from "./lib/mvp-customgpt-survey-service";
+import {
+  getMvpSurveyAuditSession,
+  listMvpSurveyAuditSessions,
+} from "./lib/mvp-survey-audit-service";
 import { previewSourceImages } from "./lib/source-preview-service";
 import {
   applyStudyGuideCleanup,
@@ -261,6 +265,26 @@ export function buildApp() {
             : "Unable to preview source images.",
       });
     }
+  });
+
+  app.get<{
+    Querystring: { limit?: string };
+  }>("/mvp/customgpt-survey/audit/sessions", async (request) => {
+    const limit = Number.parseInt(request.query.limit ?? "50", 10);
+    return listMvpSurveyAuditSessions(Number.isFinite(limit) ? limit : 50);
+  });
+
+  app.get<{
+    Params: { sessionId: string };
+  }>("/mvp/customgpt-survey/audit/sessions/:sessionId", async (request, reply) => {
+    const audit = await getMvpSurveyAuditSession(request.params.sessionId);
+    if (!audit) {
+      return reply.status(404).send({
+        message: "MVP survey audit session was not found.",
+      });
+    }
+
+    return audit;
   });
 
   app.get("/studies", async () => {

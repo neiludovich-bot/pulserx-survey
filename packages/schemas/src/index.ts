@@ -1689,6 +1689,56 @@ export const mvpCustomGptSurveyResponseSchema = z.object({
   messages: z.array(mvpCustomGptSurveyMessageSchema),
 });
 
+const mvpSurveyAuditSessionSummarySchema = z.object({
+  id: z.string().min(1),
+  studyName: z.string().min(1),
+  studySlug: z.string().min(1),
+  status: z.string().min(1),
+  startedAt: z.string().datetime().nullable(),
+  completedAt: z.string().datetime().nullable(),
+  surveySlug: z.string().min(1).nullable(),
+  sourceBrand: z.string().min(1).nullable(),
+  surveyIntentLabel: z.string().min(1).nullable(),
+  currentQuestionId: z.string().min(1).nullable(),
+  currentQuestion: z.string().min(1).nullable(),
+  completedReason: z.string().min(1).nullable(),
+  turnCount: z.number().int().min(0),
+  decisionCount: z.number().int().min(0),
+});
+
+export const mvpSurveyAuditListResponseSchema = z.object({
+  dbConfigured: z.boolean(),
+  generatedAt: z.string().datetime(),
+  sessions: z.array(mvpSurveyAuditSessionSummarySchema),
+});
+
+export const mvpSurveyAuditTurnSchema = z.object({
+  id: z.string().min(1),
+  sequence: z.number().int().min(1),
+  role: z.string().min(1),
+  content: z.string().min(1),
+  createdAt: z.string().datetime(),
+  payload: z.unknown().nullable(),
+});
+
+export const mvpSurveyAuditDecisionSchema = z.object({
+  id: z.string().min(1),
+  kind: z.string().min(1),
+  status: z.string().min(1),
+  rationale: z.string().nullable(),
+  createdAt: z.string().datetime(),
+  input: z.unknown().nullable(),
+  output: z.unknown().nullable(),
+});
+
+export const mvpSurveyAuditDetailResponseSchema = z.object({
+  dbConfigured: z.boolean(),
+  generatedAt: z.string().datetime(),
+  session: mvpSurveyAuditSessionSummarySchema,
+  turns: z.array(mvpSurveyAuditTurnSchema),
+  decisions: z.array(mvpSurveyAuditDecisionSchema),
+});
+
 export const mvpCustomGptSurveyVoiceTurnResponseSchema = z.object({
   transcript: z.string().min(1),
   spokenText: z.string().min(1).nullable(),
@@ -1976,6 +2026,12 @@ export type MvpCustomGptSurveyMessage = z.infer<
 >;
 export type MvpCustomGptSurveyResponse = z.infer<
   typeof mvpCustomGptSurveyResponseSchema
+>;
+export type MvpSurveyAuditListResponse = z.infer<
+  typeof mvpSurveyAuditListResponseSchema
+>;
+export type MvpSurveyAuditDetailResponse = z.infer<
+  typeof mvpSurveyAuditDetailResponseSchema
 >;
 export type MvpCustomGptSurveyVoiceTurnResponse = z.infer<
   typeof mvpCustomGptSurveyVoiceTurnResponseSchema

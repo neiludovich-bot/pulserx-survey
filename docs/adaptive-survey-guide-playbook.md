@@ -655,6 +655,11 @@ visible in API logs/observability. The durable record should still preserve the
 selector/phrasing split by storing both the selected canonical question and the
 final rendered interviewer message.
 
+For beta-prod QA, provide a read-only researcher audit surface that lists recent
+MVP sessions and opens the turn/decision trace for a single session. This is the
+preferred way to review repeated-source issues, wrong-lane pivots, rejected
+answers, and "why did it ask that next?" behavior across any new survey bot.
+
 ## Import Workflow For A New Site
 
 1. Load the website, PDF, label, study pages, and related approved assets into
