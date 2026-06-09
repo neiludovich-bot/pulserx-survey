@@ -12,6 +12,7 @@ const originalCustomGptProjectId = env.CUSTOMGPT_PROJECT_ID;
 const originalOpenAiApiKey = env.OPENAI_API_KEY;
 
 afterEach(() => {
+  vi.useRealTimers();
   env.CUSTOMGPT_API_KEY = originalCustomGptApiKey;
   env.CUSTOMGPT_PROJECT_ID = originalCustomGptProjectId;
   env.OPENAI_API_KEY = originalOpenAiApiKey;
@@ -1495,6 +1496,67 @@ describe("MVP CustomGPT survey service", () => {
       "Which safety or tolerability details",
     );
     expect(safetyTurn.currentQuestion).not.toContain("To close");
+  });
+
+  it("allows engaged source questions during the timebox grace window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 120,
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    vi.setSystemTime(new Date("2026-01-01T00:02:01.000Z"));
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Do you have a download link to the adverse reaction guide?",
+    });
+
+    expect(next.nextAction).not.toBe("wrap_up");
+    expect(next.currentQuestion).not.toBeNull();
+    expect(next.reason).not.toBe("Timebox plus grace period reached.");
+    expect(next.messages.at(-1)?.content).not.toContain(
+      "that gives us enough",
+    );
+  });
+
+  it("hard-closes only after the target duration plus grace window", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 120,
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    vi.setSystemTime(new Date("2026-01-01T00:07:01.000Z"));
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "I still have another question about adverse reactions.",
+    });
+
+    expect(next.nextAction).toBe("wrap_up");
+    expect(next.reason).toBe("Timebox plus grace period reached.");
+    expect(next.messages.at(-1)?.content).toContain(
+      "past the planned interview time plus the grace window",
+    );
   });
 
   it("does not keyword-route terminal questions from generic partial words", async () => {
