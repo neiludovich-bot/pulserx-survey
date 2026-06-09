@@ -329,8 +329,7 @@ function scoreResolvedSourcePanelReference(
 ) {
   const preview = input.preview;
   const referenceText = referenceSearchText(input.reference, input.index);
-  const text = [
-    messageText,
+  const sourceText = [
     referenceText,
     preview?.title,
     preview?.sourceUrl,
@@ -347,14 +346,15 @@ function scoreResolvedSourcePanelReference(
   ]
     .filter((value): value is string => Boolean(value))
     .join(" ");
+  const turnText = `${messageText} ${sourceText}`;
   let score = Math.max(0, 100 - input.index);
 
   if ((preview?.images.length ?? 0) > 0) {
-    score += 200;
+    score += 600;
   }
 
   if (
-    sourceTextMatches(text, [
+    sourceTextMatches(sourceText, [
       /\b(?:graph|chart|curve|kaplan|km curve|table|forest plot|swimmer plot)\b/,
       /\b(?:pfs|progression free|overall survival|survival|os|orr|response rate)\b/,
       /\b(?:hazard ratio|confidence interval|95 ci|hr)\b/,
@@ -365,7 +365,7 @@ function scoreResolvedSourcePanelReference(
   }
 
   if (
-    sourceTextMatches(text, [
+    sourceTextMatches(sourceText, [
       /\b(?:dosing and administration guide|dose modification|monitoring checklist|adverse reaction management|peripheral neuropathy informational resource|patient management guide)\b/,
     ])
   ) {
@@ -377,7 +377,7 @@ function scoreResolvedSourcePanelReference(
   }
 
   if (
-    sourceTextMatches(text, [
+    sourceTextMatches(sourceText, [
       /\b(?:hero|lifestyle|brand campaign|airplane|aircraft|plane|jet|flight|travel|jumping|splash|product shot|pill|tablet|capsule|stays on|stays off|up to 100)\b/,
     ])
   ) {
@@ -400,7 +400,23 @@ function scoreResolvedSourcePanelReference(
     ]) &&
     (preview?.images.length ?? 0) === 0
   ) {
-    score -= 175;
+    score -= 350;
+  }
+
+  if (
+    sourceTextIncludesAny(messageText, [
+      "safety",
+      "adverse",
+      "side effect",
+      "guide",
+      "checklist",
+      "resource",
+    ]) &&
+    sourceTextMatches(turnText, [
+      /\b(?:dosing and administration guide|dose modification|monitoring checklist|adverse reaction management|peripheral neuropathy informational resource|patient management guide)\b/,
+    ])
+  ) {
+    score += 80;
   }
 
   return score;
@@ -410,7 +426,12 @@ function chooseBestResolvedSourcePanelReference(
   references: SourcePanelReference[],
   messageText: string,
 ) {
-  return [...references].sort((left, right) => {
+  const imageReferences = references.filter(
+    (reference) => (reference.preview?.images.length ?? 0) > 0,
+  );
+  const candidateReferences = imageReferences.length ? imageReferences : references;
+
+  return [...candidateReferences].sort((left, right) => {
     const scoreDelta =
       scoreResolvedSourcePanelReference(right, messageText) -
       scoreResolvedSourcePanelReference(left, messageText);
