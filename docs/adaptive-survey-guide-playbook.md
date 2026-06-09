@@ -627,8 +627,13 @@ Rules:
 
 ## MVP Turn Capture
 
-Until the MVP bridge stores these events in Postgres, capture an append-only
-local JSONL audit file per session. Each turn audit should include:
+For beta-prod work, the MVP bridge should persist survey sessions, respondent
+turns, interviewer turns, and selection decisions into the shared Prisma
+`Study`, `Session`, `Turn`, and `Decision` models whenever `DATABASE_URL` is
+configured. The append-only local JSONL file remains a fallback/debug artifact,
+but Postgres is the canonical audit store for hosted runs.
+
+Each turn audit should include:
 
 - participant message
 - current question before the turn
@@ -643,6 +648,12 @@ local JSONL audit file per session. Each turn audit should include:
 
 This makes bad turns replayable and lets QA answer: **Why did the interviewer
 ask this next, and why did those sources appear?**
+
+Database persistence should be best-effort for the live respondent path: a
+temporary audit-write failure should not block the survey UI, but it should be
+visible in API logs/observability. The durable record should still preserve the
+selector/phrasing split by storing both the selected canonical question and the
+final rendered interviewer message.
 
 ## Import Workflow For A New Site
 

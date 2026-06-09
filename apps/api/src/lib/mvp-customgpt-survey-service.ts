@@ -28,6 +28,10 @@ import {
 } from "./mvp-padcev-intents";
 import { PADCEV_HCP_MVP_GUIDE } from "./mvp-padcev-guide";
 import {
+  persistMvpSurveySessionStarted,
+  persistMvpSurveyTurnAudit,
+} from "./mvp-survey-persistence";
+import {
   type MvpSurveyDefinition,
   type MvpSurveyIntent,
   type MvpSurveySlug,
@@ -128,6 +132,33 @@ function appendMvpAuditEvent(
   } catch {
     // Audit capture should never block the respondent-facing interview.
   }
+}
+
+function persistenceSnapshot(session: MvpSurveySession) {
+  return {
+    sessionId: session.sessionId,
+    surveySlug: session.surveySlug,
+    sourceBrand: session.sourceBrand,
+    studyName: session.studyName,
+    surveyIntentSlug: session.surveyIntent?.slug ?? null,
+    surveyIntentLabel: session.surveyIntent?.label ?? null,
+    surveyIntentCoverage: session.surveyIntent?.requiredCoverage ?? [],
+    projectId: session.projectId,
+    projectIdEnvName: session.projectIdEnvName,
+    targetDurationSeconds: session.targetDurationSeconds,
+    startedAt: session.startedAt,
+    currentQuestionId: session.currentQuestionId,
+    currentQuestion: questionText(currentQuestion(session)),
+    activeDiseaseAreas: [...session.activeDiseaseAreas],
+    primaryDiseaseArea: session.primaryDiseaseArea,
+    queuedQuestionIds: [...session.queuedQuestionIds],
+    askedQuestionIds: [...session.askedQuestionIds],
+    completedReason: session.completedReason,
+  };
+}
+
+function turnSequenceBase(session: MvpSurveySession) {
+  return session.turnCount * 2 - 1;
 }
 
 function normalizeClinicalMarkup(content: string) {
@@ -1526,6 +1557,15 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     projectId,
     definition.projectIdEnvName,
   );
+  const initialMessage = createMessage(
+    "interviewer",
+    missingReason
+      ? [
+          `CustomGPT is not connected yet (${missingReason}).`,
+          `The MVP shell is ready; once the key is set, this starts here: ${firstQuestion.canonicalQuestion}`,
+        ].join("\n\n")
+      : firstQuestion.canonicalQuestion,
+  );
   const session: MvpSurveySession = {
     sessionId: randomUUID(),
     surveySlug: definition.slug,
@@ -1542,17 +1582,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
-    messages: [
-      createMessage(
-        "interviewer",
-        missingReason
-          ? [
-              `CustomGPT is not connected yet (${missingReason}).`,
-              `The MVP shell is ready; once the key is set, this starts here: ${firstQuestion.canonicalQuestion}`,
-            ].join("\n\n")
-          : firstQuestion.canonicalQuestion,
-      ),
-    ],
+    messages: [initialMessage],
     turnCount: 0,
     completedReason: null,
   };
@@ -1574,6 +1604,12 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     setupReason: missingReason,
     messages: session.messages,
   });
+  void persistMvpSurveySessionStarted({
+    session: persistenceSnapshot(session),
+    initialMessage,
+    customGptEnabled: !missingReason,
+    setupReason: missingReason,
+  });
   return responseForSession(session);
 }
 
@@ -1592,6 +1628,7 @@ export async function submitMvpCustomGptSurveyTurn(
   const currentQuestionBefore = currentQuestion(session);
   session.messages.push(createMessage("participant", input.content));
   session.turnCount += 1;
+  const sequenceBase = turnSequenceBase(session);
 
   const answerQuality = currentAnswerQuality(session, input.content);
   if (!answerQuality.accepted) {
@@ -1606,6 +1643,20 @@ export async function submitMvpCustomGptSurveyTurn(
       rejectionReason: answerQuality.message,
       assistantMessage: answerQuality.message,
       nextAction: "ask",
+    });
+    void persistMvpSurveyTurnAudit({
+      session: persistenceSnapshot(session),
+      turn: {
+        eventType: "turn_rejected",
+        participantMessage: input.content,
+        assistantMessage: answerQuality.message,
+        sequenceBase,
+        currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
+        currentQuestionAfter: questionText(currentQuestion(session)),
+        rejectionReason: answerQuality.message,
+        nextAction: "ask",
+        remainingSeconds: remainingSeconds(session),
+      },
     });
     return responseForSession(session, "ask");
   }
@@ -1644,6 +1695,30 @@ export async function submitMvpCustomGptSurveyTurn(
       nextAction: "wrap_up",
       remainingSeconds: remainingSeconds(session),
       completedReason: session.completedReason,
+    });
+    void persistMvpSurveyTurnAudit({
+      session: persistenceSnapshot(session),
+      turn: {
+        eventType: "turn_completed",
+        participantMessage: input.content,
+        assistantMessage: assistantContent,
+        sequenceBase,
+        currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
+        selectedQuestionId: null,
+        selectedQuestion: null,
+        actualAskedQuestionId: null,
+        actualAskedQuestion: null,
+        currentQuestionAfter: null,
+        sourceContextRequirement: null,
+        needsCustomGpt: false,
+        customGptStatus: "not_needed",
+        customGptReason: null,
+        droppedReferences: [],
+        references: [],
+        nextAction: "wrap_up",
+        remainingSeconds: remainingSeconds(session),
+        completedReason: session.completedReason,
+      },
     });
     return responseForSession(session, "wrap_up");
   }
@@ -1799,6 +1874,38 @@ export async function submitMvpCustomGptSurveyTurn(
     nextAction,
     remainingSeconds: remainingSeconds(session),
     completedReason: session.completedReason,
+  });
+  void persistMvpSurveyTurnAudit({
+    session: persistenceSnapshot(session),
+    turn: {
+      eventType: "turn_completed",
+      participantMessage: input.content,
+      assistantMessage: assistantContent,
+      sequenceBase,
+      currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
+      selectedQuestionId: selectedQuestion?.id ?? null,
+      selectedQuestion: selectedQuestionText,
+      actualAskedQuestionId: actualAskedQuestion?.id ?? null,
+      actualAskedQuestion: questionText(actualAskedQuestion),
+      currentQuestionAfter: questionText(currentQuestion(session)),
+      sourceContextRequirement,
+      needsCustomGpt,
+      customGptStatus,
+      customGptReason,
+      droppedReferences: droppedReferences.map((reference) => ({
+        citationId: reference.citationId,
+        title: reference.title,
+        url: reference.url,
+      })),
+      references: references.map((reference) => ({
+        citationId: reference.citationId,
+        title: reference.title,
+        url: reference.url,
+      })),
+      nextAction,
+      remainingSeconds: remainingSeconds(session),
+      completedReason: session.completedReason,
+    },
   });
 
   return responseForSession(session, nextAction);
