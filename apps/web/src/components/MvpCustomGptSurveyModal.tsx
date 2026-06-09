@@ -1123,27 +1123,25 @@ export function MvpCustomGptSurveyModal({
     autoSourceLookupMessageIdRef.current = latestInterviewerMessage.id;
 
     async function openFirstVisualReference() {
-      let resourceFallback: SourcePanelReference | null = null;
-
-      for (const sourceReference of sourceReferences) {
-        const visualReference =
-          await resolveVisualSourcePanelReference(sourceReference);
-        if (isCancelled) {
-          return;
-        }
-        if (visualReference) {
-          if ((visualReference.preview?.images.length ?? 0) > 0) {
-            setSourcePanel(visualReference);
-            return;
-          }
-          resourceFallback ??= visualReference;
-        }
+      const visualReferences = await Promise.all(
+        sourceReferences.map((sourceReference) =>
+          resolveVisualSourcePanelReference(sourceReference),
+        ),
+      );
+      if (isCancelled) {
+        return;
       }
 
-      if (resourceFallback) {
-        if (!isCancelled) {
-          setSourcePanel(resourceFallback);
-        }
+      const resolvedReferences = visualReferences.filter(
+        (reference): reference is SourcePanelReference => Boolean(reference),
+      );
+      const visualReference =
+        resolvedReferences.find(
+          (reference) => (reference.preview?.images.length ?? 0) > 0,
+        ) ?? resolvedReferences[0];
+
+      if (visualReference) {
+        setSourcePanel(visualReference);
         return;
       }
 
