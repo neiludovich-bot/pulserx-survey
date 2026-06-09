@@ -781,6 +781,14 @@ or operational burden. Do not ask broad efficacy/patient-attractiveness
 questions or show PFS/OS assets unless the respondent explicitly raises
 efficacy, benefit, or risk-benefit tradeoff.
 
+Beta-prod survey definitions should be treated as typed contracts. Each product
+definition must validate its guide questions, intent paths, allowed question
+ids, and blocked question ids at startup. Product-specific intent data should
+live in product definition modules or database-backed config, not inside the
+turn-processing service. The turn service should consume the definition through
+shared helpers for intent lookup, guide ordering, allowed/blocked question
+checks, and CustomGPT context lines.
+
 For safety-management turns, source and visual selection must be conservative.
 If the respondent asks about neuropathy, rash/skin reactions, hyperglycemia,
 pneumonitis/ILD, ocular issues, dose modification, monitoring, or intervention,

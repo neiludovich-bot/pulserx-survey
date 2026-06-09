@@ -22,7 +22,21 @@ import {
   type MvpGuideQuestion,
   guideFromQuestionStrings,
 } from "./mvp-brukinsa-guide";
+import {
+  PADCEV_SAFETY_LANE_QUESTION_IDS,
+  PADCEV_SURVEY_INTENTS,
+} from "./mvp-padcev-intents";
 import { PADCEV_HCP_MVP_GUIDE } from "./mvp-padcev-guide";
+import {
+  type MvpSurveyDefinition,
+  type MvpSurveyIntent,
+  type MvpSurveySlug,
+  guideForIntent,
+  questionAllowedByIntent as intentAllowsQuestion,
+  surveyIntentContextLines,
+  surveyIntentForSlug,
+  validateMvpSurveyDefinition,
+} from "./mvp-survey-definition";
 import { transcriptLooksNonEnglishOrGarbled } from "./transcript-quality";
 import { decodeAudio, synthesizeSpeech, transcribeAudio } from "./voice-service";
 
@@ -31,29 +45,6 @@ const PADCEV_DEFAULT_PROJECT_ID = "97350";
 const MVP_AUDIT_DIR_NAME = "mvp-turn-audits";
 
 type DiseaseArea = "cll" | "wm" | "mcl" | "mzl" | "fl";
-type MvpSurveySlug = "brukinsa" | "padcev";
-
-type MvpSurveyDefinition = {
-  slug: MvpSurveySlug;
-  defaultStudyName: string;
-  sourceBrand: string;
-  guide: MvpGuideQuestion[];
-  intents?: MvpSurveyIntent[];
-  projectIdEnvName: string;
-  defaultProjectId: () => string | null;
-};
-
-type MvpSurveyIntent = {
-  slug: string;
-  label: string;
-  primaryIntent: string;
-  requiredCoverage: string[];
-  steeringRule: string;
-  questionOrder: string[];
-  allowedQuestionIds?: string[];
-  blockedQuestionIds?: string[];
-  offLaneSourceRule?: string;
-};
 
 type MvpSurveySession = {
   sessionId: string;
@@ -78,164 +69,6 @@ type MvpSurveySession = {
 
 const sessions = new Map<string, MvpSurveySession>();
 
-const PADCEV_SAFETY_LANE_QUESTION_IDS = new Set([
-  "safety",
-  "safety_management_workflow",
-  "safety_patient_caution",
-  "safety_resources",
-  "support_barriers",
-  "safety_close",
-]);
-
-const PADCEV_SURVEY_INTENTS: MvpSurveyIntent[] = [
-  {
-    slug: "general-padcev-reaction",
-    label: "General PADCEV Reaction",
-    primaryIntent:
-      "Understand the respondent's overall reaction to PADCEV source information across evidence, safety, patient fit, and implementation.",
-    requiredCoverage: [
-      "baseline familiarity",
-      "current indication and positioning",
-      "EV-302/KEYNOTE-A39 first-line evidence",
-      "patient fit",
-      "safety/tolerability",
-      "overall perception",
-    ],
-    steeringRule:
-      "Keep the discussion balanced across source-supported efficacy, safety, patient fit, dosing/admin, and implementation. Do not dwell on intake demographics.",
-    questionOrder: [
-      "intro_consent",
-      "familiarity",
-      "indication_positioning",
-      "ev302",
-      "patient_fit",
-      "safety",
-      "dosing_admin",
-      "overall",
-      "close",
-    ],
-  },
-  {
-    slug: "ev302-first-line-evidence",
-    label: "EV-302 / First-Line Evidence",
-    primaryIntent:
-      "Guide the respondent through the PADCEV plus pembrolizumab first-line evidence and identify what the EV-302/KEYNOTE-A39 data changes or fails to change.",
-    requiredCoverage: [
-      "EV-302/KEYNOTE-A39 design",
-      "key efficacy outcomes",
-      "patient types where evidence is compelling",
-      "safety caveats tied to first-line use",
-      "remaining evidence questions",
-    ],
-    steeringRule:
-      "Prioritize concrete EV-302/KEYNOTE-A39 study details and first-line implications. Answer other source questions briefly, then return to first-line evidence.",
-    questionOrder: [
-      "intro_consent",
-      "ev302",
-      "patient_fit",
-      "safety",
-      "overall",
-      "close",
-    ],
-  },
-  {
-    slug: "side-effect-management",
-    label: "Side Effect Management",
-    primaryIntent:
-      "Understand how practitioners think about monitoring, counseling, mitigating, and operationalizing PADCEV-associated adverse events.",
-    requiredCoverage: [
-      "baseline safety concern",
-      "skin reaction management",
-      "peripheral neuropathy",
-      "hyperglycemia",
-      "pneumonitis/ILD and ocular issues when relevant",
-      "dose modification confidence",
-      "patient counseling and monitoring barriers",
-    ],
-    steeringRule:
-      "Prioritize safety-management confidence, monitoring workflow, dose modification comfort, and practical barriers. Do not route into broad efficacy, PFS/OS, or general patient-attractiveness questions unless the respondent explicitly asks about efficacy or risk-benefit.",
-    questionOrder: [
-      "intro_consent",
-      "safety",
-      "safety_management_workflow",
-      "safety_patient_caution",
-      "safety_resources",
-      "support_barriers",
-      "safety_close",
-      "close",
-    ],
-    allowedQuestionIds: [
-      "intro_consent",
-      "safety",
-      "safety_management_workflow",
-      "safety_patient_caution",
-      "safety_resources",
-      "support_barriers",
-      "safety_close",
-      "close",
-    ],
-    blockedQuestionIds: [
-      "indication_positioning",
-      "ev302",
-      "patient_fit",
-      "monotherapy_evidence",
-      "overall",
-    ],
-    offLaneSourceRule:
-      "For the side-effect-management intent, efficacy/PFS/OS and broad patient-attractiveness modules are off-lane unless the respondent explicitly asks about efficacy, clinical benefit, or risk-benefit tradeoff.",
-  },
-  {
-    slug: "patient-selection-barriers",
-    label: "Patient Selection & Barriers",
-    primaryIntent:
-      "Identify where PADCEV feels appropriate, where clinicians are cautious, and which practical barriers prevent adoption.",
-    requiredCoverage: [
-      "appropriate patient populations",
-      "caution or avoidance segments",
-      "comorbidity and toxicity-risk concerns",
-      "implementation barriers",
-      "access/support needs",
-      "what would increase confidence",
-    ],
-    steeringRule:
-      "Prioritize patient-fit, caution segments, and barriers. Use source evidence to probe why the respondent would or would not use PADCEV in specific scenarios.",
-    questionOrder: [
-      "intro_consent",
-      "patient_fit",
-      "indication_positioning",
-      "ev302",
-      "safety",
-      "support_barriers",
-      "overall",
-      "close",
-    ],
-  },
-  {
-    slug: "familiar-whats-new",
-    label: "Already Familiar: What's New",
-    primaryIntent:
-      "Orient familiar respondents to newer or emphasized PADCEV information and determine what, if anything, would change behavior.",
-    requiredCoverage: [
-      "current indication or positioning updates",
-      "EV-302/KEYNOTE-A39 first-line evidence",
-      "later-line monotherapy context",
-      "safety-management details that may be underappreciated",
-      "remaining information gaps",
-    ],
-    steeringRule:
-      "Assume basic familiarity. Avoid basic intake and introductory education; focus on what is new, underappreciated, or practice-changing.",
-    questionOrder: [
-      "intro_consent",
-      "indication_positioning",
-      "ev302",
-      "monotherapy_evidence",
-      "safety",
-      "overall",
-      "close",
-    ],
-  },
-];
-
 const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
   brukinsa: {
     slug: "brukinsa",
@@ -256,6 +89,8 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
   },
 };
 
+Object.values(SURVEY_DEFINITIONS).forEach(validateMvpSurveyDefinition);
+
 function surveyDefinitionForSlug(slug?: string): MvpSurveyDefinition {
   const normalized = slug?.toLowerCase();
 
@@ -264,59 +99,6 @@ function surveyDefinitionForSlug(slug?: string): MvpSurveyDefinition {
   }
 
   return SURVEY_DEFINITIONS.brukinsa;
-}
-
-function surveyIntentForSlug(
-  definition: MvpSurveyDefinition,
-  slug?: string,
-) {
-  if (!definition.intents?.length) {
-    return null;
-  }
-
-  return (
-    definition.intents.find((intent) => intent.slug === slug) ??
-    definition.intents[0] ??
-    null
-  );
-}
-
-function guideForIntent(
-  definition: MvpSurveyDefinition,
-  intent: MvpSurveyIntent | null,
-) {
-  if (!intent) {
-    return definition.guide;
-  }
-
-  const guideById = new Map(
-    definition.guide.map((question) => [question.id, question]),
-  );
-
-  return intent.questionOrder
-    .map((questionId) => guideById.get(questionId))
-    .filter((question): question is MvpGuideQuestion => Boolean(question));
-}
-
-function questionAllowedByIntent(
-  session: MvpSurveySession,
-  question: MvpGuideQuestion,
-) {
-  const intent = session.surveyIntent;
-
-  if (!intent) {
-    return true;
-  }
-
-  if (intent.blockedQuestionIds?.includes(question.id)) {
-    return false;
-  }
-
-  if (intent.allowedQuestionIds?.length) {
-    return intent.allowedQuestionIds.includes(question.id);
-  }
-
-  return true;
 }
 
 function workspaceRoot() {
@@ -665,7 +447,7 @@ function selectableQuestions(
   participantContent = "",
 ) {
   return questions.filter((question) =>
-    questionAllowedByIntent(session, question) &&
+    intentAllowsQuestion(session.surveyIntent, question) &&
     questionAllowedByDiseaseLane(session, question, participantContent),
   );
 }
@@ -693,7 +475,7 @@ function enqueueQuestionIds(
       !question ||
       questionWasAsked(session, question) ||
       session.queuedQuestionIds.includes(questionId) ||
-      !questionAllowedByIntent(session, question) ||
+      !intentAllowsQuestion(session.surveyIntent, question) ||
       !questionAllowedByDiseaseLane(session, question, participantContent)
     ) {
       continue;
@@ -875,7 +657,7 @@ function dequeueNextQuestion(
     if (
       question &&
       !questionWasAsked(session, question) &&
-      questionAllowedByIntent(session, question) &&
+      intentAllowsQuestion(session.surveyIntent, question) &&
       questionAllowedByDiseaseLane(session, question, participantContent)
     ) {
       session.queuedQuestionIds.shift();
@@ -923,7 +705,7 @@ function selectQuestionForKeyword(
       continue;
     }
 
-    if (!questionAllowedByIntent(session, question)) {
+    if (!intentAllowsQuestion(session.surveyIntent, question)) {
       continue;
     }
 
@@ -1634,24 +1416,7 @@ function surveyContext(
     `Study: ${session.studyName}`,
     "Mode: CustomGPT-first adaptive medical market research MVP.",
     `Approved source brand: ${session.sourceBrand}.`,
-    session.surveyIntent
-      ? `Selected survey intention: ${session.surveyIntent.label}. ${session.surveyIntent.primaryIntent}`
-      : "Selected survey intention: default guide.",
-    session.surveyIntent
-      ? `Intention steering rule: ${session.surveyIntent.steeringRule}`
-      : null,
-    session.surveyIntent?.allowedQuestionIds?.length
-      ? `Intent-allowed question ids: ${session.surveyIntent.allowedQuestionIds.join(" | ")}`
-      : null,
-    session.surveyIntent?.blockedQuestionIds?.length
-      ? `Intent-blocked question ids unless respondent explicitly asks off-lane: ${session.surveyIntent.blockedQuestionIds.join(" | ")}`
-      : null,
-    session.surveyIntent?.offLaneSourceRule
-      ? `Intent off-lane source rule: ${session.surveyIntent.offLaneSourceRule}`
-      : null,
-    session.surveyIntent?.requiredCoverage.length
-      ? `Required intent coverage: ${session.surveyIntent.requiredCoverage.join(" | ")}`
-      : null,
+    ...surveyIntentContextLines(session.surveyIntent),
     "Controller guardrails: answer reactive source questions once, return to the survey, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
     activeDiseaseLane
       ? `Active disease lane: ${activeDiseaseLane}.`

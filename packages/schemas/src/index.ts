@@ -1587,6 +1587,57 @@ export const mvpCustomGptSurveyStartRequestSchema = z.object({
   guide: z.array(z.string().trim().min(1)).min(1).max(20).optional(),
 });
 
+const mvpSurveyIdSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9_-]+$/);
+
+export const mvpGuideQuestionDefinitionSchema = z.object({
+  id: mvpSurveyIdSchema,
+  module: z.string().trim().min(1),
+  objective: z.string().trim().min(1),
+  canonicalQuestion: z.string().trim().min(1),
+  sourceContextRequirement: z.string().trim().min(1).nullable(),
+  routeKeywords: z.array(z.string().trim().min(1)).default([]),
+  completionSignals: z.array(z.string().trim().min(1)).default([]),
+  adaptiveProbes: z.array(z.string().trim().min(1)).default([]),
+  analyzableOutputs: z.array(z.string().trim().min(1)).default([]),
+  close: z.boolean().optional(),
+});
+
+export const mvpSurveyIntentDefinitionSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9-]+$/),
+  label: z.string().trim().min(1),
+  primaryIntent: z.string().trim().min(1),
+  requiredCoverage: z.array(z.string().trim().min(1)).default([]),
+  steeringRule: z.string().trim().min(1),
+  questionOrder: z.array(mvpSurveyIdSchema).min(1),
+  allowedQuestionIds: z.array(mvpSurveyIdSchema).optional(),
+  blockedQuestionIds: z.array(mvpSurveyIdSchema).optional(),
+  offLaneSourceRule: z.string().trim().min(1).optional(),
+});
+
+export const mvpSurveyDefinitionContractSchema = z.object({
+  slug: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .regex(/^[a-z0-9-]+$/),
+  defaultStudyName: z.string().trim().min(1),
+  sourceBrand: z.string().trim().min(1),
+  guide: z.array(mvpGuideQuestionDefinitionSchema).min(1),
+  intents: z.array(mvpSurveyIntentDefinitionSchema).default([]),
+});
+
+export type MvpSurveyIntentDefinition = z.infer<
+  typeof mvpSurveyIntentDefinitionSchema
+>;
+
 export const mvpCustomGptSurveyTurnRequestSchema = z.object({
   sessionId: z.string().min(1),
   content: z.string().trim().min(1).max(4000),
