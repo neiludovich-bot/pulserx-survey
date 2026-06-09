@@ -1321,69 +1321,6 @@ function answerProbablyContainsQuestion(answer: string, question: string) {
   return questionTokenMatchCount(answer, question) >= Math.min(3, tokenCount);
 }
 
-function answerMentionsQuestionSpecificSignal(
-  answer: string,
-  question: MvpGuideQuestion,
-) {
-  const signalsByQuestionId: Record<string, string[]> = {
-    evidence_overview: ["data", "evidence", "study", "trial"],
-    cll_guideline_positioning: ["guideline", "guidelines", "nccn", "preferred"],
-    sequoia: ["sequoia"],
-    sequoia_patient_fit: ["first line", "frontline", "patient type"],
-    alpine: ["alpine", "ibrutinib", "head to head"],
-    cll_safety_tolerability: ["cll safety", "tolerability", "risk benefit"],
-    wm_aspen: ["aspen", "waldenstrom"],
-    accelerated_approval_indolent: ["accelerated approval", "mcl", "mzl", "fl"],
-    support_resources: ["support resources", "mybeone", "access"],
-    indication_positioning: ["indication", "first line", "combination", "monotherapy"],
-    ev302: ["ev 302", "ev302", "keynote a39", "overall survival", "progression free"],
-    patient_fit: ["patient population", "patient type", "patient fit", "cisplatin", "neuropathy"],
-    monotherapy_evidence: ["monotherapy", "ev 301", "ev301", "ev 201", "ev201"],
-    safety: ["safety", "neuropathy", "skin", "hyperglycemia", "pneumonitis"],
-    dosing_admin: ["dosing", "administration", "infusion", "schedule"],
-    support_barriers: ["barrier", "monitoring", "access", "support"],
-  };
-  const signals = signalsByQuestionId[question.id] ?? [];
-
-  return signals.some((signal) =>
-    ` ${normalizeText(answer)} `.includes(` ${normalizeText(signal)} `),
-  );
-}
-
-function findQuestionAskedByAnswer(
-  session: MvpSurveySession,
-  answer: string,
-  preferredQuestion: MvpGuideQuestion | null,
-) {
-  if (
-    preferredQuestion &&
-    (answerProbablyContainsQuestion(answer, preferredQuestion.canonicalQuestion) ||
-      answerMentionsQuestionSpecificSignal(answer, preferredQuestion))
-  ) {
-    return preferredQuestion;
-  }
-
-  const directlySignaledQuestion = unaskedQuestions(session).find((question) =>
-    answerMentionsQuestionSpecificSignal(answer, question),
-  );
-  if (directlySignaledQuestion) {
-    return directlySignaledQuestion;
-  }
-
-  let bestQuestion: MvpGuideQuestion | null = null;
-  let bestScore = 0;
-
-  for (const question of unaskedQuestions(session)) {
-    const score = questionTokenMatchCount(answer, question.canonicalQuestion);
-    if (score > bestScore && answerProbablyContainsQuestion(answer, question.canonicalQuestion)) {
-      bestQuestion = question;
-      bestScore = score;
-    }
-  }
-
-  return bestQuestion;
-}
-
 function ensureReturnToSurvey(answer: string, selectedQuestion: string | null) {
   if (!selectedQuestion || answerProbablyContainsQuestion(answer, selectedQuestion)) {
     return answer.trim();
@@ -1799,9 +1736,7 @@ export async function submitMvpCustomGptSurveyTurn(
         nextAction = "setup_required";
       } else {
         customGptStatus = "success";
-        actualAskedQuestion =
-          findQuestionAskedByAnswer(session, customGptTurn.answer, selectedQuestion) ??
-          selectedQuestion;
+        actualAskedQuestion = selectedQuestion;
         assistantContent = ensureReturnToSurvey(
           customGptTurn.answer,
           questionText(actualAskedQuestion),
