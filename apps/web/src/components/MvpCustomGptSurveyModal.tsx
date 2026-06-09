@@ -453,6 +453,10 @@ function openSourceUrlInNewTab(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
+function completionFollowUpUrl(surveySlug: string) {
+  return surveySlug === "padcev" ? "https://www.padcevhcp.com/contact-us" : null;
+}
+
 function normalizeClinicalMarkup(content: string) {
   return content
     .replace(/\$\$?\s*IC_\{?50\}?\s*\$\$?/gi, "IC50")
@@ -1620,6 +1624,8 @@ export function MvpCustomGptSurveyModal({
         ...(optimisticMessage ? [optimisticMessage] : []),
       ]
     : [];
+  const followUpUrl =
+    survey?.status === "completed" ? completionFollowUpUrl(surveySlug) : null;
   const isChoosingIntent =
     intentOptions.length > 0 && !survey && !selectedIntentSlug;
 
@@ -1728,6 +1734,18 @@ export function MvpCustomGptSurveyModal({
           )}
           {isSending ? <div className="mvp-loading">Thinking...</div> : null}
         </div>
+
+        {followUpUrl ? (
+          <div className="mvp-completion-actions">
+            <p>Thank you for participating.</p>
+            <button
+              onClick={() => openSourceUrlInNewTab(followUpUrl)}
+              type="button"
+            >
+              Request follow-up
+            </button>
+          </div>
+        ) : null}
 
         <form className="mvp-composer" onSubmit={handleSubmit}>
           <textarea

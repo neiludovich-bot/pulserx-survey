@@ -229,7 +229,10 @@ describe("MVP CustomGPT survey service", () => {
     expect(completed.nextAction).toBe("wrap_up");
     expect(completed.currentQuestion).toBeNull();
     expect(completed.messages.at(-1)?.content).toContain(
-      "enough to close this MVP pass",
+      "Thank you for participating",
+    );
+    expect(completed.messages.at(-1)?.content).not.toContain(
+      "MVP pass",
     );
     expect(completed.messages.at(-1)?.content).not.toContain(
       "Before we get into",
@@ -1525,7 +1528,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.currentQuestion).not.toBeNull();
     expect(next.reason).not.toBe("Timebox plus grace period reached.");
     expect(next.messages.at(-1)?.content).not.toContain(
-      "that gives us enough",
+      "MVP pass",
     );
   });
 
@@ -1557,6 +1560,51 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.content).toContain(
       "past the planned interview time plus the grace window",
     );
+  });
+
+  it("does not jump to EV-302 after the PADCEV side-effect closing lane has started", async () => {
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 600,
+    });
+
+    const answers = [
+      "Yes",
+      "Peripheral neuropathy and rash are the main issues.",
+      "I would want dose modification guidance and monitoring steps.",
+      "I would be most cautious in patients with baseline neuropathy.",
+      "The adverse-reaction guides and monitoring checklist would help.",
+    ];
+
+    let turn = started;
+    for (const content of answers) {
+      turn = await submitMvpCustomGptSurveyTurn({
+        sessionId: started.sessionId,
+        content,
+      });
+    }
+
+    expect(turn.currentQuestion).toContain("To close");
+
+    const followUp = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "Before we finish, can you remind me about side effect management resources? Also OS and PFS are strong.",
+    });
+
+    const followUpTranscript = followUp.messages
+      .map((message) => message.content)
+      .join("\n");
+    expect(followUp.nextAction).toBe("wrap_up");
+    expect(followUp.messages.at(-1)?.content).toContain(
+      "Thank you for participating",
+    );
+    expect(followUpTranscript).not.toContain("EV-302");
+    expect(followUpTranscript).not.toContain("KEYNOTE");
   });
 
   it("does not keyword-route terminal questions from generic partial words", async () => {
