@@ -61,11 +61,13 @@ type MvpSurveySession = {
   targetDurationSeconds: number;
   startedAt: Date;
   guide: MvpGuideQuestion[];
+  fullGuide: MvpGuideQuestion[];
   askedQuestionIds: string[];
   currentQuestionId: string | null;
   activeDiseaseAreas: DiseaseArea[];
   primaryDiseaseArea: DiseaseArea | null;
   queuedQuestionIds: string[];
+  excursionQuestionIds: string[];
   messages: MvpCustomGptSurveyMessage[];
   turnCount: number;
   completedReason: string | null;
@@ -152,6 +154,7 @@ function persistenceSnapshot(session: MvpSurveySession) {
     activeDiseaseAreas: [...session.activeDiseaseAreas],
     primaryDiseaseArea: session.primaryDiseaseArea,
     queuedQuestionIds: [...session.queuedQuestionIds],
+    excursionQuestionIds: [...session.excursionQuestionIds],
     askedQuestionIds: [...session.askedQuestionIds],
     completedReason: session.completedReason,
   };
@@ -437,16 +440,20 @@ function questionText(question: MvpGuideQuestion | null) {
 
 function currentQuestion(session: MvpSurveySession) {
   return (
-    session.guide.find((question) => question.id === session.currentQuestionId) ??
+    allQuestions(session).find((question) => question.id === session.currentQuestionId) ??
     null
   );
 }
 
 function askedQuestions(session: MvpSurveySession) {
   return session.askedQuestionIds.flatMap((questionId) => {
-    const question = session.guide.find((item) => item.id === questionId);
+    const question = allQuestions(session).find((item) => item.id === questionId);
     return question ? [question.canonicalQuestion] : [];
   });
+}
+
+function allQuestions(session: MvpSurveySession) {
+  return session.fullGuide.length ? session.fullGuide : session.guide;
 }
 
 function questionWasAsked(session: MvpSurveySession, question: MvpGuideQuestion) {
@@ -492,27 +499,163 @@ function firstPatternIndex(content: string, patterns: RegExp[]) {
 }
 
 function questionById(session: MvpSurveySession, questionId: string) {
-  return session.guide.find((question) => question.id === questionId) ?? null;
+  return allQuestions(session).find((question) => question.id === questionId) ?? null;
 }
 
 function enqueueQuestionIds(
   session: MvpSurveySession,
   questionIds: string[],
   participantContent: string,
+  options: { allowOffIntent?: boolean } = {},
 ) {
   for (const questionId of questionIds) {
     const question = questionById(session, questionId);
+    const allowedByIntent =
+      intentAllowsQuestion(session.surveyIntent, question) ||
+      options.allowOffIntent === true;
     if (
       !question ||
       questionWasAsked(session, question) ||
       session.queuedQuestionIds.includes(questionId) ||
-      !intentAllowsQuestion(session.surveyIntent, question) ||
+      !allowedByIntent ||
       !questionAllowedByDiseaseLane(session, question, participantContent)
     ) {
       continue;
     }
 
     session.queuedQuestionIds.push(questionId);
+    if (
+      options.allowOffIntent === true &&
+      !intentAllowsQuestion(session.surveyIntent, question) &&
+      !session.excursionQuestionIds.includes(questionId)
+    ) {
+      session.excursionQuestionIds.push(questionId);
+    }
+  }
+}
+
+function queueExplicitIntentExcursions(
+  session: MvpSurveySession,
+  participantContent: string,
+) {
+  if (session.surveySlug !== "padcev" || !session.surveyIntent) {
+    return;
+  }
+
+  const normalized = normalizeText(participantContent);
+  const sideEffectIntent = session.surveyIntent.slug === "side-effect-management";
+  const rules: Array<{
+    questionIds: string[];
+    patterns: RegExp[];
+  }> = [
+    {
+      questionIds: ["safety_resources"],
+      patterns: [
+        /\bguide\b/,
+        /\bguides\b/,
+        /\bchecklist\b/,
+        /\bchecklists\b/,
+        /\bresource\b/,
+        /\bresources\b/,
+        /\bpdf\b/,
+        /\bpatient education\b/,
+        /\bcounseling material\b/,
+      ],
+    },
+    {
+      questionIds: ["safety_management_workflow"],
+      patterns: [
+        /\bmanage\b/,
+        /\bmanagement\b/,
+        /\bmonitor\b/,
+        /\bmonitoring\b/,
+        /\bintervene\b/,
+        /\bintervention\b/,
+        /\bdose modification\b/,
+        /\bdose interruption\b/,
+        /\bdose reduction\b/,
+        /\bdiscontinuation\b/,
+        /\bneuropathy\b/,
+        /\brash\b/,
+        /\bskin reaction\b/,
+        /\bhyperglycemia\b/,
+        /\bpneumonitis\b/,
+        /\bocular\b/,
+      ],
+    },
+    {
+      questionIds: ["ev302"],
+      patterns: [
+        /\bev 302\b/,
+        /\bev302\b/,
+        /\bkeynote a39\b/,
+        /\bkeynote-a39\b/,
+        /\boverall survival\b/,
+        /\bos\b/,
+        /\bprogression free\b/,
+        /\bpfs\b/,
+        /\befficacy\b/,
+        /\bbenefit\b/,
+        /\brisk benefit\b/,
+      ],
+    },
+    {
+      questionIds: ["patient_fit"],
+      patterns: [
+        /\bpatient fit\b/,
+        /\bpatient population\b/,
+        /\bpatient populations\b/,
+        /\bpatient type\b/,
+        /\bpatient types\b/,
+        /\bappropriate patient\b/,
+        /\binclusion\b/,
+        /\bexclusion\b/,
+        /\bwho would you use\b/,
+        /\bwhere would you use\b/,
+        /\bcisplatin\b/,
+        /\brenal\b/,
+      ],
+    },
+    {
+      questionIds: ["monotherapy_evidence"],
+      patterns: [
+        /\bmonotherapy\b/,
+        /\bev 301\b/,
+        /\bev301\b/,
+        /\bev 201\b/,
+        /\bev201\b/,
+        /\blater line\b/,
+        /\bpost platinum\b/,
+      ],
+    },
+    {
+      questionIds: ["dosing_admin"],
+      patterns: [
+        /\bdosing\b/,
+        /\bdose\b/,
+        /\badministration\b/,
+        /\binfusion\b/,
+        /\bschedule\b/,
+      ],
+    },
+  ];
+
+  for (const rule of rules) {
+    if (firstPatternIndex(normalized, rule.patterns) >= 0) {
+      const isDosingAdminRule = rule.questionIds.includes("dosing_admin");
+      const isSafetyManagementPhrase =
+        contentLooksLikePadcevSafetyQuestion(participantContent) &&
+        !/\b(administration|infusion|schedule|day 1|day 8|day 15|cycle|q\d|weekly|every week)\b/.test(
+          normalized,
+        );
+      if (sideEffectIntent && isDosingAdminRule && isSafetyManagementPhrase) {
+        continue;
+      }
+
+      enqueueQuestionIds(session, rule.questionIds, participantContent, {
+        allowOffIntent: true,
+      });
+    }
   }
 }
 
@@ -688,17 +831,40 @@ function dequeueNextQuestion(
     if (
       question &&
       !questionWasAsked(session, question) &&
-      intentAllowsQuestion(session.surveyIntent, question) &&
+      (intentAllowsQuestion(session.surveyIntent, question) ||
+        session.excursionQuestionIds.includes(question.id)) &&
       questionAllowedByDiseaseLane(session, question, participantContent)
     ) {
       session.queuedQuestionIds.shift();
+      session.excursionQuestionIds = session.excursionQuestionIds.filter(
+        (id) => id !== question.id,
+      );
       return question;
     }
 
     session.queuedQuestionIds.shift();
+    session.excursionQuestionIds = session.excursionQuestionIds.filter(
+      (id) => id !== questionId,
+    );
   }
 
   return null;
+}
+
+function hasDequeuableQueuedQuestion(
+  session: MvpSurveySession,
+  participantContent: string,
+) {
+  return session.queuedQuestionIds.some((questionId) => {
+    const question = questionById(session, questionId);
+    return (
+      question &&
+      !questionWasAsked(session, question) &&
+      (intentAllowsQuestion(session.surveyIntent, question) ||
+        session.excursionQuestionIds.includes(question.id)) &&
+      questionAllowedByDiseaseLane(session, question, participantContent)
+    );
+  });
 }
 
 function forwardUnaskedQuestions(
@@ -779,8 +945,9 @@ function selectNextQuestion(
   );
   const unasked = forwardUnasked.length ? forwardUnasked : fallbackUnasked;
 
-  if (unasked.length === 0) {
-    return null;
+  const queuedQuestion = dequeueNextQuestion(session, participantContent);
+  if (queuedQuestion) {
+    return queuedQuestion;
   }
 
   if (remaining <= 90) {
@@ -791,9 +958,8 @@ function selectNextQuestion(
     );
   }
 
-  const queuedQuestion = dequeueNextQuestion(session, participantContent);
-  if (queuedQuestion) {
-    return queuedQuestion;
+  if (unasked.length === 0) {
+    return null;
   }
 
   const current = currentQuestion(session);
@@ -1247,10 +1413,15 @@ function sourceContextForReactiveQuestion(
     const selectedSafetyLaneQuestion = Boolean(
       selectedQuestion && PADCEV_SAFETY_LANE_QUESTION_IDS.has(selectedQuestion.id),
     );
+    const selectedOffLaneExcursion = Boolean(
+      selectedQuestion && !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
+    );
     const safetyScoped =
       contentLooksLikePadcevSafetyQuestion(participantContent) ||
       selectedSafetyLaneQuestion ||
-      (sideEffectIntent && contentLooksLikePatientPopulationQuestion(participantContent));
+      (sideEffectIntent &&
+        !selectedOffLaneExcursion &&
+        contentLooksLikePatientPopulationQuestion(participantContent));
 
     if (safetyScoped) {
       return "The participant is in a PADCEV safety-management lane or asked a PADCEV safety-management/resource question. Answer the specific adverse-event, monitoring, management, safety-caution patient-profile, or resource angle they raised; do not provide a full label-style safety inventory. Use 2-4 focused bullets or one short paragraph. If patient profiles are discussed in this lane, frame them as safety-management caution profiles and monitoring/mitigation needs, not broad efficacy-based patient selection. Prioritize approved PADCEV HCP Important Safety Information, Prescribing Information, the PADCEV dose-modifications page, dosing/administration guide, Adverse Reactions Monitoring Checklist, adverse-reaction management guides, and the PADCEV Peripheral Neuropathy Informational Resource if available in the indexed sources. If the participant asks for a guide, checklist, continuum, operational aid, or how to handle adverse events, cite the source page most likely to expose that guide/checklist/PDF rather than a generic efficacy page. For neuropathy, rash/skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, include only source-supported monitoring, dose interruption, dose reduction, discontinuation, counseling, or supportive-care guidance for the relevant topic. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. If the source does not provide a detailed stepwise intervention algorithm, say that plainly while still summarizing the source-supported management steps. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
@@ -1379,11 +1550,17 @@ function surveyContext(
     .filter((question): question is MvpGuideQuestion => Boolean(question))
     .map((question) => `${question.id}: ${question.module}`)
     .join(" | ");
+  const selectedQuestionIsExcursion = Boolean(
+    selectedQuestion && !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
+  );
 
   return [
     `Study: ${session.studyName}`,
     "Mode: CustomGPT-first adaptive medical market research MVP.",
     `Approved source brand: ${session.sourceBrand}.`,
+    selectedQuestionIsExcursion
+      ? "Selected next question is an explicit respondent-requested off-lane excursion. Answer that requested module for this turn, then the controller will return to the selected home intention."
+      : null,
     ...surveyIntentContextLines(session.surveyIntent),
     "Controller guardrails: answer reactive source questions once, return to the survey, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
     activeDiseaseLane
@@ -1514,11 +1691,13 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     targetDurationSeconds: input.targetDurationSeconds ?? 600,
     startedAt: new Date(),
     guide,
+    fullGuide: definition.guide,
     askedQuestionIds: [firstQuestion.id],
     currentQuestionId: firstQuestion.id,
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
+    excursionQuestionIds: [],
     messages: [initialMessage],
     turnCount: 0,
     completedReason: null,
@@ -1600,8 +1779,16 @@ export async function submitMvpCustomGptSurveyTurn(
 
   updateDiseaseStateFromParticipant(session, input.content);
   queuePriorityFollowUps(session, currentQuestionBefore, input.content);
+  queueExplicitIntentExcursions(session, input.content);
 
-  if (currentQuestionBefore?.close || contentLooksLikeSurveyStop(input.content)) {
+  const hasQueuedFollowUp = hasDequeuableQueuedQuestion(session, input.content);
+  const shouldCloseNow =
+    contentLooksLikeSurveyStop(input.content) ||
+    (currentQuestionBefore?.close &&
+      !hasQueuedFollowUp &&
+      !contentLooksLikeReactiveQuestion(input.content));
+
+  if (shouldCloseNow) {
     session.completedReason = currentQuestionBefore?.close
       ? "Closing question answered."
       : "Participant ended the survey.";

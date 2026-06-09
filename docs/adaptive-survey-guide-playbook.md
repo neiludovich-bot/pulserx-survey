@@ -809,6 +809,15 @@ should answer the off-lane question briefly and the controller should return to
 the active lane rather than advancing into a different interview path. Factual
 answers must still come from the configured CustomGPT source project.
 
+Treat explicit off-lane requests as controlled excursions, not as intent
+changes. The selected menu intent is the home lane and must still complete its
+required coverage. If a respondent in one lane asks a clear question from
+another lane, the controller may queue the relevant off-lane module once, mark
+it as an excursion in the audit trail, answer it with source grounding, and
+then resume the next unasked home-lane question. Do not require the respondent
+to return to the main menu to ask a reasonable off-lane question, but do not let
+that one question silently switch the rest of the interview path.
+
 For side-effect-management intents, patient-profile questions must be framed as
 safety-management caution questions: which patients would make the clinician
 more cautious because of monitoring, mitigation, dose modification, counseling,
