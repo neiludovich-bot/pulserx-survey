@@ -521,6 +521,24 @@ function questionById(session: MvpSurveySession, questionId: string) {
   return allQuestions(session).find((question) => question.id === questionId) ?? null;
 }
 
+function questionIsClosingLane(question: MvpGuideQuestion | null | undefined) {
+  return Boolean(
+    question &&
+      (question.close ||
+        question.id === "safety_close" ||
+        question.id.endsWith("_close")),
+  );
+}
+
+function closingPhaseStarted(session: MvpSurveySession) {
+  return (
+    questionIsClosingLane(currentQuestion(session)) ||
+    session.askedQuestionIds.some((questionId) =>
+      questionIsClosingLane(questionById(session, questionId)),
+    )
+  );
+}
+
 function enqueueQuestionIds(
   session: MvpSurveySession,
   questionIds: string[],
@@ -558,6 +576,10 @@ function queueExplicitIntentExcursions(
   participantContent: string,
 ) {
   if (session.surveySlug !== "padcev" || !session.surveyIntent) {
+    return;
+  }
+
+  if (closingPhaseStarted(session)) {
     return;
   }
 
@@ -967,6 +989,13 @@ function selectNextQuestion(
     participantContent,
   );
   const unasked = forwardUnasked.length ? forwardUnasked : fallbackUnasked;
+
+  if (closingPhaseStarted(session)) {
+    return (
+      unasked.find((question) => question.close) ??
+      null
+    );
+  }
 
   const queuedQuestion = dequeueNextQuestion(session, participantContent);
   if (queuedQuestion) {
@@ -1546,7 +1575,7 @@ function fallbackInterviewerTurn(input: {
   sourceBrand: string;
 }) {
   if (!input.selectedQuestion) {
-    return "Thanks, that gives us enough to close this MVP pass.";
+    return "Thank you for participating. Your feedback has been recorded, and we can close the interview here.";
   }
 
   const setupIssue =
@@ -1861,7 +1890,7 @@ export async function submitMvpCustomGptSurveyTurn(
       : "Participant ended the survey.";
     session.currentQuestionId = null;
     const assistantContent =
-      "Thank you, that gives us enough to close this MVP pass.";
+      "Thank you for participating. Your feedback has been recorded, and we can close the interview here.";
     session.messages.push(createMessage("interviewer", assistantContent));
     appendMvpAuditEvent(session, {
       eventType: "turn_completed",
@@ -1947,7 +1976,7 @@ export async function submitMvpCustomGptSurveyTurn(
     assistantContent =
       hardTimeboxExpired(session)
         ? "We are past the planned interview time plus the grace window, so we will stop here. Thank you for your time."
-        : "Thanks, that gives us enough for this MVP pass. We can stop there.";
+        : "Thank you for participating. Your feedback has been recorded, and we can close the interview here.";
     customGptStatus = "not_needed";
     nextAction = "wrap_up";
   } else if (!needsCustomGpt) {
