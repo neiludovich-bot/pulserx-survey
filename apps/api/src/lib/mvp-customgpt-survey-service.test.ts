@@ -927,7 +927,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     const lastPrompt = prompts.at(-1) ?? "";
-    expect(turn.currentQuestion).toContain("BTK inhibitor");
+    expect(turn.messages.at(-1)?.content).toContain("BTK inhibitor");
     expect(lastPrompt).toContain("Active disease lane: CLL/SLL");
     expect(lastPrompt).toContain("broad source/detail question");
     expect(lastPrompt).toContain("scoped to the active disease lane (CLL/SLL)");
@@ -1410,6 +1410,86 @@ describe("MVP CustomGPT survey service", () => {
     );
     expect(resourceTurn.currentQuestion).not.toContain(
       "would the PADCEV evidence make treatment more attractive",
+    );
+  });
+
+  it("does not mark later PADCEV safety-lane questions as asked when CustomGPT mentions their topics", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (href.endsWith("/projects/97350/conversations") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: `padcev-session-${fetchMock.mock.calls.length}`,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        const selectedQuestion =
+          body.prompt?.match(
+            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+          )?.[1] ?? "Which safety details matter?";
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response: [
+                "PADCEV safety-management resources can include monitoring checklists, adverse-reaction management guides, dosing resources, and patient counseling materials when supported by the source.",
+                "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
+                selectedQuestion,
+              ].join("\n\n"),
+              citations: [],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 600,
+    });
+
+    const safetyTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    expect(safetyTurn.currentQuestion).toContain(
+      "Which safety or tolerability details",
+    );
+    expect(safetyTurn.askedQuestions).toContain(
+      "Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
+    );
+    expect(safetyTurn.askedQuestions).not.toContain(
+      "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
+    );
+
+    const nextTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Peripheral neuropathy and rash management are what I need help with.",
+    });
+
+    expect(nextTurn.currentQuestion).toContain(
+      "When a PADCEV adverse event emerges",
+    );
+    expect(nextTurn.askedQuestions).not.toContain(
+      "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
     );
   });
 });
