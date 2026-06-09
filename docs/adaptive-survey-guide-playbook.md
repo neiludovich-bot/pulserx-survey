@@ -764,10 +764,22 @@ Each intent should define:
 - required coverage
 - steering rule
 - ordered question path
+- allowed modules and blocked modules
 
 The controller should include the selected intent in the CustomGPT context and
-audit log. The intent changes prioritization and steering, but factual answers
-must still come from the configured CustomGPT source project.
+audit log. The intent is a routing constraint, not just a prompt suggestion.
+The selector should only choose modules allowed by the active intent unless the
+respondent explicitly asks an off-lane source question. Even then, CustomGPT
+should answer the off-lane question briefly and the controller should return to
+the active lane rather than advancing into a different interview path. Factual
+answers must still come from the configured CustomGPT source project.
+
+For side-effect-management intents, patient-profile questions must be framed as
+safety-management caution questions: which patients would make the clinician
+more cautious because of monitoring, mitigation, dose modification, counseling,
+or operational burden. Do not ask broad efficacy/patient-attractiveness
+questions or show PFS/OS assets unless the respondent explicitly raises
+efficacy, benefit, or risk-benefit tradeoff.
 
 For safety-management turns, source and visual selection must be conservative.
 If the respondent asks about neuropathy, rash/skin reactions, hyperglycemia,
