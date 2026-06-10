@@ -10,12 +10,14 @@ import {
 const originalCustomGptApiKey = env.CUSTOMGPT_API_KEY;
 const originalCustomGptProjectId = env.CUSTOMGPT_PROJECT_ID;
 const originalOpenAiApiKey = env.OPENAI_API_KEY;
+const originalMvpSourceProvider = env.MVP_SOURCE_PROVIDER;
 
 afterEach(() => {
   vi.useRealTimers();
   env.CUSTOMGPT_API_KEY = originalCustomGptApiKey;
   env.CUSTOMGPT_PROJECT_ID = originalCustomGptProjectId;
   env.OPENAI_API_KEY = originalOpenAiApiKey;
+  env.MVP_SOURCE_PROVIDER = originalMvpSourceProvider;
   resetMvpCustomGptSurveySessions();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -46,9 +48,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.content).toContain(
       "How does the SEQUOIA evidence affect your view",
     );
-    expect(next.messages.at(-1)?.content).not.toContain(
-      "guarded survey flow",
-    );
+    expect(next.messages.at(-1)?.content).not.toContain("guarded survey flow");
   });
 
   it("does not call CustomGPT for plain non-source survey navigation", async () => {
@@ -88,8 +88,39 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(next.currentQuestion).toContain("current perception of BRUKINSA in CLL/SLL");
+    expect(next.currentQuestion).toContain(
+      "current perception of BRUKINSA in CLL/SLL",
+    );
     expect(next.currentQuestion).not.toBe("What is your clinical role?");
+  });
+
+  it("can answer source turns from the controlled RAG provider without CustomGPT", async () => {
+    env.MVP_SOURCE_PROVIDER = "controlled_rag";
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "brukinsa",
+      surveyIntentSlug: "cll-sequoia-evidence",
+      targetDurationSeconds: 600,
+    });
+    expect(started.status).toBe("active");
+    expect(started.customGptEnabled).toBe(true);
+
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "What does the SEQUOIA PFS evidence show?",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(next.status).toBe("active");
+    expect(next.nextAction).toBe("answer_then_ask");
+    expect(next.currentQuestion).toContain("SEQUOIA");
+    expect(next.messages.at(-1)?.content).toContain("SEQUOIA");
+    expect(next.messages.at(-1)?.content).toContain("[1]");
+    expect(next.messages.at(-1)?.references.length).toBeGreaterThan(0);
   });
 
   it("keeps the selected BRUKINSA safety intent inside safety-management questions", async () => {
@@ -240,7 +271,9 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(next.currentQuestion).toBe("How familiar are you with BRUKINSA today?");
+    expect(next.currentQuestion).toBe(
+      "How familiar are you with BRUKINSA today?",
+    );
   });
 
   it("completes the MVP after the terminal closing question is answered", async () => {
@@ -272,9 +305,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(completed.messages.at(-1)?.content).toContain(
       "Thank you for participating",
     );
-    expect(completed.messages.at(-1)?.content).not.toContain(
-      "MVP pass",
-    );
+    expect(completed.messages.at(-1)?.content).not.toContain("MVP pass");
     expect(completed.messages.at(-1)?.content).not.toContain(
       "Before we get into",
     );
@@ -286,13 +317,14 @@ describe("MVP CustomGPT survey service", () => {
     env.OPENAI_API_KEY = "test-openai-key";
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () =>
-        new Response(
-          JSON.stringify({
-            text: "Hello, I'm Anzio.",
-          }),
-          { status: 200 },
-        ),
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              text: "Hello, I'm Anzio.",
+            }),
+            { status: 200 },
+          ),
       ),
     );
 
@@ -985,7 +1017,9 @@ describe("MVP CustomGPT survey service", () => {
     expect(lastPrompt).toContain("Active disease lane: CLL/SLL");
     expect(lastPrompt).toContain("broad source/detail question");
     expect(lastPrompt).toContain("scoped to the active disease lane (CLL/SLL)");
-    expect(lastPrompt).toContain("do not answer from or cite other disease pages");
+    expect(lastPrompt).toContain(
+      "do not answer from or cite other disease pages",
+    );
     expect(lastPrompt).toContain("Respect the active disease lane");
     expect(lastPrompt).not.toContain("WM Study Design");
   });
@@ -1076,7 +1110,9 @@ describe("MVP CustomGPT survey service", () => {
       "NCCN or guideline positioning",
     );
     expect(lastPrompt).toContain("CLL/SLL guideline or NCCN positioning");
-    expect(lastPrompt).toContain("Selected next module: CLL/SLL - Guideline Positioning");
+    expect(lastPrompt).toContain(
+      "Selected next module: CLL/SLL - Guideline Positioning",
+    );
   });
 
   it("queues multiple respondent priority factors instead of fixating on one", async () => {
@@ -1145,7 +1181,8 @@ describe("MVP CustomGPT survey service", () => {
 
     const evidenceTurn = await submitMvpCustomGptSurveyTurn({
       sessionId: started.sessionId,
-      content: "Overall survival, NCCN categorization, and side effect profile.",
+      content:
+        "Overall survival, NCCN categorization, and side effect profile.",
     });
 
     expect(evidenceTurn.status).toBe("active");
@@ -1263,7 +1300,8 @@ describe("MVP CustomGPT survey service", () => {
     });
     const dataTurn = await submitMvpCustomGptSurveyTurn({
       sessionId: started.sessionId,
-      content: "I treat CLL and MCL. It sounds like a good drug, but what does the data show?",
+      content:
+        "I treat CLL and MCL. It sounds like a good drug, but what does the data show?",
     });
 
     const lastPrompt = prompts.at(-1) ?? "";
@@ -1456,7 +1494,8 @@ describe("MVP CustomGPT survey service", () => {
 
     const resourceTurn = await submitMvpCustomGptSurveyTurn({
       sessionId: started.sessionId,
-      content: "I would need dose modification guidance and a monitoring checklist.",
+      content:
+        "I would need dose modification guidance and a monitoring checklist.",
     });
 
     expect(resourceTurn.currentQuestion).toContain(
@@ -1568,9 +1607,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.nextAction).not.toBe("wrap_up");
     expect(next.currentQuestion).not.toBeNull();
     expect(next.reason).not.toBe("Timebox plus grace period reached.");
-    expect(next.messages.at(-1)?.content).not.toContain(
-      "MVP pass",
-    );
+    expect(next.messages.at(-1)?.content).not.toContain("MVP pass");
   });
 
   it("hard-closes only after the target duration plus grace window", async () => {
@@ -1783,7 +1820,8 @@ describe("MVP CustomGPT survey service", () => {
 
     const nextTurn = await submitMvpCustomGptSurveyTurn({
       sessionId: started.sessionId,
-      content: "Peripheral neuropathy and rash management are what I need help with.",
+      content:
+        "Peripheral neuropathy and rash management are what I need help with.",
     });
 
     expect(nextTurn.currentQuestion).toContain(

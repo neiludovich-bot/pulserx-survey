@@ -16,7 +16,6 @@ import {
   mvpCustomGptSurveyVoiceTurnResponseSchema,
 } from "@interview/schemas";
 import { env } from "../env";
-import { askCustomGptForSurveyInterviewerTurn } from "./customgpt-service";
 import {
   BRUKINSA_HCP_MVP_GUIDE,
   type MvpGuideQuestion,
@@ -44,8 +43,13 @@ import {
   surveyIntentForSlug,
   validateMvpSurveyDefinition,
 } from "./mvp-survey-definition";
+import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 import { transcriptLooksNonEnglishOrGarbled } from "./transcript-quality";
-import { decodeAudio, synthesizeSpeech, transcribeAudio } from "./voice-service";
+import {
+  decodeAudio,
+  synthesizeSpeech,
+  transcribeAudio,
+} from "./voice-service";
 
 const BRUKINSA_DEFAULT_PROJECT_ID = "96737";
 const PADCEV_DEFAULT_PROJECT_ID = "97350";
@@ -88,7 +92,8 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     guide: BRUKINSA_HCP_MVP_GUIDE,
     intents: BRUKINSA_SURVEY_INTENTS,
     projectIdEnvName: "CUSTOMGPT_PROJECT_ID",
-    defaultProjectId: () => env.CUSTOMGPT_PROJECT_ID ?? BRUKINSA_DEFAULT_PROJECT_ID,
+    defaultProjectId: () =>
+      env.CUSTOMGPT_PROJECT_ID ?? BRUKINSA_DEFAULT_PROJECT_ID,
   },
   padcev: {
     slug: "padcev",
@@ -97,7 +102,8 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     guide: PADCEV_HCP_MVP_GUIDE,
     intents: PADCEV_SURVEY_INTENTS,
     projectIdEnvName: "CUSTOMGPT_PADCEV_PROJECT_ID",
-    defaultProjectId: () => env.CUSTOMGPT_PADCEV_PROJECT_ID ?? PADCEV_DEFAULT_PROJECT_ID,
+    defaultProjectId: () =>
+      env.CUSTOMGPT_PADCEV_PROJECT_ID ?? PADCEV_DEFAULT_PROJECT_ID,
   },
 };
 
@@ -116,7 +122,9 @@ function surveyDefinitionForSlug(slug?: string): MvpSurveyDefinition {
 function workspaceRoot() {
   const cwd = process.cwd();
 
-  return cwd.endsWith(path.join("apps", "api")) ? path.resolve(cwd, "../..") : cwd;
+  return cwd.endsWith(path.join("apps", "api"))
+    ? path.resolve(cwd, "../..")
+    : cwd;
 }
 
 function appendMvpAuditEvent(
@@ -194,7 +202,10 @@ function createMessage(
 function cleanTextForSpeech(content: string) {
   let withoutReferences = content
     .replace(/\n\s*References:\s*[\s\S]*$/i, "")
-    .replace(/\s+[A-Z][A-Za-z0-9®™()/'\-. ]{0,80}\s+page(?:\s+[A-Z][A-Za-z0-9®™()/'\-. ]{0,80}\s+page)*/g, "");
+    .replace(
+      /\s+[A-Z][A-Za-z0-9®™()/'\-. ]{0,80}\s+page(?:\s+[A-Z][A-Za-z0-9®™()/'\-. ]{0,80}\s+page)*/g,
+      "",
+    );
   const lastQuestionMarkIndex = withoutReferences.lastIndexOf("?");
   const textAfterLastQuestion =
     lastQuestionMarkIndex >= 0
@@ -226,9 +237,7 @@ function latestInterviewerMessage(session: MvpSurveySession) {
 }
 
 function compactHistoryText(value: string, maxLength = 320) {
-  const compacted = cleanTextForSpeech(value)
-    .replace(/\s+/g, " ")
-    .trim();
+  const compacted = cleanTextForSpeech(value).replace(/\s+/g, " ").trim();
 
   return compacted.length > maxLength
     ? `${compacted.slice(0, maxLength - 1).trim()}...`
@@ -273,6 +282,17 @@ function customGptMissingReason(
   return null;
 }
 
+function sourceProviderMissingReason(
+  projectId: string | null,
+  projectIdEnvName = "CUSTOMGPT_PROJECT_ID",
+) {
+  if (env.MVP_SOURCE_PROVIDER === "controlled_rag") {
+    return null;
+  }
+
+  return customGptMissingReason(projectId, projectIdEnvName);
+}
+
 function elapsedSeconds(session: MvpSurveySession) {
   return Math.max(
     0,
@@ -287,7 +307,9 @@ function remainingSeconds(session: MvpSurveySession) {
 function graceRemainingSeconds(session: MvpSurveySession) {
   return Math.max(
     0,
-    session.targetDurationSeconds + TIMEBOX_GRACE_SECONDS - elapsedSeconds(session),
+    session.targetDurationSeconds +
+      TIMEBOX_GRACE_SECONDS -
+      elapsedSeconds(session),
   );
 }
 
@@ -303,9 +325,7 @@ function normalizeText(value: string) {
 }
 
 function normalizedTokens(value: string) {
-  return normalizeText(value)
-    .split(" ")
-    .filter(Boolean);
+  return normalizeText(value).split(" ").filter(Boolean);
 }
 
 function diseaseMatchIndex(content: string, patterns: string[]) {
@@ -321,7 +341,10 @@ function normalizedPhraseIncludes(content: string, phrase: string) {
   const normalizedContent = ` ${normalizeText(content)} `;
   const normalizedPhrase = normalizeText(phrase);
 
-  return Boolean(normalizedPhrase) && normalizedContent.includes(` ${normalizedPhrase} `);
+  return (
+    Boolean(normalizedPhrase) &&
+    normalizedContent.includes(` ${normalizedPhrase} `)
+  );
 }
 
 function extractDiseaseAreas(content: string): DiseaseArea[] {
@@ -464,14 +487,17 @@ function questionText(question: MvpGuideQuestion | null) {
 
 function currentQuestion(session: MvpSurveySession) {
   return (
-    allQuestions(session).find((question) => question.id === session.currentQuestionId) ??
-    null
+    allQuestions(session).find(
+      (question) => question.id === session.currentQuestionId,
+    ) ?? null
   );
 }
 
 function askedQuestions(session: MvpSurveySession) {
   return session.askedQuestionIds.flatMap((questionId) => {
-    const question = allQuestions(session).find((item) => item.id === questionId);
+    const question = allQuestions(session).find(
+      (item) => item.id === questionId,
+    );
     return question ? [question.canonicalQuestion] : [];
   });
 }
@@ -480,12 +506,17 @@ function allQuestions(session: MvpSurveySession) {
   return session.fullGuide.length ? session.fullGuide : session.guide;
 }
 
-function questionWasAsked(session: MvpSurveySession, question: MvpGuideQuestion) {
+function questionWasAsked(
+  session: MvpSurveySession,
+  question: MvpGuideQuestion,
+) {
   return session.askedQuestionIds.includes(question.id);
 }
 
 function unaskedQuestions(session: MvpSurveySession) {
-  return session.guide.filter((question) => !questionWasAsked(session, question));
+  return session.guide.filter(
+    (question) => !questionWasAsked(session, question),
+  );
 }
 
 function guideIndex(session: MvpSurveySession, questionId: string | null) {
@@ -499,7 +530,9 @@ function guideIndex(session: MvpSurveySession, questionId: string | null) {
 function furthestAskedIndex(session: MvpSurveySession) {
   return Math.max(
     guideIndex(session, session.currentQuestionId),
-    ...session.askedQuestionIds.map((questionId) => guideIndex(session, questionId)),
+    ...session.askedQuestionIds.map((questionId) =>
+      guideIndex(session, questionId),
+    ),
   );
 }
 
@@ -508,9 +541,10 @@ function selectableQuestions(
   questions: MvpGuideQuestion[],
   participantContent = "",
 ) {
-  return questions.filter((question) =>
-    intentAllowsQuestion(session.surveyIntent, question) &&
-    questionAllowedByDiseaseLane(session, question, participantContent),
+  return questions.filter(
+    (question) =>
+      intentAllowsQuestion(session.surveyIntent, question) &&
+      questionAllowedByDiseaseLane(session, question, participantContent),
   );
 }
 
@@ -523,15 +557,17 @@ function firstPatternIndex(content: string, patterns: RegExp[]) {
 }
 
 function questionById(session: MvpSurveySession, questionId: string) {
-  return allQuestions(session).find((question) => question.id === questionId) ?? null;
+  return (
+    allQuestions(session).find((question) => question.id === questionId) ?? null
+  );
 }
 
 function questionIsClosingLane(question: MvpGuideQuestion | null | undefined) {
   return Boolean(
     question &&
-      (question.close ||
-        question.id === "safety_close" ||
-        question.id.endsWith("_close")),
+    (question.close ||
+      question.id === "safety_close" ||
+      question.id.endsWith("_close")),
   );
 }
 
@@ -752,7 +788,8 @@ function queueExplicitIntentExcursions(
     return;
   }
 
-  const sideEffectIntent = session.surveyIntent.slug === "side-effect-management";
+  const sideEffectIntent =
+    session.surveyIntent.slug === "side-effect-management";
   const rules: Array<{
     questionIds: string[];
     patterns: RegExp[];
@@ -875,10 +912,15 @@ function queuePriorityFollowUps(
 ) {
   if (
     !answeredQuestion ||
-    !["btki_decision_framework", "cll_orientation", "evidence_overview"].includes(
-      answeredQuestion.id,
-    ) &&
-      !(session.surveySlug === "padcev" && answeredQuestion.id === "decision_framework")
+    (![
+      "btki_decision_framework",
+      "cll_orientation",
+      "evidence_overview",
+    ].includes(answeredQuestion.id) &&
+      !(
+        session.surveySlug === "padcev" &&
+        answeredQuestion.id === "decision_framework"
+      ))
   ) {
     return;
   }
@@ -1011,7 +1053,13 @@ function queuePriorityFollowUps(
     },
     {
       questionIds: ["dosing_admin"],
-      patterns: [/\bdosing\b/, /\bdose\b/, /\badministration\b/, /\binfusion\b/, /\bschedule\b/],
+      patterns: [
+        /\bdosing\b/,
+        /\bdose\b/,
+        /\badministration\b/,
+        /\binfusion\b/,
+        /\bschedule\b/,
+      ],
     },
   ];
 
@@ -1022,7 +1070,9 @@ function queuePriorityFollowUps(
       index: firstPatternIndex(normalized, rule.patterns),
     }))
     .filter((rule) => rule.index >= 0)
-    .sort((left, right) => left.index - right.index || left.order - right.order);
+    .sort(
+      (left, right) => left.index - right.index || left.order - right.order,
+    );
 
   for (const match of matches) {
     enqueueQuestionIds(session, match.questionIds, participantContent);
@@ -1084,7 +1134,8 @@ function forwardUnaskedQuestions(
   return selectableQuestions(
     session,
     session.guide.filter(
-      (question, index) => index > cursor && !questionWasAsked(session, question),
+      (question, index) =>
+        index > cursor && !questionWasAsked(session, question),
     ),
     participantContent,
   );
@@ -1159,10 +1210,7 @@ function selectNextQuestion(
   const unasked = forwardUnasked.length ? forwardUnasked : fallbackUnasked;
 
   if (closingPhaseStarted(session)) {
-    return (
-      unasked.find((question) => question.close) ??
-      null
-    );
+    return unasked.find((question) => question.close) ?? null;
   }
 
   const queuedQuestion = dequeueNextQuestion(session, participantContent);
@@ -1175,11 +1223,7 @@ function selectNextQuestion(
     (remaining <= TIMEBOX_WRAP_UP_THRESHOLD_SECONDS &&
       !contentLooksLikeReactiveQuestion(participantContent))
   ) {
-    return (
-      unasked.find((question) => question.close) ??
-      unasked[0] ??
-      null
-    );
+    return unasked.find((question) => question.close) ?? unasked[0] ?? null;
   }
 
   if (unasked.length === 0) {
@@ -1266,7 +1310,14 @@ function contentLooksLikeBrukinsaSafetyQuestion(content: string) {
 
 function areaTerms(area: DiseaseArea) {
   return {
-    cll: ["cll", "sll", "chronic lymphocytic", "small lymphocytic", "sequoia", "alpine"],
+    cll: [
+      "cll",
+      "sll",
+      "chronic lymphocytic",
+      "small lymphocytic",
+      "sequoia",
+      "alpine",
+    ],
     wm: ["wm", "waldenstrom", "aspen"],
     mcl: ["mcl", "mantle cell"],
     mzl: ["mzl", "marginal zone", "magnolia"],
@@ -1287,11 +1338,12 @@ function referenceText(reference: GroundedReference) {
   );
 }
 
-function referenceMentionsArea(reference: GroundedReference, area: DiseaseArea) {
+function referenceMentionsArea(
+  reference: GroundedReference,
+  area: DiseaseArea,
+) {
   const text = referenceText(reference);
-  return areaTerms(area).some((term) =>
-    text.includes(normalizeText(term)),
-  );
+  return areaTerms(area).some((term) => text.includes(normalizeText(term)));
 }
 
 function isClearlyOffLaneReference(
@@ -1318,7 +1370,7 @@ function selectedQuestionAllowsCrossDiseaseReferences(
 ) {
   return Boolean(
     selectedQuestion &&
-      ["breadth", "accelerated_approval_indolent"].includes(selectedQuestion.id),
+    ["breadth", "accelerated_approval_indolent"].includes(selectedQuestion.id),
   );
 }
 
@@ -1643,10 +1695,12 @@ function sourceContextForReactiveQuestion(
     const sideEffectIntent =
       session.surveyIntent?.slug === "side-effect-management";
     const selectedSafetyLaneQuestion = Boolean(
-      selectedQuestion && PADCEV_SAFETY_LANE_QUESTION_IDS.has(selectedQuestion.id),
+      selectedQuestion &&
+      PADCEV_SAFETY_LANE_QUESTION_IDS.has(selectedQuestion.id),
     );
     const selectedOffLaneExcursion = Boolean(
-      selectedQuestion && !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
+      selectedQuestion &&
+      !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
     );
     const safetyScoped =
       contentLooksLikePadcevSafetyQuestion(participantContent) ||
@@ -1666,10 +1720,12 @@ function sourceContextForReactiveQuestion(
     const safetyIntent =
       session.surveyIntent?.slug === "safety-tolerability-management";
     const selectedSafetyLaneQuestion = Boolean(
-      selectedQuestion && BRUKINSA_SAFETY_LANE_QUESTION_IDS.has(selectedQuestion.id),
+      selectedQuestion &&
+      BRUKINSA_SAFETY_LANE_QUESTION_IDS.has(selectedQuestion.id),
     );
     const selectedOffLaneExcursion = Boolean(
-      selectedQuestion && !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
+      selectedQuestion &&
+      !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
     );
     const safetyScoped =
       contentLooksLikeBrukinsaSafetyQuestion(participantContent) ||
@@ -1725,9 +1781,7 @@ function questionTokenMatchCount(answer: string, question: string) {
     .filter(
       (token) =>
         token.length >= 5 &&
-        !["about", "would", "which", "think", "today", "adult"].includes(
-          token,
-        ),
+        !["about", "would", "which", "think", "today", "adult"].includes(token),
     );
   return tokens.filter((token) => answerText.includes(token)).length;
 }
@@ -1738,22 +1792,26 @@ function answerProbablyContainsQuestion(answer: string, question: string) {
     .filter(
       (token) =>
         token.length >= 5 &&
-        !["about", "would", "which", "think", "today", "adult"].includes(
-          token,
-        ),
+        !["about", "would", "which", "think", "today", "adult"].includes(token),
     ).length;
   return questionTokenMatchCount(answer, question) >= Math.min(3, tokenCount);
 }
 
 function ensureReturnToSurvey(answer: string, selectedQuestion: string | null) {
-  if (!selectedQuestion || answerProbablyContainsQuestion(answer, selectedQuestion)) {
+  if (
+    !selectedQuestion ||
+    answerProbablyContainsQuestion(answer, selectedQuestion)
+  ) {
     return answer.trim();
   }
 
   return `${answer.trim()}\n\nReturning to the survey: ${selectedQuestion}`;
 }
 
-function clipControllerText(value: string | null | undefined, maxChars: number) {
+function clipControllerText(
+  value: string | null | undefined,
+  maxChars: number,
+) {
   if (!value) {
     return null;
   }
@@ -1825,7 +1883,10 @@ function surveyContext(
 ) {
   const current = currentQuestion(session);
   const selectedQuestionText = questionText(selectedQuestion);
-  const upcomingQuestions = selectableQuestions(session, unaskedQuestions(session))
+  const upcomingQuestions = selectableQuestions(
+    session,
+    unaskedQuestions(session),
+  )
     .filter((question) => question.id !== selectedQuestion?.id)
     .slice(0, 4)
     .map((question) => `${question.id}: ${question.canonicalQuestion}`)
@@ -1841,7 +1902,8 @@ function surveyContext(
     .map((question) => `${question.id}: ${question.module}`)
     .join(" | ");
   const selectedQuestionIsExcursion = Boolean(
-    selectedQuestion && !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
+    selectedQuestion &&
+    !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
   );
 
   return [
@@ -1879,7 +1941,9 @@ function surveyContext(
     askedQuestions(session).length
       ? `Already asked: ${askedQuestions(session).join(" | ")}`
       : "Already asked: none.",
-    upcomingQuestions ? `Upcoming unasked guide preview: ${upcomingQuestions}` : null,
+    upcomingQuestions
+      ? `Upcoming unasked guide preview: ${upcomingQuestions}`
+      : null,
   ].join("\n");
 }
 
@@ -1891,7 +1955,8 @@ function voicePromptContextForSession(session: MvpSurveySession | null) {
   }
 
   const expectedAnswer =
-    current.id === "disease_involvement" || current.id === "primary_disease_focus"
+    current.id === "disease_involvement" ||
+    current.id === "primary_disease_focus"
       ? "Expected answer may be a short list of B-cell malignancy abbreviations, such as CLL, SLL, MCL, MZL, FL, or WM. Preserve those abbreviations exactly."
       : current.id === "role"
         ? "Expected answer may be a short clinical role, such as physician, oncologist, hematologist, pharmacist, NP, or PA."
@@ -1912,19 +1977,22 @@ function responseForSession(
   nextActionOverride?: MvpCustomGptSurveyResponse["nextAction"],
 ) {
   const remaining = remainingSeconds(session);
-  const missingReason = customGptMissingReason(session.projectId);
-  const customGptEnabled = !missingReason;
+  const missingReason = sourceProviderMissingReason(
+    session.projectId,
+    session.projectIdEnvName,
+  );
+  const sourceProviderEnabled = !missingReason;
   const completed = Boolean(session.completedReason);
-  const status = completed ? "completed" : customGptEnabled ? "active" : "needs_setup";
+  const status = completed
+    ? "completed"
+    : sourceProviderEnabled
+      ? "active"
+      : "needs_setup";
   const nextAction =
     nextActionOverride ??
-    (completed
-      ? "wrap_up"
-      : customGptEnabled
-        ? "ask"
-        : "setup_required");
+    (completed ? "wrap_up" : sourceProviderEnabled ? "ask" : "setup_required");
   const reason =
-    session.completedReason ?? (customGptEnabled ? null : missingReason);
+    session.completedReason ?? (sourceProviderEnabled ? null : missingReason);
 
   return mvpCustomGptSurveyResponseSchema.parse({
     sessionId: session.sessionId,
@@ -1939,7 +2007,7 @@ function responseForSession(
     askedQuestions: askedQuestions(session),
     currentQuestion: questionText(currentQuestion(session)),
     nextAction,
-    customGptEnabled,
+    customGptEnabled: sourceProviderEnabled,
     reason,
     messages: session.messages,
   });
@@ -1951,16 +2019,13 @@ export function resetMvpCustomGptSurveySessions() {
 
 export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
   const definition = surveyDefinitionForSlug(input.surveySlug);
-  const surveyIntent = surveyIntentForSlug(
-    definition,
-    input.surveyIntentSlug,
-  );
+  const surveyIntent = surveyIntentForSlug(definition, input.surveyIntentSlug);
   const guide = input.guide?.length
     ? guideFromQuestionStrings(input.guide)
     : guideForIntent(definition, surveyIntent);
   const firstQuestion = guide[0] ?? definition.guide[0];
   const projectId = configuredProjectId(definition, input.projectId);
-  const missingReason = customGptMissingReason(
+  const missingReason = sourceProviderMissingReason(
     projectId,
     definition.projectIdEnvName,
   );
@@ -2141,14 +2206,15 @@ export async function submitMvpCustomGptSurveyTurn(
   }
 
   const selectedQuestion = selectNextQuestion(session, input.content);
-  const questionSourceContextRequirement = sourceContextForQuestion(selectedQuestion);
+  const questionSourceContextRequirement =
+    sourceContextForQuestion(selectedQuestion);
   const sourceContextRequirement = combineSourceContextRequirements(
     questionSourceContextRequirement,
     sourceContextForReactiveQuestion(session, input.content, selectedQuestion),
   );
   const selectedQuestionText = questionText(selectedQuestion);
   let actualAskedQuestion = selectedQuestion;
-  const missingReason = customGptMissingReason(
+  const missingReason = sourceProviderMissingReason(
     session.projectId,
     session.projectIdEnvName,
   );
@@ -2161,19 +2227,22 @@ export async function submitMvpCustomGptSurveyTurn(
   let references: GroundedReference[] = [];
   let customGptStatus = needsCustomGpt ? "pending" : "not_needed";
   let customGptReason: string | null = null;
+  let sourceProvider: string | null = needsCustomGpt
+    ? env.MVP_SOURCE_PROVIDER
+    : null;
+  let sourceProviderShadow: Record<string, unknown> | null = null;
   let droppedReferences: GroundedReference[] = [];
-  let nextAction: MvpCustomGptSurveyResponse["nextAction"] =
-    needsCustomGpt ? "answer_then_ask" : "ask";
+  let nextAction: MvpCustomGptSurveyResponse["nextAction"] = needsCustomGpt
+    ? "answer_then_ask"
+    : "ask";
 
   if (hardTimeboxExpired(session) || !selectedQuestion) {
-    session.completedReason =
-      hardTimeboxExpired(session)
-        ? "Timebox plus grace period reached."
-        : "Guide questions completed.";
-    assistantContent =
-      hardTimeboxExpired(session)
-        ? "We are past the planned interview time plus the grace window, so we will stop here. Thank you for your time."
-        : "Thank you for participating. Your feedback has been recorded, and we can close the interview here.";
+    session.completedReason = hardTimeboxExpired(session)
+      ? "Timebox plus grace period reached."
+      : "Guide questions completed.";
+    assistantContent = hardTimeboxExpired(session)
+      ? "We are past the planned interview time plus the grace window, so we will stop here. Thank you for your time."
+      : "Thank you for participating. Your feedback has been recorded, and we can close the interview here.";
     customGptStatus = "not_needed";
     nextAction = "wrap_up";
   } else if (!needsCustomGpt) {
@@ -2192,7 +2261,8 @@ export async function submitMvpCustomGptSurveyTurn(
     nextAction = "setup_required";
   } else {
     try {
-      const customGptTurn = await askCustomGptForSurveyInterviewerTurn({
+      const sourceTurn = await askSourceProviderForSurveyInterviewerTurn({
+        surveySlug: session.surveySlug,
         projectId: session.projectId,
         participantMessage: input.content,
         surveyContext: surveyContext(
@@ -2207,10 +2277,13 @@ export async function submitMvpCustomGptSurveyTurn(
         remainingSeconds: remaining,
         askedQuestions: askedQuestions(session),
       });
+      sourceProvider = sourceTurn.provider;
+      sourceProviderShadow = sourceTurn.shadow ?? null;
 
-      if (!customGptTurn.enabled || !customGptTurn.answer) {
+      if (!sourceTurn.enabled || !sourceTurn.answer) {
         customGptStatus = "fallback";
-        customGptReason = customGptTurn.reason ?? "CustomGPT was unavailable.";
+        customGptReason =
+          sourceTurn.reason ?? "Source provider was unavailable.";
         assistantContent = fallbackInterviewerTurn({
           selectedQuestion: selectedQuestionText,
           customGptReason,
@@ -2222,10 +2295,10 @@ export async function submitMvpCustomGptSurveyTurn(
         customGptStatus = "success";
         actualAskedQuestion = selectedQuestion;
         assistantContent = ensureReturnToSurvey(
-          customGptTurn.answer,
+          sourceTurn.answer,
           questionText(actualAskedQuestion),
         );
-        references = customGptTurn.references;
+        references = sourceTurn.references;
         const filtered = filterReferencesForDiseaseLane({
           session,
           selectedQuestion: actualAskedQuestion,
@@ -2239,7 +2312,9 @@ export async function submitMvpCustomGptSurveyTurn(
     } catch (error) {
       customGptStatus = "error";
       customGptReason =
-        error instanceof Error ? error.message : "CustomGPT request failed.";
+        error instanceof Error
+          ? error.message
+          : "Source provider request failed.";
       assistantContent = fallbackInterviewerTurn({
         selectedQuestion: selectedQuestionText,
         customGptReason,
@@ -2250,7 +2325,9 @@ export async function submitMvpCustomGptSurveyTurn(
     }
   }
 
-  session.messages.push(createMessage("interviewer", assistantContent, references));
+  session.messages.push(
+    createMessage("interviewer", assistantContent, references),
+  );
 
   if (actualAskedQuestion && !session.completedReason) {
     session.queuedQuestionIds = session.queuedQuestionIds.filter(
@@ -2279,6 +2356,8 @@ export async function submitMvpCustomGptSurveyTurn(
     needsCustomGpt,
     customGptStatus,
     customGptReason,
+    sourceProvider,
+    sourceProviderShadow,
     droppedReferences: droppedReferences.map((reference) => ({
       citationId: reference.citationId,
       title: reference.title,
@@ -2311,6 +2390,8 @@ export async function submitMvpCustomGptSurveyTurn(
       needsCustomGpt,
       customGptStatus,
       customGptReason,
+      sourceProvider,
+      sourceProviderShadow,
       droppedReferences: droppedReferences.map((reference) => ({
         citationId: reference.citationId,
         title: reference.title,
@@ -2346,9 +2427,13 @@ export async function submitMvpCustomGptSurveyVoiceTurn(
   });
   const updatedSession = sessions.get(input.sessionId);
   const spokenText = updatedSession
-    ? cleanTextForSpeech(latestInterviewerMessage(updatedSession)?.content ?? "")
+    ? cleanTextForSpeech(
+        latestInterviewerMessage(updatedSession)?.content ?? "",
+      )
     : null;
-  const audio = spokenText ? await synthesizeSpeech(spokenText, input.voice) : null;
+  const audio = spokenText
+    ? await synthesizeSpeech(spokenText, input.voice)
+    : null;
 
   return mvpCustomGptSurveyVoiceTurnResponseSchema.parse({
     transcript,
@@ -2361,7 +2446,9 @@ export async function submitMvpCustomGptSurveyVoiceTurn(
 export async function transcribeMvpCustomGptSurveyVoice(
   input: MvpCustomGptSurveyVoiceTranscribeRequest,
 ) {
-  const session = input.sessionId ? (sessions.get(input.sessionId) ?? null) : null;
+  const session = input.sessionId
+    ? (sessions.get(input.sessionId) ?? null)
+    : null;
   const audioBuffer = decodeAudio(input);
   const transcript = await transcribeAudio({
     audioBuffer,
@@ -2394,7 +2481,9 @@ export async function synthesizeMvpCustomGptSurveyLatestInterviewer(
   const spokenText = cleanTextForSpeech(
     latestInterviewerMessage(session)?.content ?? "",
   );
-  const audio = spokenText ? await synthesizeSpeech(spokenText, input.voice) : null;
+  const audio = spokenText
+    ? await synthesizeSpeech(spokenText, input.voice)
+    : null;
 
   return mvpCustomGptSurveySpeechResponseSchema.parse({
     spokenText: spokenText || null,
