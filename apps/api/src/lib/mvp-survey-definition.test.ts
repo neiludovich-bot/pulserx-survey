@@ -107,4 +107,12 @@ describe("MVP survey definition", () => {
       /missing_question/,
     );
   });
+
+  it("keeps the full guide available when no intent slug is selected", () => {
+    const surveyDefinition = definition();
+
+    expect(surveyIntentForSlug(surveyDefinition)).toBeNull();
+    expect(guideForIntent(surveyDefinition, null).map((question) => question.id))
+      .toEqual(["intro_consent", "safety", "efficacy"]);
+  });
 });

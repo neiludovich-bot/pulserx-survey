@@ -71,6 +71,47 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.content).toBe("What is your clinical role?");
   });
 
+  it("runs selected BRUKINSA intents without the long intake block", async () => {
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "brukinsa",
+      surveyIntentSlug: "cll-sequoia-evidence",
+      targetDurationSeconds: 600,
+    });
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(next.currentQuestion).toContain("current perception of BRUKINSA in CLL/SLL");
+    expect(next.currentQuestion).not.toBe("What is your clinical role?");
+  });
+
+  it("keeps the selected BRUKINSA safety intent inside safety-management questions", async () => {
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "brukinsa",
+      surveyIntentSlug: "safety-tolerability-management",
+      targetDurationSeconds: 600,
+    });
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    expect(next.currentQuestion).toContain("Which safety issue");
+    expect(next.currentQuestion).not.toContain("SEQUOIA");
+    expect(next.messages.at(-1)?.content).toContain("Source context needed");
+    expect(next.messages.at(-1)?.content).toContain("BRUKINSA");
+  });
+
   it("re-asks the current question when a response looks garbled", async () => {
     env.CUSTOMGPT_API_KEY = "test-customgpt-key";
     env.CUSTOMGPT_PROJECT_ID = "96737";

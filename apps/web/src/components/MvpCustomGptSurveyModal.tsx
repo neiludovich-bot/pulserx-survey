@@ -289,7 +289,15 @@ function openSourceUrlInNewTab(url: string) {
 }
 
 function completionFollowUpUrl(surveySlug: string) {
-  return surveySlug === "padcev" ? "https://www.padcevhcp.com/contact-us" : null;
+  if (surveySlug === "padcev") {
+    return "https://www.padcevhcp.com/contact-us";
+  }
+
+  if (surveySlug === "brukinsa") {
+    return "https://brukinsahcp.com/contact-a-representative/";
+  }
+
+  return null;
 }
 
 function normalizeClinicalMarkup(content: string) {
@@ -955,13 +963,45 @@ const PADCEV_INTENT_OPTIONS: SurveyIntentOption[] = [
   },
 ];
 
+const BRUKINSA_INTENT_OPTIONS: SurveyIntentOption[] = [
+  {
+    slug: "general-brukinsa-reaction",
+    label: "General BRUKINSA Reaction",
+    description: "Balanced pass across evidence, safety, fit, dosing, and support.",
+  },
+  {
+    slug: "cll-sequoia-evidence",
+    label: "CLL/SLL: SEQUOIA & ALPINE",
+    description: "Focus on CLL/SLL evidence, guidelines, and patient fit.",
+  },
+  {
+    slug: "safety-tolerability-management",
+    label: "Safety & Tolerability Management",
+    description: "Focus on monitoring, interactions, dosing, and practical management.",
+  },
+  {
+    slug: "patient-selection-barriers",
+    label: "Patient Selection & Barriers",
+    description: "Focus on patient fit, cautions, access, and confidence gaps.",
+  },
+  {
+    slug: "familiar-whats-new",
+    label: "Already Familiar: What's New",
+    description: "Skip the basics and focus on newer or underappreciated points.",
+  },
+];
+
 export function MvpCustomGptSurveyModal({
   surveySlug = "brukinsa",
   studyName = "BRUKINSA HCP MVP",
   targetDurationSeconds = 600,
 }: MvpCustomGptSurveyModalProps = {}) {
   const intentOptions =
-    surveySlug === "padcev" ? PADCEV_INTENT_OPTIONS : [];
+    surveySlug === "padcev"
+      ? PADCEV_INTENT_OPTIONS
+      : surveySlug === "brukinsa"
+        ? BRUKINSA_INTENT_OPTIONS
+        : [];
   const [selectedIntentSlug, setSelectedIntentSlug] = useState<string | null>(
     null,
   );
