@@ -178,6 +178,29 @@ enum AssetReactionStatus {
   FAILED
 }
 
+enum SourceDocumentType {
+  URL
+  PDF
+  TEXT
+  MANUAL_NOTE
+}
+
+enum SourceDocumentStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum SourceAssetKind {
+  CHART
+  TABLE
+  PDF
+  IMAGE
+  VIDEO
+  LINK
+  OTHER
+}
+
 model Study {
   id               String            @id @default(cuid())
   slug             String            @unique
@@ -208,6 +231,69 @@ model Study {
   evalRuns         EvalRun[]
 
   @@map("studies")
+}
+
+model SourceDocument {
+  id          String               @id @default(cuid())
+  surveySlug  String               @map("survey_slug")
+  sourceBrand String               @map("source_brand")
+  title       String
+  description String?
+  sourceType  SourceDocumentType   @map("source_type")
+  url         String?
+  content     String?
+  tags        String[]             @default([])
+  priority    Int                  @default(0)
+  status      SourceDocumentStatus @default(DRAFT)
+  metadata    Json?
+  createdAt   DateTime             @default(now()) @map("created_at")
+  updatedAt   DateTime             @updatedAt @map("updated_at")
+  chunks      SourceChunk[]
+  assets      SourceAsset[]
+
+  @@index([surveySlug])
+  @@index([sourceBrand])
+  @@index([status])
+  @@map("source_documents")
+}
+
+model SourceChunk {
+  id               String         @id @default(cuid())
+  sourceDocumentId String         @map("source_document_id")
+  surveySlug       String         @map("survey_slug")
+  content          String
+  tags             String[]       @default([])
+  position         Int            @default(0)
+  tokenEstimate    Int            @default(0) @map("token_estimate")
+  metadata         Json?
+  createdAt        DateTime       @default(now()) @map("created_at")
+  updatedAt        DateTime       @updatedAt @map("updated_at")
+  sourceDocument   SourceDocument @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([sourceDocumentId])
+  @@index([surveySlug])
+  @@map("source_chunks")
+}
+
+model SourceAsset {
+  id               String          @id @default(cuid())
+  sourceDocumentId String          @map("source_document_id")
+  surveySlug       String          @map("survey_slug")
+  title            String
+  description      String?
+  assetKind        SourceAssetKind @map("asset_kind")
+  url              String
+  tags             String[]        @default([])
+  priority         Int             @default(0)
+  metadata         Json?
+  createdAt        DateTime        @default(now()) @map("created_at")
+  updatedAt        DateTime        @updatedAt @map("updated_at")
+  sourceDocument   SourceDocument  @relation(fields: [sourceDocumentId], references: [id], onDelete: Cascade)
+
+  @@index([sourceDocumentId])
+  @@index([surveySlug])
+  @@index([assetKind])
+  @@map("source_assets")
 }
 
 model StudyModule {

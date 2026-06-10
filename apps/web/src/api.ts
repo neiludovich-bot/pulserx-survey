@@ -7,6 +7,7 @@ import type {
   CreateStudyBranchRules,
   AddStudyCustomGptAssetSource,
   AddStudyCustomGptSitemapSource,
+  CreateSourceLibraryDocument,
   IntegrationReadinessResponse,
   IntegrationVerificationResponse,
   LocalEnvironmentConfigResponse,
@@ -27,6 +28,8 @@ import type {
   RealtimeVoiceSessionResponse,
   SessionAuditResponse,
   SimulateStudyBranchRoute,
+  SourceLibraryListResponse,
+  SourceLibraryMutationResponse,
   StudyGuideCleanupApplyResponse,
   StudyGuideSourceNoteRetentionResponse,
   StudyCustomGptVerificationResponse,
@@ -514,6 +517,27 @@ export function previewMvpCustomGptSource(
 ) {
   return apiFetch<MvpCustomGptSourcePreviewResponse>(
     "/mvp/customgpt-survey/source-preview",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function getSourceLibraryDocuments(surveySlug?: string) {
+  const query = surveySlug
+    ? `?surveySlug=${encodeURIComponent(surveySlug)}`
+    : "";
+  return apiFetch<SourceLibraryListResponse>(
+    `/admin/source-library/documents${query}`,
+  );
+}
+
+export function createSourceLibraryDocument(
+  input: CreateSourceLibraryDocument,
+) {
+  return apiFetch<SourceLibraryMutationResponse>(
+    "/admin/source-library/documents",
     {
       method: "POST",
       body: JSON.stringify(input),

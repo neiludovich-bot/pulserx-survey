@@ -1,0 +1,227 @@
+import {
+  sourceLibraryListResponseSchema,
+  sourceLibraryMutationResponseSchema,
+  type CreateSourceLibraryDocument,
+} from "@interview/schemas";
+import { prisma } from "./prisma";
+
+const MAX_CHUNK_CHARS = 1200;
+
+type SourceLibraryDocumentRecord = {
+  id: string;
+  surveySlug: string;
+  sourceBrand: string;
+  title: string;
+  description: string | null;
+  sourceType: "URL" | "PDF" | "TEXT" | "MANUAL_NOTE";
+  url: string | null;
+  content: string | null;
+  tags: string[];
+  priority: number;
+  status: "DRAFT" | "ACTIVE" | "ARCHIVED";
+  createdAt: Date;
+  updatedAt: Date;
+  _count: {
+    chunks: number;
+    assets: number;
+  };
+};
+
+function dbConfigured() {
+  return Boolean(process.env.DATABASE_URL);
+}
+
+function normalizeTags(tags: string[]) {
+  return Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.trim().toLowerCase())
+        .filter((tag) => tag.length > 0),
+    ),
+  );
+}
+
+function estimateTokens(value: string) {
+  return Math.max(1, Math.ceil(value.length / 4));
+}
+
+export function chunkSourceText(value: string) {
+  const paragraphs = value
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  const chunks: string[] = [];
+  let current = "";
+
+  for (const paragraph of paragraphs.length > 0 ? paragraphs : [value]) {
+    if (!current) {
+      current = paragraph;
+      continue;
+    }
+
+    if (`${current}\n\n${paragraph}`.length <= MAX_CHUNK_CHARS) {
+      current = `${current}\n\n${paragraph}`;
+      continue;
+    }
+
+    chunks.push(current);
+    current = paragraph;
+  }
+
+  if (current) {
+    chunks.push(current);
+  }
+
+  return chunks.flatMap((chunk) => {
+    if (chunk.length <= MAX_CHUNK_CHARS) {
+      return [chunk];
+    }
+
+    const pieces: string[] = [];
+    for (let index = 0; index < chunk.length; index += MAX_CHUNK_CHARS) {
+      pieces.push(chunk.slice(index, index + MAX_CHUNK_CHARS).trim());
+    }
+    return pieces.filter(Boolean);
+  });
+}
+
+function mapDocument(document: SourceLibraryDocumentRecord) {
+  return {
+    id: document.id,
+    surveySlug: document.surveySlug,
+    sourceBrand: document.sourceBrand,
+    title: document.title,
+    description: document.description,
+    sourceType: document.sourceType,
+    url: document.url,
+    contentPreview: document.content
+      ? document.content.slice(0, 240).trim()
+      : null,
+    tags: document.tags,
+    priority: document.priority,
+    status: document.status,
+    chunkCount: document._count.chunks,
+    assetCount: document._count.assets,
+    createdAt: document.createdAt.toISOString(),
+    updatedAt: document.updatedAt.toISOString(),
+  };
+}
+
+function sourceTextForChunking(input: CreateSourceLibraryDocument) {
+  return [
+    input.title,
+    input.description ?? "",
+    input.url ? `Source URL: ${input.url}` : "",
+    input.content ?? "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+export async function listSourceLibraryDocuments(surveySlug?: string | null) {
+  if (!dbConfigured()) {
+    return sourceLibraryListResponseSchema.parse({
+      dbConfigured: false,
+      generatedAt: new Date().toISOString(),
+      documents: [],
+    });
+  }
+
+  const documents = await prisma.sourceDocument.findMany({
+    where: surveySlug ? { surveySlug } : undefined,
+    orderBy: [{ priority: "desc" }, { updatedAt: "desc" }],
+    include: {
+      _count: {
+        select: {
+          chunks: true,
+          assets: true,
+        },
+      },
+    },
+  });
+
+  return sourceLibraryListResponseSchema.parse({
+    dbConfigured: true,
+    generatedAt: new Date().toISOString(),
+    documents: documents.map(mapDocument),
+  });
+}
+
+export async function createSourceLibraryDocument(
+  input: CreateSourceLibraryDocument,
+) {
+  if (!dbConfigured()) {
+    throw new Error("Source library database is not configured.");
+  }
+
+  const tags = normalizeTags(input.tags);
+  const sourceText = sourceTextForChunking(input);
+  const chunks = chunkSourceText(sourceText);
+  const assets = input.assets.map((asset) => ({
+    title: asset.title,
+    description: asset.description ?? null,
+    assetKind: asset.assetKind,
+    url: asset.url,
+    tags: normalizeTags(asset.tags),
+    priority: asset.priority,
+    surveySlug: input.surveySlug,
+  }));
+
+  const document = await prisma.$transaction(async (tx) => {
+    const created = await tx.sourceDocument.create({
+      data: {
+        surveySlug: input.surveySlug,
+        sourceBrand: input.sourceBrand,
+        title: input.title,
+        description: input.description ?? null,
+        sourceType: input.sourceType,
+        url: input.url ?? null,
+        content: input.content ?? null,
+        tags,
+        priority: input.priority,
+        status: input.status,
+      },
+    });
+
+    if (chunks.length > 0) {
+      await tx.sourceChunk.createMany({
+        data: chunks.map((chunk, index) => ({
+          sourceDocumentId: created.id,
+          surveySlug: input.surveySlug,
+          content: chunk,
+          tags,
+          position: index,
+          tokenEstimate: estimateTokens(chunk),
+        })),
+      });
+    }
+
+    if (assets.length > 0) {
+      await tx.sourceAsset.createMany({
+        data: assets.map((asset) => ({
+          ...asset,
+          sourceDocumentId: created.id,
+        })),
+      });
+    }
+
+    return tx.sourceDocument.findUniqueOrThrow({
+      where: {
+        id: created.id,
+      },
+      include: {
+        _count: {
+          select: {
+            chunks: true,
+            assets: true,
+          },
+        },
+      },
+    });
+  });
+
+  return sourceLibraryMutationResponseSchema.parse({
+    document: mapDocument(document),
+  });
+}

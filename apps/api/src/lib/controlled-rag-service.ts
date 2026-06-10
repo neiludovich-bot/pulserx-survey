@@ -3,6 +3,7 @@ import {
   CONTROLLED_RAG_CHUNKS,
   type ControlledRagChunk,
 } from "./controlled-rag-source-packs";
+import { prisma } from "./prisma";
 
 export type ControlledRagSurveyTurnInput = {
   surveySlug: "brukinsa" | "padcev";
@@ -121,7 +122,55 @@ function scoreChunk(chunk: ControlledRagChunk, queryTokens: string[]) {
   return score;
 }
 
-function retrieveChunks(input: ControlledRagSurveyTurnInput) {
+async function databaseChunks(input: ControlledRagSurveyTurnInput) {
+  if (!process.env.DATABASE_URL) {
+    return [];
+  }
+
+  try {
+    const chunks = await prisma.sourceChunk.findMany({
+      where: {
+        surveySlug: input.surveySlug,
+        sourceDocument: {
+          status: "ACTIVE",
+        },
+      },
+      orderBy: [{ sourceDocument: { priority: "desc" } }, { position: "asc" }],
+      take: 80,
+      include: {
+        sourceDocument: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            url: true,
+            tags: true,
+            priority: true,
+          },
+        },
+      },
+    });
+
+    return chunks.map(
+      (chunk) =>
+        ({
+          id: `db:${chunk.id}`,
+          surveySlug: input.surveySlug,
+          title: chunk.sourceDocument.title,
+          description: chunk.sourceDocument.description,
+          url: chunk.sourceDocument.url,
+          tags: Array.from(
+            new Set([...chunk.tags, ...chunk.sourceDocument.tags]),
+          ),
+          text: chunk.content,
+        }) satisfies ControlledRagChunk,
+    );
+  } catch {
+    return [];
+  }
+}
+
+async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
   const query = [
     input.participantMessage,
     input.selectedNextQuestion,
@@ -129,10 +178,15 @@ function retrieveChunks(input: ControlledRagSurveyTurnInput) {
     input.currentQuestion,
   ].join(" ");
   const queryTokens = tokens(query);
+  const activeDatabaseChunks = await databaseChunks(input);
+  const candidateChunks = [
+    ...activeDatabaseChunks,
+    ...CONTROLLED_RAG_CHUNKS.filter(
+      (chunk) => chunk.surveySlug === input.surveySlug,
+    ),
+  ];
 
-  return CONTROLLED_RAG_CHUNKS.filter(
-    (chunk) => chunk.surveySlug === input.surveySlug,
-  )
+  return candidateChunks
     .map((chunk) => ({
       chunk,
       score: scoreChunk(chunk, queryTokens),
@@ -173,7 +227,7 @@ function selectedQuestionLead(question: string | null) {
 export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
-  const chunks = retrieveChunks(input);
+  const chunks = await retrieveChunks(input);
 
   if (chunks.length === 0) {
     return {

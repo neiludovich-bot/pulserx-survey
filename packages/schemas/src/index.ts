@@ -1678,12 +1678,7 @@ export const mvpCustomGptSurveyResponseSchema = z.object({
   turnCount: z.number().int().min(0),
   askedQuestions: z.array(z.string().min(1)),
   currentQuestion: z.string().min(1).nullable(),
-  nextAction: z.enum([
-    "ask",
-    "answer_then_ask",
-    "wrap_up",
-    "setup_required",
-  ]),
+  nextAction: z.enum(["ask", "answer_then_ask", "wrap_up", "setup_required"]),
   customGptEnabled: z.boolean(),
   reason: z.string().min(1).nullable(),
   messages: z.array(mvpCustomGptSurveyMessageSchema),
@@ -1797,6 +1792,91 @@ export const mvpCustomGptSourcePreviewResponseSchema = z.object({
   images: z.array(mvpCustomGptSourcePreviewImageSchema).max(6),
   documents: z.array(mvpCustomGptSourcePreviewDocumentSchema).max(8),
   reason: z.string().min(1).nullable(),
+});
+
+export const sourceDocumentTypeSchema = z.enum([
+  "URL",
+  "PDF",
+  "TEXT",
+  "MANUAL_NOTE",
+]);
+
+export const sourceDocumentStatusSchema = z.enum([
+  "DRAFT",
+  "ACTIVE",
+  "ARCHIVED",
+]);
+
+export const sourceAssetKindSchema = z.enum([
+  "CHART",
+  "TABLE",
+  "PDF",
+  "IMAGE",
+  "VIDEO",
+  "LINK",
+  "OTHER",
+]);
+
+export const sourceLibrarySurveySlugSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9-]+$/);
+
+export const sourceLibraryAssetInputSchema = z.object({
+  title: z.string().trim().min(1).max(240),
+  description: z.string().trim().min(1).max(1000).optional(),
+  assetKind: sourceAssetKindSchema.default("LINK"),
+  url: z.string().trim().url(),
+  tags: z.array(z.string().trim().min(1).max(80)).default([]),
+  priority: z.number().int().min(0).max(100).default(0),
+});
+
+export const createSourceLibraryDocumentSchema = z
+  .object({
+    surveySlug: sourceLibrarySurveySlugSchema,
+    sourceBrand: z.string().trim().min(1).max(80),
+    title: z.string().trim().min(1).max(240),
+    description: z.string().trim().min(1).max(1000).optional(),
+    sourceType: sourceDocumentTypeSchema,
+    url: z.string().trim().url().optional(),
+    content: z.string().trim().min(1).max(60000).optional(),
+    tags: z.array(z.string().trim().min(1).max(80)).default([]),
+    priority: z.number().int().min(0).max(100).default(0),
+    status: sourceDocumentStatusSchema.default("DRAFT"),
+    assets: z.array(sourceLibraryAssetInputSchema).max(12).default([]),
+  })
+  .refine((input) => input.url || input.content, {
+    message: "Provide either a source URL or pasted source content.",
+    path: ["url"],
+  });
+
+export const sourceLibraryDocumentSchema = z.object({
+  id: z.string().min(1),
+  surveySlug: z.string().min(1),
+  sourceBrand: z.string().min(1),
+  title: z.string().min(1),
+  description: z.string().nullable(),
+  sourceType: sourceDocumentTypeSchema,
+  url: z.string().url().nullable(),
+  contentPreview: z.string().nullable(),
+  tags: z.array(z.string()),
+  priority: z.number().int(),
+  status: sourceDocumentStatusSchema,
+  chunkCount: z.number().int().min(0),
+  assetCount: z.number().int().min(0),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const sourceLibraryListResponseSchema = z.object({
+  dbConfigured: z.boolean(),
+  generatedAt: z.string().datetime(),
+  documents: z.array(sourceLibraryDocumentSchema),
+});
+
+export const sourceLibraryMutationResponseSchema = z.object({
+  document: sourceLibraryDocumentSchema,
 });
 
 export type InterviewTurn = z.infer<typeof interviewTurnSchema>;
@@ -2056,4 +2136,20 @@ export type MvpCustomGptSourcePreviewDocument = z.infer<
 >;
 export type MvpCustomGptSourcePreviewResponse = z.infer<
   typeof mvpCustomGptSourcePreviewResponseSchema
+>;
+export type SourceDocumentType = z.infer<typeof sourceDocumentTypeSchema>;
+export type SourceDocumentStatus = z.infer<typeof sourceDocumentStatusSchema>;
+export type SourceAssetKind = z.infer<typeof sourceAssetKindSchema>;
+export type SourceLibraryAssetInput = z.infer<
+  typeof sourceLibraryAssetInputSchema
+>;
+export type CreateSourceLibraryDocument = z.infer<
+  typeof createSourceLibraryDocumentSchema
+>;
+export type SourceLibraryDocument = z.infer<typeof sourceLibraryDocumentSchema>;
+export type SourceLibraryListResponse = z.infer<
+  typeof sourceLibraryListResponseSchema
+>;
+export type SourceLibraryMutationResponse = z.infer<
+  typeof sourceLibraryMutationResponseSchema
 >;
