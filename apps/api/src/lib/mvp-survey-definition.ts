@@ -83,7 +83,7 @@ export function surveyIntentForSlug(
   definition: MvpSurveyDefinition,
   slug?: string,
 ) {
-  if (!definition.intents?.length) {
+  if (!definition.intents?.length || !slug) {
     return null;
   }
 

@@ -22,6 +22,11 @@ const staticRoutes = [
     targetParts: ["surveys", "padcev"],
   },
   {
+    label: "/surveys/brukinsa/",
+    sourceParts: ["surveys", "brukinsa.html"],
+    targetParts: ["surveys", "brukinsa"],
+  },
+  {
     label: "/research/mvp-audit/",
     sourceParts: ["research", "mvp-audit.html"],
     targetParts: ["research", "mvp-audit"],

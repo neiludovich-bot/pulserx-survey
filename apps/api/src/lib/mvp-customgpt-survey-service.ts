@@ -23,6 +23,10 @@ import {
   guideFromQuestionStrings,
 } from "./mvp-brukinsa-guide";
 import {
+  BRUKINSA_SAFETY_LANE_QUESTION_IDS,
+  BRUKINSA_SURVEY_INTENTS,
+} from "./mvp-brukinsa-intents";
+import {
   PADCEV_SAFETY_LANE_QUESTION_IDS,
   PADCEV_SURVEY_INTENTS,
 } from "./mvp-padcev-intents";
@@ -82,6 +86,7 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     defaultStudyName: "BRUKINSA HCP MVP",
     sourceBrand: "BRUKINSA",
     guide: BRUKINSA_HCP_MVP_GUIDE,
+    intents: BRUKINSA_SURVEY_INTENTS,
     projectIdEnvName: "CUSTOMGPT_PROJECT_ID",
     defaultProjectId: () => env.CUSTOMGPT_PROJECT_ID ?? BRUKINSA_DEFAULT_PROJECT_ID,
   },
@@ -575,7 +580,7 @@ function queueExplicitIntentExcursions(
   session: MvpSurveySession,
   participantContent: string,
 ) {
-  if (session.surveySlug !== "padcev" || !session.surveyIntent) {
+  if (!session.surveyIntent) {
     return;
   }
 
@@ -584,6 +589,169 @@ function queueExplicitIntentExcursions(
   }
 
   const normalized = normalizeText(participantContent);
+
+  if (session.surveySlug === "brukinsa") {
+    const rules: Array<{
+      questionIds: string[];
+      patterns: RegExp[];
+    }> = [
+      {
+        questionIds: ["support_resources"],
+        patterns: [
+          /\bguide\b/,
+          /\bguides\b/,
+          /\bchecklist\b/,
+          /\bchecklists\b/,
+          /\bresource\b/,
+          /\bresources\b/,
+          /\bpdf\b/,
+          /\bbrochure\b/,
+          /\bpatient education\b/,
+          /\bcontact a rep\b/,
+          /\brepresentative\b/,
+          /\bmsl\b/,
+        ],
+      },
+      {
+        questionIds: ["general_safety_isi"],
+        patterns: [
+          /\bsafety\b/,
+          /\btolerability\b/,
+          /\bside effect\b/,
+          /\bside effects\b/,
+          /\badverse\b/,
+          /\btoxicity\b/,
+          /\bbleeding\b/,
+          /\bhemorrhage\b/,
+          /\binfection\b/,
+          /\bcytopenia\b/,
+          /\bcardiac\b/,
+          /\bafib\b/,
+          /\bflutter\b/,
+          /\bhepatotoxicity\b/,
+        ],
+      },
+      {
+        questionIds: ["medication_management"],
+        patterns: [
+          /\bmanage\b/,
+          /\bmanagement\b/,
+          /\bmonitor\b/,
+          /\bmonitoring\b/,
+          /\binteract\b/,
+          /\binteraction\b/,
+          /\bcyp3a\b/,
+          /\banticoagulant\b/,
+          /\bantiplatelet\b/,
+          /\bacid reducer\b/,
+          /\bppi\b/,
+          /\bhepatic\b/,
+          /\bsurgery\b/,
+        ],
+      },
+      {
+        questionIds: ["dosing_formulation"],
+        patterns: [
+          /\bdosing\b/,
+          /\bdose\b/,
+          /\bdose modification\b/,
+          /\bdose reduction\b/,
+          /\btablet\b/,
+          /\btablets\b/,
+          /\bcapsule\b/,
+          /\bbid\b/,
+          /\bqd\b/,
+          /\bonce daily\b/,
+          /\btwice daily\b/,
+          /\bfood\b/,
+          /\bpill burden\b/,
+        ],
+      },
+      {
+        questionIds: ["sequoia"],
+        patterns: [
+          /\bsequoia\b/,
+          /\bfirst line\b/,
+          /\bfrontline\b/,
+          /\btreatment naive\b/,
+          /\bprogression free\b/,
+          /\bpfs\b/,
+          /\boverall survival\b/,
+          /\bos\b/,
+        ],
+      },
+      {
+        questionIds: ["alpine"],
+        patterns: [
+          /\balpine\b/,
+          /\bhead to head\b/,
+          /\bibrutinib\b/,
+          /\brelapsed\b/,
+          /\brefractory\b/,
+          /\borr\b/,
+        ],
+      },
+      {
+        questionIds: ["cll_guideline_positioning"],
+        patterns: [
+          /\bguideline\b/,
+          /\bguidelines\b/,
+          /\bnccn\b/,
+          /\bcategory\b/,
+          /\bpreferred\b/,
+          /\bpositioning\b/,
+        ],
+      },
+      {
+        questionIds: ["sequoia_patient_fit", "patient_fit"],
+        patterns: [
+          /\bpatient fit\b/,
+          /\bpatient population\b/,
+          /\bpatient populations\b/,
+          /\bpatient type\b/,
+          /\bpatient types\b/,
+          /\bappropriate patient\b/,
+          /\binclusion\b/,
+          /\bexclusion\b/,
+          /\bgene mutation\b/,
+          /\bmutation\b/,
+          /\btp53\b/,
+          /\bdel17p\b/,
+          /\bdel 17p\b/,
+          /\bcomorbid\b/,
+          /\bhigh risk\b/,
+        ],
+      },
+      {
+        questionIds: ["breadth"],
+        patterns: [
+          /\bindication\b/,
+          /\bindications\b/,
+          /\bbreadth\b/,
+          /\bcll\b.*\bwm\b/,
+          /\bmcl\b/,
+          /\bmzl\b/,
+          /\bfl\b/,
+          /\baccelerated approval\b/,
+        ],
+      },
+    ];
+
+    for (const rule of rules) {
+      if (firstPatternIndex(normalized, rule.patterns) >= 0) {
+        enqueueQuestionIds(session, rule.questionIds, participantContent, {
+          allowOffIntent: true,
+        });
+      }
+    }
+
+    return;
+  }
+
+  if (session.surveySlug !== "padcev") {
+    return;
+  }
+
   const sideEffectIntent = session.surveyIntent.slug === "side-effect-management";
   const rules: Array<{
     questionIds: string[];
@@ -1088,6 +1256,14 @@ function contentLooksLikePadcevSafetyQuestion(content: string) {
   );
 }
 
+function contentLooksLikeBrukinsaSafetyQuestion(content: string) {
+  const normalized = normalizeText(content);
+
+  return /\b(safety|tolerability|adverse|side effect|side effects|toxicity|bleeding|hemorrhage|infection|hbv|cytopenia|neutropenia|thrombocytopenia|anemia|cardiac|afib|atrial fibrillation|flutter|arrhythmia|hepatotoxicity|dili|drug interaction|cyp3a|anticoagulant|antiplatelet|dose reduction|dose modification|manage|management|monitor|monitoring)\b/.test(
+    normalized,
+  );
+}
+
 function areaTerms(area: DiseaseArea) {
   return {
     cll: ["cll", "sll", "chronic lymphocytic", "small lymphocytic", "sequoia", "alpine"],
@@ -1484,6 +1660,27 @@ function sourceContextForReactiveQuestion(
     }
 
     return "The participant asked a source/detail question during the PADCEV urothelial cancer survey. Answer using only approved PADCEV HCP source material, including indication/positioning, EV-302/KEYNOTE-A39, EV-301/EV-201, safety, dosing/administration, patient fit, and access/support only where relevant to the participant's question. Then return to the selected survey question. Do not provide patient-specific treatment advice.";
+  }
+
+  if (session.surveySlug === "brukinsa") {
+    const safetyIntent =
+      session.surveyIntent?.slug === "safety-tolerability-management";
+    const selectedSafetyLaneQuestion = Boolean(
+      selectedQuestion && BRUKINSA_SAFETY_LANE_QUESTION_IDS.has(selectedQuestion.id),
+    );
+    const selectedOffLaneExcursion = Boolean(
+      selectedQuestion && !intentAllowsQuestion(session.surveyIntent, selectedQuestion),
+    );
+    const safetyScoped =
+      contentLooksLikeBrukinsaSafetyQuestion(participantContent) ||
+      selectedSafetyLaneQuestion ||
+      (safetyIntent &&
+        !selectedOffLaneExcursion &&
+        contentLooksLikePatientPopulationQuestion(participantContent));
+
+    if (safetyScoped) {
+      return "The participant is in a BRUKINSA safety/tolerability-management lane or asked a BRUKINSA safety, monitoring, medication-management, dose-modification, or resource question. Answer the specific adverse-event, monitoring, interaction, dose-modification, safety-caution patient-profile, or resource angle they raised; do not provide a full label-style safety inventory. Use 2-4 focused bullets or one short paragraph. If patient profiles are discussed in this lane, frame them as safety-management caution profiles and monitoring/mitigation needs, not broad efficacy-based patient selection. Prioritize approved BRUKINSA HCP Important Safety Information, CLL/SLL safety/tolerability pages when CLL/SLL is active, dosing/formulation materials, tablet FAQ, medication-management/drug-interaction information, patient management guide, myBeOne Support resources, and contact-a-representative resources if available in the indexed sources. If the participant asks for guides, checklists, dosing resources, patient management materials, or operational aids, cite the source page most likely to expose that resource/PDF rather than a generic efficacy page. For hemorrhage/bleeding, infections including HBV reactivation, cytopenias, cardiac arrhythmias, hepatotoxicity/DILI, CYP3A interactions, anticoagulant/antiplatelet use, hepatic impairment, and dose modifications, include only source-supported monitoring, interruption, reduction, discontinuation, counseling, or workflow guidance for the relevant topic. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
+    }
   }
 
   const explicitlyRequestedAreas = extractDiseaseAreas(participantContent);
