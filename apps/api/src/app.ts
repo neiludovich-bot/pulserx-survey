@@ -8,6 +8,7 @@ import {
   createStudyAssetSchema,
   createStudyBranchRuleSchema,
   createStudyBranchRulesSchema,
+  createSourceLibraryDocumentSchema,
   healthResponseSchema,
   mvpCustomGptSurveyStartRequestSchema,
   mvpCustomGptSurveySpeechRequestSchema,
@@ -66,6 +67,10 @@ import {
 } from "./lib/mvp-survey-audit-service";
 import { previewSourceImages } from "./lib/source-preview-service";
 import {
+  createSourceLibraryDocument,
+  listSourceLibraryDocuments,
+} from "./lib/source-library-service";
+import {
   applyStudyGuideCleanup,
   applyRecommendedStudyBranchRules,
   createStudyAsset,
@@ -102,7 +107,11 @@ export function buildApp() {
     bodyLimit: 32 * 1024 * 1024,
   });
   const corsOrigins = Array.from(
-    new Set([env.CORS_ORIGIN, "http://localhost:3000", "http://127.0.0.1:3000"]),
+    new Set([
+      env.CORS_ORIGIN,
+      "http://localhost:3000",
+      "http://127.0.0.1:3000",
+    ]),
   );
 
   app.register(cors, {
@@ -244,9 +253,7 @@ export function buildApp() {
   app.post<{
     Body: unknown;
   }>("/mvp/customgpt-survey/source-preview", async (request, reply) => {
-    const body = mvpCustomGptSourcePreviewRequestSchema.safeParse(
-      request.body,
-    );
+    const body = mvpCustomGptSourcePreviewRequestSchema.safeParse(request.body);
     if (!body.success) {
       return reply.status(400).send({
         message: "Invalid MVP CustomGPT source preview payload.",
@@ -276,15 +283,48 @@ export function buildApp() {
 
   app.get<{
     Params: { sessionId: string };
-  }>("/mvp/customgpt-survey/audit/sessions/:sessionId", async (request, reply) => {
-    const audit = await getMvpSurveyAuditSession(request.params.sessionId);
-    if (!audit) {
-      return reply.status(404).send({
-        message: "MVP survey audit session was not found.",
+  }>(
+    "/mvp/customgpt-survey/audit/sessions/:sessionId",
+    async (request, reply) => {
+      const audit = await getMvpSurveyAuditSession(request.params.sessionId);
+      if (!audit) {
+        return reply.status(404).send({
+          message: "MVP survey audit session was not found.",
+        });
+      }
+
+      return audit;
+    },
+  );
+
+  app.get<{
+    Querystring: { surveySlug?: string };
+  }>("/admin/source-library/documents", async (request) => {
+    return listSourceLibraryDocuments(request.query.surveySlug ?? null);
+  });
+
+  app.post<{
+    Body: unknown;
+  }>("/admin/source-library/documents", async (request, reply) => {
+    const body = createSourceLibraryDocumentSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        message: "Invalid source library document payload.",
+        issues: body.error.flatten(),
       });
     }
 
-    return audit;
+    try {
+      return await createSourceLibraryDocument(body.data);
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(400).send({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to create source library document.",
+      });
+    }
   });
 
   app.get("/studies", async () => {
