@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
+import {
+  askControlledRagForSurveyInterviewerTurn,
+  controlledRagTestInternals,
+} from "./controlled-rag-service";
 
 describe("controlled RAG source provider", () => {
   it("retrieves cited BRUKINSA SEQUOIA context and returns to the selected question", async () => {
@@ -53,5 +56,85 @@ describe("controlled RAG source provider", () => {
 
     expect(result.enabled).toBe(true);
     expect(result.references[0]?.title).toContain("EV-302");
+  });
+
+  it("maps PADCEV neuropathy turns to patient-facing neuropathy visuals before PDF cards", () => {
+    const topic = controlledRagTestInternals.displayTopicForTurn({
+      surveySlug: "padcev",
+      participantMessage: "How should I think about neuropathy risk with PADCEV?",
+      surveyContext: "The respondent is in the side-effect management lane.",
+      currentQuestion: "Which safety or tolerability details matter?",
+      selectedNextQuestion:
+        "When a PADCEV adverse event emerges, what guidance would help?",
+      selectedQuestionSourceContext:
+        "Retrieve PADCEV safety-management resources and dose-modification guidance.",
+    });
+    const ranked = controlledRagTestInternals.rankAssetsForDisplay(
+      [
+        {
+          title: "Dose Modifications",
+          url: "https://example.com/dose-modifications.pdf",
+          description: "PDF dose modification resource",
+          assetKind: "PDF",
+          tags: ["dose modification"],
+          priority: 100,
+        },
+        {
+          title: "la/mUC Peripheral Neuropathy Informational Resource",
+          url: "https://example.com/peripheral-neuropathy-resource.png",
+          description:
+            "Patient prompts and dose modifications for peripheral neuropathy",
+          assetKind: "IMAGE",
+          tags: ["neuropathy", "patient education", "dose modification"],
+          priority: 10,
+        },
+      ],
+      ["neuropathy", "padcev"],
+      topic,
+    );
+
+    expect(topic).toBe("padcev_neuropathy_management");
+    expect(ranked[0]?.title).toContain("Peripheral Neuropathy");
+  });
+
+  it("maps EV-302 response questions to response visuals instead of safety assets", () => {
+    const topic = controlledRagTestInternals.displayTopicForTurn({
+      surveySlug: "padcev",
+      participantMessage:
+        "What did EV-302 show for response rate and complete response?",
+      surveyContext: "The respondent is in the side-effect management lane.",
+      currentQuestion:
+        "When a PADCEV adverse event emerges, what guidance would help?",
+      selectedNextQuestion:
+        "Which safety or tolerability details most influence comfort?",
+      selectedQuestionSourceContext:
+        "Retrieve PADCEV safety-management resources and monitoring checklists.",
+    });
+    const ranked = controlledRagTestInternals.rankAssetsForDisplay(
+      [
+        {
+          title: "PADCEV Adverse Reactions Monitoring Checklist",
+          url: "https://example.com/adverse-reaction-checklist.png",
+          description: "Safety monitoring checklist",
+          assetKind: "IMAGE",
+          tags: ["safety", "adverse", "monitoring"],
+          priority: 250,
+        },
+        {
+          title: "EV-302 ORR and Complete Response Results",
+          url: "https://example.com/ev-302-response-results.png",
+          description:
+            "EV-302 overall response rate and complete response graphic",
+          assetKind: "CHART",
+          tags: ["ev-302", "orr", "complete response"],
+          priority: 20,
+        },
+      ],
+      ["ev", "302", "response", "complete"],
+      topic,
+    );
+
+    expect(topic).toBe("padcev_ev302_response");
+    expect(ranked[0]?.title).toContain("EV-302");
   });
 });
