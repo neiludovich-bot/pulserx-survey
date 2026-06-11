@@ -123,6 +123,71 @@ function scoreChunk(chunk: ControlledRagChunk, queryTokens: string[]) {
   return score;
 }
 
+function scoreAsset(
+  asset: NonNullable<ControlledRagChunk["assets"]>[number],
+  queryTokens: string[],
+) {
+  const haystackTokens = new Set(
+    tokens(
+      [
+        asset.title,
+        asset.description,
+        asset.url,
+        asset.assetKind,
+        asset.tags.join(" "),
+      ].join(" "),
+    ),
+  );
+  const tagTokens = new Set(asset.tags.flatMap((tag) => tokens(tag)));
+  const kind = asset.assetKind.toUpperCase();
+  let score = asset.priority;
+
+  if (["CHART", "TABLE", "IMAGE"].includes(kind)) {
+    score += 90;
+  }
+
+  if (kind === "PDF") {
+    score += 70;
+  }
+
+  for (const token of queryTokens) {
+    if (haystackTokens.has(token)) {
+      score += tagTokens.has(token) ? 10 : 3;
+    }
+  }
+
+  if (
+    /\b(?:hero|lifestyle|campaign|airplane|aircraft|plane|jet|flight|travel|splash|product shot|pill|tablet|capsule)\b/i.test(
+      `${asset.title} ${asset.description ?? ""} ${asset.url}`,
+    )
+  ) {
+    score -= 160;
+  }
+
+  return score;
+}
+
+function rankAssets(
+  assets: NonNullable<ControlledRagChunk["assets"]>,
+  queryTokens: string[],
+) {
+  const seen = new Set<string>();
+
+  return [...assets]
+    .map((asset) => ({ asset, score: scoreAsset(asset, queryTokens) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .filter(({ asset }) => {
+      if (seen.has(asset.url)) {
+        return false;
+      }
+      seen.add(asset.url);
+      return true;
+    })
+    .slice(0, 8)
+    .map(({ asset }) => asset);
+}
+
 async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   if (!process.env.DATABASE_URL) {
     return [];
@@ -147,10 +212,34 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
             url: true,
             tags: true,
             priority: true,
+            assets: {
+              where: {
+                assetKind: {
+                  in: ["CHART", "TABLE", "PDF", "IMAGE", "LINK"],
+                },
+              },
+              orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+              take: 12,
+              select: {
+                title: true,
+                description: true,
+                assetKind: true,
+                url: true,
+                tags: true,
+                priority: true,
+              },
+            },
           },
         },
       },
     });
+    const query = [
+      input.participantMessage,
+      input.selectedNextQuestion,
+      input.selectedQuestionSourceContext,
+      input.currentQuestion,
+    ].join(" ");
+    const queryTokens = tokens(query);
 
     return chunks.map(
       (chunk) =>
@@ -164,6 +253,13 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
             new Set([...chunk.tags, ...chunk.sourceDocument.tags]),
           ),
           text: chunk.content,
+          assets: rankAssets(
+            chunk.sourceDocument.assets.map((asset) => ({
+              ...asset,
+              assetKind: asset.assetKind,
+            })),
+            queryTokens,
+          ),
         }) satisfies ControlledRagChunk,
     );
   } catch {
@@ -206,6 +302,7 @@ function referencesForChunks(chunks: ControlledRagChunk[]) {
         title: chunk.title,
         url: chunk.url,
         description: chunk.description,
+        assets: chunk.assets ?? [],
       }) satisfies GroundedReference,
   );
 }

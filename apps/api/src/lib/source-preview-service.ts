@@ -28,6 +28,10 @@ type DocumentCandidate = {
   score: number;
 };
 
+type CuratedSourceAsset = NonNullable<
+  MvpCustomGptSourcePreviewRequest["assets"]
+>[number];
+
 function isPrivateIpv4(hostname: string) {
   const match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
   if (!match) {
@@ -496,6 +500,119 @@ function uniqueTopDocuments(candidates: DocumentCandidate[], sourceUrl: string) 
     .map(({ score: _score, context: _context, ...candidate }) => candidate);
 }
 
+function urlLooksLikePdf(url: string) {
+  try {
+    return /\.pdf(?:$|[?#])/i.test(new URL(url).pathname);
+  } catch {
+    return /\.pdf(?:$|[?#])/i.test(url);
+  }
+}
+
+function urlLooksLikeImage(url: string) {
+  try {
+    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(new URL(url).pathname);
+  } catch {
+    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(url);
+  }
+}
+
+function curatedAssetLooksLikeImage(asset: CuratedSourceAsset) {
+  const kind = asset.assetKind.toUpperCase();
+
+  return ["CHART", "TABLE", "IMAGE"].includes(kind) || urlLooksLikeImage(asset.url);
+}
+
+function curatedAssetLooksLikeDocument(asset: CuratedSourceAsset) {
+  return !curatedAssetLooksLikeImage(asset) || urlLooksLikePdf(asset.url);
+}
+
+function scoreCuratedAsset(asset: CuratedSourceAsset) {
+  const haystack =
+    `${asset.title} ${asset.description ?? ""} ${asset.url} ${asset.tags.join(" ")}`.toLowerCase();
+  const kind = asset.assetKind.toUpperCase();
+  let score = asset.priority;
+
+  if (["CHART", "TABLE", "IMAGE"].includes(kind)) {
+    score += 120;
+  }
+
+  if (kind === "PDF" || urlLooksLikePdf(asset.url)) {
+    score += 90;
+  }
+
+  if (/\b(?:graph|chart|curve|kaplan|km|table|forest plot|pfs|overall survival|os|orr|hazard ratio|confidence interval|95% ci|ev-302|keynote|ev-301|ev-201|sequoia|alpine|aspen)\b/.test(haystack)) {
+    score += 90;
+  }
+
+  if (/\b(?:guide|checklist|monitoring|dose modification|dosing and administration|peripheral neuropathy|adverse reaction|management resource)\b/.test(haystack)) {
+    score += 80;
+  }
+
+  if (/\b(?:hero|lifestyle|campaign|airplane|aircraft|plane|jet|flight|travel|splash|product shot|pill|tablet|capsule)\b/.test(haystack)) {
+    score -= 220;
+  }
+
+  return score;
+}
+
+function uniqueCuratedAssets(assets: CuratedSourceAsset[]) {
+  const seen = new Set<string>();
+
+  return [...assets]
+    .map((asset) => ({ asset, score: scoreCuratedAsset(asset) }))
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .filter(({ asset }) => {
+      if (seen.has(asset.url)) {
+        return false;
+      }
+      seen.add(asset.url);
+      return true;
+    })
+    .map(({ asset }) => asset);
+}
+
+function curatedImages(assets: CuratedSourceAsset[]) {
+  return uniqueCuratedAssets(assets)
+    .filter(curatedAssetLooksLikeImage)
+    .slice(0, 6)
+    .map((asset) => ({
+      url: asset.url,
+      alt: asset.description ?? asset.title,
+      width: null,
+      height: null,
+      source: "source_library" as const,
+    }));
+}
+
+function curatedDocuments(assets: CuratedSourceAsset[]) {
+  return uniqueCuratedAssets(assets)
+    .filter(curatedAssetLooksLikeDocument)
+    .slice(0, 8)
+    .map((asset) => ({
+      url: asset.url,
+      title: asset.title,
+      description: asset.description,
+      isPdf: asset.assetKind.toUpperCase() === "PDF" || urlLooksLikePdf(asset.url),
+      source: "source_library" as const,
+    }));
+}
+
+function mergeByUrl<T extends { url: string }>(primary: T[], secondary: T[]) {
+  const seen = new Set(primary.map((item) => item.url));
+
+  return [
+    ...primary,
+    ...secondary.filter((item) => {
+      if (seen.has(item.url)) {
+        return false;
+      }
+      seen.add(item.url);
+      return true;
+    }),
+  ];
+}
+
 function extractDocumentCandidates(html: string, sourceUrl: string) {
   const candidates: DocumentCandidate[] = [];
 
@@ -665,13 +782,19 @@ function extractTitle(html: string, fallbackTitle?: string) {
 export async function previewSourceImages(
   input: MvpCustomGptSourcePreviewRequest,
 ) {
-  const cached = sourcePreviewCache.get(input.url);
+  const curatedAssetSignature = (input.assets ?? [])
+    .map((asset) => asset.url)
+    .join("|");
+  const cacheKey = `${input.url}::${curatedAssetSignature}`;
+  const cached = sourcePreviewCache.get(cacheKey);
   if (cached) {
     return cached;
   }
 
   const url = new URL(input.url);
   assertPreviewUrlAllowed(url);
+  const inputImages = curatedImages(input.assets ?? []);
+  const inputDocuments = curatedDocuments(input.assets ?? []);
 
   try {
     const controller = new AbortController();
@@ -701,8 +824,14 @@ export async function previewSourceImages(
 
     const html = (await response.text()).slice(0, SOURCE_PREVIEW_MAX_HTML_CHARS);
     const title = extractTitle(html, input.title);
-    const images = extractImageCandidates(html, url.toString(), title);
-    const documents = extractDocumentCandidates(html, url.toString());
+    const images = mergeByUrl(
+      inputImages,
+      extractImageCandidates(html, url.toString(), title),
+    ).slice(0, 6);
+    const documents = mergeByUrl(
+      inputDocuments,
+      extractDocumentCandidates(html, url.toString()),
+    ).slice(0, 8);
     const result = mvpCustomGptSourcePreviewResponseSchema.parse({
       sourceUrl: url.toString(),
       title,
@@ -714,19 +843,24 @@ export async function previewSourceImages(
           : "No useful image or document assets were found on this source page.",
     });
 
-    sourcePreviewCache.set(input.url, result);
+    sourcePreviewCache.set(cacheKey, result);
     return result;
   } catch (error) {
-    return mvpCustomGptSourcePreviewResponseSchema.parse({
+    const result = mvpCustomGptSourcePreviewResponseSchema.parse({
       sourceUrl: url.toString(),
       title: input.title ?? null,
-      images: [],
-      documents: [],
+      images: inputImages,
+      documents: inputDocuments,
       reason:
-        error instanceof Error
-          ? error.message
-          : "Unable to preview source images.",
+        inputImages.length || inputDocuments.length
+          ? null
+          : error instanceof Error
+            ? error.message
+            : "Unable to preview source images.",
     });
+
+    sourcePreviewCache.set(cacheKey, result);
+    return result;
   }
 }
 
