@@ -7,6 +7,10 @@ import { getOptionalOpenAIGateway } from "./model-gateway";
 import { prisma } from "./prisma";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
+type WeightedTokenGroup = {
+  tokens: string[];
+  weight: number;
+};
 
 export type ControlledRagSurveyTurnInput = {
   surveySlug: "brukinsa" | "padcev";
@@ -109,20 +113,32 @@ function chunkTagTokenSet(chunk: ControlledRagChunk) {
   return new Set(chunk.tags.flatMap((tag) => tokens(tag)));
 }
 
-function scoreChunk(chunk: ControlledRagChunk, queryTokens: string[]) {
+function scoreChunk(chunk: ControlledRagChunk, queryTokenGroups: WeightedTokenGroup[]) {
   const haystackTokens = chunkTokenSet(chunk);
   const tagTokens = chunkTagTokenSet(chunk);
   let score = 0;
 
-  for (const token of queryTokens) {
-    if (!haystackTokens.has(token)) {
-      continue;
-    }
+  for (const group of queryTokenGroups) {
+    for (const token of group.tokens) {
+      if (!haystackTokens.has(token)) {
+        continue;
+      }
 
-    score += tagTokens.has(token) ? 4 : 1;
+      score += (tagTokens.has(token) ? 4 : 1) * group.weight;
+    }
   }
 
   return score;
+}
+
+function retrievalTokenGroups(input: ControlledRagSurveyTurnInput) {
+  return [
+    { tokens: tokens(input.participantMessage), weight: 10 },
+    { tokens: tokens(input.selectedQuestionSourceContext ?? ""), weight: 3 },
+    { tokens: tokens(input.selectedNextQuestion ?? ""), weight: 1 },
+    { tokens: tokens(input.currentQuestion ?? ""), weight: 1 },
+    { tokens: tokens(input.surveyContext), weight: 1 },
+  ].filter((group) => group.tokens.length > 0);
 }
 
 function scoreAsset(
@@ -277,13 +293,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
 }
 
 async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
-  const query = [
-    input.participantMessage,
-    input.selectedNextQuestion,
-    input.selectedQuestionSourceContext,
-    input.currentQuestion,
-  ].join(" ");
-  const queryTokens = tokens(query);
+  const queryTokenGroups = retrievalTokenGroups(input);
   const activeDatabaseChunks = await databaseChunks(input);
   const candidateChunks = [
     ...activeDatabaseChunks,
@@ -295,7 +305,7 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
   return candidateChunks
     .map((chunk) => ({
       chunk,
-      score: scoreChunk(chunk, queryTokens),
+      score: scoreChunk(chunk, queryTokenGroups),
     }))
     .filter((match) => match.score > 0)
     .sort((left, right) => right.score - left.score)

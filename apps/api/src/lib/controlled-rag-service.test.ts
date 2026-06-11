@@ -36,4 +36,22 @@ describe("controlled RAG source provider", () => {
     expect(result.answer).toBeNull();
     expect(result.references).toEqual([]);
   });
+
+  it("prioritizes an explicit EV-302 response-endpoint ask over the active safety lane", async () => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      surveySlug: "padcev",
+      participantMessage:
+        "What did EV-302 show for response rate and complete response?",
+      surveyContext: "The respondent has been discussing PADCEV safety.",
+      currentQuestion:
+        "Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
+      selectedNextQuestion:
+        "When a PADCEV adverse event emerges, what guidance would most help you decide whether to monitor, interrupt dosing, reduce dosing, discontinue, counsel the patient, or involve additional support?",
+      selectedQuestionSourceContext:
+        "Retrieve PADCEV safety-management resources, monitoring checklists, and dose-modification guidance.",
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.references[0]?.title).toContain("EV-302");
+  });
 });
