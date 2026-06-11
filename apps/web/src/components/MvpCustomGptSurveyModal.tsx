@@ -295,7 +295,7 @@ function shouldEmbedSourceUrl(url: string) {
       parsed.pathname,
     );
 
-    return isLocalAsset || isPreviewableFile;
+    return !sourceUrlLooksLikePdf(url) && (isLocalAsset || isPreviewableFile);
   } catch {
     return false;
   }
@@ -309,11 +309,43 @@ function sourceUrlLooksLikePdf(url: string) {
   }
 }
 
+function pdfSourcePreview(
+  sourceUrl: string,
+  title: string,
+): MvpCustomGptSourcePreviewResponse {
+  return {
+    sourceUrl,
+    title,
+    images: [],
+    documents: [
+      {
+        url: sourceUrl,
+        title,
+        description: null,
+        isPdf: true,
+        source: "source_library",
+      },
+    ],
+    reason: null,
+  };
+}
+
 async function resolveVisualSourcePanelReference(
   input: SourcePanelReference,
 ): Promise<SourcePanelReference | null> {
   const sourceUrl = input.reference.url;
-  if (!sourceUrl || shouldEmbedSourceUrl(sourceUrl)) {
+  if (!sourceUrl) {
+    return input;
+  }
+
+  if (sourceUrlLooksLikePdf(sourceUrl)) {
+    return {
+      ...input,
+      preview: pdfSourcePreview(sourceUrl, getReferenceLabel(input.reference, input.index)),
+    };
+  }
+
+  if (shouldEmbedSourceUrl(sourceUrl)) {
     return input;
   }
 
@@ -961,6 +993,14 @@ function SourcePanel({
       };
     }
 
+    if (canDownloadPdf) {
+      setPreview(pdfSourcePreview(sourceUrl, label));
+      setIsPreviewLoading(false);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
     setIsPreviewLoading(true);
     void previewMvpCustomGptSource({
       url: sourceUrl,
@@ -990,7 +1030,14 @@ function SourcePanel({
     return () => {
       isCancelled = true;
     };
-  }, [canEmbedSource, label, source.preview, source.reference.assets, sourceUrl]);
+  }, [
+    canDownloadPdf,
+    canEmbedSource,
+    label,
+    source.preview,
+    source.reference.assets,
+    sourceUrl,
+  ]);
 
   return (
     <>

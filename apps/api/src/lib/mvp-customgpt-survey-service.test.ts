@@ -1923,4 +1923,78 @@ describe("MVP CustomGPT survey service", () => {
       "For which locally advanced or metastatic urothelial cancer patient types",
     );
   });
+
+  it("lets explicit PADCEV EV-302 data questions override the active safety source lane", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+
+    const prompts: string[] = [];
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (href.endsWith("/projects/97350/conversations") && method === "POST") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: `padcev-session-${fetchMock.mock.calls.length}`,
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        prompts.push(body.prompt ?? "");
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response:
+                "EV-302 reported ORR and CR results from the efficacy source. Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
+              citations: [
+                {
+                  id: "ev302-source",
+                  title: "PADCEV + Pembrolizumab Efficacy in 1L la/mUC",
+                  url: "https://www.padcevhcp.com/padcev-pembrolizumab-efficacy",
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 600,
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "What did EV-302 show for response rate and complete response?",
+    });
+
+    const latestPrompt = prompts.at(-1) ?? "";
+    expect(latestPrompt).toContain(
+      "explicitly asked about PADCEV efficacy or EV-302",
+    );
+    expect(latestPrompt).toContain("Prioritize the approved PADCEV HCP EV-302");
+    expect(latestPrompt).not.toContain(
+      "Do not use or cite efficacy/PFS/OS pages",
+    );
+    expect(next.messages.at(-1)?.references[0]?.title).toContain("Efficacy");
+  });
 });

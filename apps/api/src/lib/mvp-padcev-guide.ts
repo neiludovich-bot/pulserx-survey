@@ -131,7 +131,20 @@ export const PADCEV_HCP_MVP_GUIDE = [
       "Which EV-302/KEYNOTE-A39 results, if any, affect your view of PADCEV plus pembrolizumab in first-line locally advanced or metastatic urothelial cancer?",
     sourceContextRequirement:
       "Before asking the EV-302/KEYNOTE-A39 reaction question, retrieve and summarize the PADCEV HCP source context for the trial. Include setting/population, phase/design if supported, comparator or treatment arms, primary or key endpoints, concrete source-supported efficacy results, safety or discontinuation context when available, and caveats. If the source includes a chart, table, or study graphic, cite the source most likely to display it.",
-    routeKeywords: ["ev-302", "keynote-a39", "overall survival", "progression free", "pfs", "os"],
+    routeKeywords: [
+      "ev-302",
+      "keynote-a39",
+      "overall survival",
+      "progression free",
+      "pfs",
+      "os",
+      "orr",
+      "response rate",
+      "complete response",
+      "cr",
+      "endpoint",
+      "endpoints",
+    ],
     completionSignals: ["reaction to EV-302 evidence is stated"],
     adaptiveProbes: [
       "If skeptical: What evidence or patient subgroup detail would you need to feel more confident?",
