@@ -29,6 +29,8 @@ import type {
   SessionAuditResponse,
   SimulateStudyBranchRoute,
   SourceLibraryListResponse,
+  SourceLibraryBulkImport,
+  SourceLibraryBulkImportResponse,
   SourceLibraryMutationResponse,
   StudyGuideCleanupApplyResponse,
   StudyGuideSourceNoteRetentionResponse,
@@ -538,6 +540,16 @@ export function createSourceLibraryDocument(
 ) {
   return apiFetch<SourceLibraryMutationResponse>(
     "/admin/source-library/documents",
+    {
+      method: "POST",
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function importSourceLibraryDocuments(input: SourceLibraryBulkImport) {
+  return apiFetch<SourceLibraryBulkImportResponse>(
+    "/admin/source-library/import",
     {
       method: "POST",
       body: JSON.stringify(input),

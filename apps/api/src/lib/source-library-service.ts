@@ -1,7 +1,10 @@
 import {
+  sourceLibraryBulkImportResponseSchema,
   sourceLibraryListResponseSchema,
   sourceLibraryMutationResponseSchema,
   type CreateSourceLibraryDocument,
+  type SourceAssetKind,
+  type SourceLibraryBulkImport,
 } from "@interview/schemas";
 import { prisma } from "./prisma";
 
@@ -43,6 +46,44 @@ function normalizeTags(tags: string[]) {
 
 function estimateTokens(value: string) {
   return Math.max(1, Math.ceil(value.length / 4));
+}
+
+function normalizeAssetKind(value: string): SourceAssetKind {
+  const normalized = value
+    .trim()
+    .toUpperCase()
+    .replace(/[\s-]+/g, "_");
+  if (
+    normalized === "CHART" ||
+    normalized === "TABLE" ||
+    normalized === "PDF" ||
+    normalized === "IMAGE" ||
+    normalized === "VIDEO" ||
+    normalized === "LINK" ||
+    normalized === "OTHER"
+  ) {
+    return normalized;
+  }
+
+  if (
+    normalized === "FIGURE" ||
+    normalized === "FLOWCHART" ||
+    normalized === "GRAPH" ||
+    normalized === "CLAIM_BLOCK"
+  ) {
+    return "CHART";
+  }
+
+  if (
+    normalized === "CHECKLIST" ||
+    normalized === "REFERENCE_BLOCK" ||
+    normalized === "LABEL_SECTION" ||
+    normalized === "PDF_SECTION"
+  ) {
+    return "TABLE";
+  }
+
+  return "OTHER";
 }
 
 export function chunkSourceText(value: string) {
@@ -161,7 +202,7 @@ export async function createSourceLibraryDocument(
   const assets = input.assets.map((asset) => ({
     title: asset.title,
     description: asset.description ?? null,
-    assetKind: asset.assetKind,
+    assetKind: normalizeAssetKind(asset.assetKind),
     url: asset.url,
     tags: normalizeTags(asset.tags),
     priority: asset.priority,
@@ -223,5 +264,102 @@ export async function createSourceLibraryDocument(
 
   return sourceLibraryMutationResponseSchema.parse({
     document: mapDocument(document),
+  });
+}
+
+export async function importSourceLibraryDocuments(
+  input: SourceLibraryBulkImport,
+) {
+  if (!dbConfigured()) {
+    throw new Error("Source library database is not configured.");
+  }
+
+  const importedDocuments = await prisma.$transaction(async (tx) => {
+    if (input.replaceExisting) {
+      await tx.sourceDocument.deleteMany({
+        where: {
+          surveySlug: input.surveySlug,
+        },
+      });
+    }
+
+    const createdDocuments: SourceLibraryDocumentRecord[] = [];
+
+    for (const documentInput of input.documents) {
+      const normalizedInput: CreateSourceLibraryDocument = {
+        ...documentInput,
+        surveySlug: documentInput.surveySlug ?? input.surveySlug,
+        sourceBrand: documentInput.sourceBrand ?? input.sourceBrand,
+      };
+      const tags = normalizeTags(normalizedInput.tags);
+      const sourceText = sourceTextForChunking(normalizedInput);
+      const chunks = chunkSourceText(sourceText);
+      const created = await tx.sourceDocument.create({
+        data: {
+          surveySlug: normalizedInput.surveySlug,
+          sourceBrand: normalizedInput.sourceBrand,
+          title: normalizedInput.title,
+          description: normalizedInput.description ?? null,
+          sourceType: normalizedInput.sourceType,
+          url: normalizedInput.url ?? null,
+          content: normalizedInput.content ?? null,
+          tags,
+          priority: normalizedInput.priority,
+          status: normalizedInput.status,
+        },
+      });
+
+      if (chunks.length > 0) {
+        await tx.sourceChunk.createMany({
+          data: chunks.map((chunk, index) => ({
+            sourceDocumentId: created.id,
+            surveySlug: normalizedInput.surveySlug,
+            content: chunk,
+            tags,
+            position: index,
+            tokenEstimate: estimateTokens(chunk),
+          })),
+        });
+      }
+
+      if (normalizedInput.assets.length > 0) {
+        await tx.sourceAsset.createMany({
+          data: normalizedInput.assets.map((asset) => ({
+            sourceDocumentId: created.id,
+            surveySlug: normalizedInput.surveySlug,
+            title: asset.title,
+            description: asset.description ?? null,
+            assetKind: normalizeAssetKind(asset.assetKind),
+            url: asset.url,
+            tags: normalizeTags(asset.tags),
+            priority: asset.priority,
+          })),
+        });
+      }
+
+      const loaded = await tx.sourceDocument.findUniqueOrThrow({
+        where: {
+          id: created.id,
+        },
+        include: {
+          _count: {
+            select: {
+              chunks: true,
+              assets: true,
+            },
+          },
+        },
+      });
+      createdDocuments.push(loaded);
+    }
+
+    return createdDocuments;
+  });
+
+  return sourceLibraryBulkImportResponseSchema.parse({
+    dbConfigured: true,
+    generatedAt: new Date().toISOString(),
+    importedCount: importedDocuments.length,
+    documents: importedDocuments.map(mapDocument),
   });
 }

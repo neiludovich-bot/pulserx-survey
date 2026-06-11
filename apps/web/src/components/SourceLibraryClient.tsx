@@ -5,9 +5,14 @@ import type {
   SourceAssetKind,
   SourceDocumentStatus,
   SourceDocumentType,
+  SourceLibraryBulkImport,
   SourceLibraryDocument,
 } from "@interview/schemas";
-import { createSourceLibraryDocument, getSourceLibraryDocuments } from "../api";
+import {
+  createSourceLibraryDocument,
+  getSourceLibraryDocuments,
+  importSourceLibraryDocuments,
+} from "../api";
 
 const SURVEY_OPTIONS = [
   { slug: "padcev", brand: "PADCEV" },
@@ -64,9 +69,12 @@ export function SourceLibraryClient() {
   const [assetUrl, setAssetUrl] = useState("");
   const [assetKind, setAssetKind] = useState<SourceAssetKind>("CHART");
   const [assetTags, setAssetTags] = useState("");
+  const [bulkJson, setBulkJson] = useState("");
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [documents, setDocuments] = useState<SourceLibraryDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -169,8 +177,112 @@ export function SourceLibraryClient() {
     }
   }
 
+  async function handleBulkImport(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setImporting(true);
+    setError(null);
+    setMessage(null);
+
+    try {
+      const parsed = JSON.parse(bulkJson) as Record<string, unknown>;
+      const payload = {
+        ...parsed,
+        surveySlug:
+          typeof parsed.surveySlug === "string"
+            ? parsed.surveySlug
+            : surveySlug,
+        sourceBrand:
+          typeof parsed.sourceBrand === "string"
+            ? parsed.sourceBrand
+            : sourceBrand,
+        replaceExisting,
+      } as SourceLibraryBulkImport;
+      const response = await importSourceLibraryDocuments(payload);
+
+      const importedSurveySlug = response.documents[0]?.surveySlug;
+      if (importedSurveySlug) {
+        setSurveySlug(importedSurveySlug);
+      }
+      setMessage(
+        `Imported ${response.importedCount} source document(s) into the library.`,
+      );
+      setBulkJson("");
+      await refresh();
+    } catch (importError) {
+      setError(
+        importError instanceof SyntaxError
+          ? "The source pack is not valid JSON."
+          : importError instanceof Error
+            ? importError.message
+            : "Unable to import source pack.",
+      );
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  async function handleBulkFile(file: File | null) {
+    if (!file) {
+      return;
+    }
+
+    setBulkJson(await file.text());
+  }
+
   return (
     <div className="stack-lg">
+      <form className="panel stack-md" onSubmit={handleBulkImport}>
+        <div className="panel-title-row">
+          <div>
+            <p className="label">Bulk Import</p>
+            <h2>Load Source Pack JSON</h2>
+          </div>
+          <span className="status-pill status-pill-muted">JSON</span>
+        </div>
+        <p className="muted-copy">
+          Paste or choose a source-pack JSON with documents, factual source
+          notes, tags, and assets. This imports evidence records, not canned
+          survey answers.
+        </p>
+        <div className="form-grid">
+          <label className="form-field">
+            <span>Choose JSON file</span>
+            <input
+              accept="application/json,.json"
+              type="file"
+              onChange={(event) =>
+                void handleBulkFile(event.currentTarget.files?.[0] ?? null)
+              }
+            />
+          </label>
+          <label className="checkbox-field">
+            <input
+              checked={replaceExisting}
+              type="checkbox"
+              onChange={(event) => setReplaceExisting(event.target.checked)}
+            />
+            <span>Replace existing sources for this survey before import</span>
+          </label>
+        </div>
+        <label className="form-field">
+          <span>Source pack JSON</span>
+          <textarea
+            value={bulkJson}
+            onChange={(event) => setBulkJson(event.target.value)}
+            placeholder='{"surveySlug":"padcev","sourceBrand":"PADCEV","documents":[...]}'
+          />
+        </label>
+        <div className="composer-actions">
+          <button
+            className="button-primary"
+            type="submit"
+            disabled={importing || !bulkJson.trim()}
+          >
+            {importing ? "Importing..." : "Import JSON Pack"}
+          </button>
+        </div>
+      </form>
+
       <form className="panel stack-md" onSubmit={handleSubmit}>
         <div className="panel-title-row">
           <div>

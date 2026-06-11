@@ -1817,6 +1817,11 @@ export const sourceAssetKindSchema = z.enum([
   "OTHER",
 ]);
 
+const sourceAssetKindInputSchema = z.union([
+  sourceAssetKindSchema,
+  z.string().trim().min(1).max(80),
+]);
+
 export const sourceLibrarySurveySlugSchema = z
   .string()
   .trim()
@@ -1826,27 +1831,35 @@ export const sourceLibrarySurveySlugSchema = z
 export const sourceLibraryAssetInputSchema = z.object({
   title: z.string().trim().min(1).max(240),
   description: z.string().trim().min(1).max(1000).optional(),
-  assetKind: sourceAssetKindSchema.default("LINK"),
+  assetKind: sourceAssetKindInputSchema.default("LINK"),
   url: z.string().trim().url(),
   tags: z.array(z.string().trim().min(1).max(80)).default([]),
   priority: z.number().int().min(0).max(100).default(0),
 });
 
-export const createSourceLibraryDocumentSchema = z
-  .object({
-    surveySlug: sourceLibrarySurveySlugSchema,
-    sourceBrand: z.string().trim().min(1).max(80),
-    title: z.string().trim().min(1).max(240),
-    description: z.string().trim().min(1).max(1000).optional(),
-    sourceType: sourceDocumentTypeSchema,
-    url: z.string().trim().url().optional(),
-    content: z.string().trim().min(1).max(60000).optional(),
-    tags: z.array(z.string().trim().min(1).max(80)).default([]),
-    priority: z.number().int().min(0).max(100).default(0),
-    status: sourceDocumentStatusSchema.default("DRAFT"),
-    assets: z.array(sourceLibraryAssetInputSchema).max(12).default([]),
-  })
-  .refine((input) => input.url || input.content, {
+const sourceLibraryDocumentInputBaseSchema = z.object({
+  surveySlug: sourceLibrarySurveySlugSchema,
+  sourceBrand: z.string().trim().min(1).max(80),
+  title: z.string().trim().min(1).max(240),
+  description: z.string().trim().min(1).max(1000).optional(),
+  sourceType: sourceDocumentTypeSchema,
+  url: z.string().trim().url().optional(),
+  content: z.string().trim().min(1).max(60000).optional(),
+  tags: z.array(z.string().trim().min(1).max(80)).default([]),
+  priority: z.number().int().min(0).max(100).default(0),
+  status: sourceDocumentStatusSchema.default("DRAFT"),
+  assets: z.array(sourceLibraryAssetInputSchema).max(24).default([]),
+});
+
+function sourceLibraryDocumentHasSource(input: {
+  url?: string;
+  content?: string;
+}) {
+  return Boolean(input.url || input.content);
+}
+
+export const createSourceLibraryDocumentSchema =
+  sourceLibraryDocumentInputBaseSchema.refine(sourceLibraryDocumentHasSource, {
     message: "Provide either a source URL or pasted source content.",
     path: ["url"],
   });
@@ -1877,6 +1890,34 @@ export const sourceLibraryListResponseSchema = z.object({
 
 export const sourceLibraryMutationResponseSchema = z.object({
   document: sourceLibraryDocumentSchema,
+});
+
+const sourceLibraryBulkDocumentSchema = sourceLibraryDocumentInputBaseSchema
+  .omit({
+    surveySlug: true,
+    sourceBrand: true,
+  })
+  .extend({
+    surveySlug: sourceLibrarySurveySlugSchema.optional(),
+    sourceBrand: z.string().trim().min(1).max(80).optional(),
+  })
+  .refine(sourceLibraryDocumentHasSource, {
+    message: "Provide either a source URL or pasted source content.",
+    path: ["url"],
+  });
+
+export const sourceLibraryBulkImportSchema = z.object({
+  surveySlug: sourceLibrarySurveySlugSchema,
+  sourceBrand: z.string().trim().min(1).max(80),
+  replaceExisting: z.boolean().default(false),
+  documents: z.array(sourceLibraryBulkDocumentSchema).min(1).max(200),
+});
+
+export const sourceLibraryBulkImportResponseSchema = z.object({
+  dbConfigured: z.boolean(),
+  generatedAt: z.string().datetime(),
+  importedCount: z.number().int().min(0),
+  documents: z.array(sourceLibraryDocumentSchema),
 });
 
 export type InterviewTurn = z.infer<typeof interviewTurnSchema>;
@@ -2152,4 +2193,10 @@ export type SourceLibraryListResponse = z.infer<
 >;
 export type SourceLibraryMutationResponse = z.infer<
   typeof sourceLibraryMutationResponseSchema
+>;
+export type SourceLibraryBulkImport = z.infer<
+  typeof sourceLibraryBulkImportSchema
+>;
+export type SourceLibraryBulkImportResponse = z.infer<
+  typeof sourceLibraryBulkImportResponseSchema
 >;

@@ -20,6 +20,7 @@ import {
   publishSurveyImportRequestSchema,
   retainStudyGuideSourceNotesSchema,
   simulateStudyBranchRouteSchema,
+  sourceLibraryBulkImportSchema,
   startTestSessionRequestSchema,
   submitAssetReactionSchema,
   submitRespondentAnswerSchema,
@@ -68,6 +69,7 @@ import {
 import { previewSourceImages } from "./lib/source-preview-service";
 import {
   createSourceLibraryDocument,
+  importSourceLibraryDocuments,
   listSourceLibraryDocuments,
 } from "./lib/source-library-service";
 import {
@@ -323,6 +325,30 @@ export function buildApp() {
           error instanceof Error
             ? error.message
             : "Unable to create source library document.",
+      });
+    }
+  });
+
+  app.post<{
+    Body: unknown;
+  }>("/admin/source-library/import", async (request, reply) => {
+    const body = sourceLibraryBulkImportSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        message: "Invalid source library import payload.",
+        issues: body.error.flatten(),
+      });
+    }
+
+    try {
+      return await importSourceLibraryDocuments(body.data);
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(400).send({
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unable to import source library documents.",
       });
     }
   });
