@@ -6,6 +6,8 @@ import {
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { prisma } from "./prisma";
 
+type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
+
 export type ControlledRagSurveyTurnInput = {
   surveySlug: "brukinsa" | "padcev";
   participantMessage: string;
@@ -124,7 +126,7 @@ function scoreChunk(chunk: ControlledRagChunk, queryTokens: string[]) {
 }
 
 function scoreAsset(
-  asset: NonNullable<ControlledRagChunk["assets"]>[number],
+  asset: ControlledRagAsset,
   queryTokens: string[],
 ) {
   const haystackTokens = new Set(
@@ -168,7 +170,7 @@ function scoreAsset(
 }
 
 function rankAssets(
-  assets: NonNullable<ControlledRagChunk["assets"]>,
+  assets: ControlledRagAsset[],
   queryTokens: string[],
 ) {
   const seen = new Set<string>();
@@ -186,6 +188,13 @@ function rankAssets(
     })
     .slice(0, 8)
     .map(({ asset }) => asset);
+}
+
+function mergeRankedAssets(
+  queryTokens: string[],
+  ...assetGroups: Array<ControlledRagAsset[] | undefined>
+) {
+  return rankAssets(assetGroups.flatMap((assets) => assets ?? []), queryTokens);
 }
 
 async function databaseChunks(input: ControlledRagSurveyTurnInput) {
@@ -247,8 +256,8 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
           id: `db:${chunk.id}`,
           surveySlug: input.surveySlug,
           title: chunk.sourceDocument.title,
-          description: chunk.sourceDocument.description,
-          url: chunk.sourceDocument.url,
+          description: chunk.sourceDocument.description ?? "",
+          url: chunk.sourceDocument.url ?? "",
           tags: Array.from(
             new Set([...chunk.tags, ...chunk.sourceDocument.tags]),
           ),
@@ -294,7 +303,85 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
     .map((match) => match.chunk);
 }
 
-function referencesForChunks(chunks: ControlledRagChunk[]) {
+async function retrieveTurnAssets(
+  input: ControlledRagSurveyTurnInput,
+  chunks: ControlledRagChunk[],
+) {
+  if (!process.env.DATABASE_URL) {
+    return [];
+  }
+
+  const query = [
+    input.participantMessage,
+    input.selectedNextQuestion,
+    input.selectedQuestionSourceContext,
+    input.currentQuestion,
+    chunks.map((chunk) => `${chunk.title} ${chunk.tags.join(" ")}`).join(" "),
+  ].join(" ");
+  const queryTokens = tokens(query);
+
+  try {
+    const assets = await prisma.sourceAsset.findMany({
+      where: {
+        surveySlug: input.surveySlug,
+        sourceDocument: {
+          status: "ACTIVE",
+        },
+      },
+      orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
+      take: 120,
+      select: {
+        title: true,
+        description: true,
+        assetKind: true,
+        url: true,
+        tags: true,
+        priority: true,
+        sourceDocument: {
+          select: {
+            title: true,
+            description: true,
+            url: true,
+            tags: true,
+          },
+        },
+      },
+    });
+
+    return rankAssets(
+      assets.map((asset) => ({
+        title: asset.title,
+        description:
+          [
+            asset.description,
+            asset.sourceDocument.description,
+            asset.sourceDocument.title,
+          ]
+            .filter(Boolean)
+            .join(" "),
+        assetKind: asset.assetKind,
+        url: asset.url,
+        tags: Array.from(
+          new Set([
+            ...asset.tags,
+            ...asset.sourceDocument.tags,
+            asset.sourceDocument.title,
+          ]),
+        ),
+        priority: asset.priority,
+      })),
+      queryTokens,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function referencesForChunks(
+  chunks: ControlledRagChunk[],
+  turnAssets: ControlledRagAsset[],
+  queryTokens: string[],
+) {
   return chunks.map(
     (chunk, index) =>
       ({
@@ -302,7 +389,10 @@ function referencesForChunks(chunks: ControlledRagChunk[]) {
         title: chunk.title,
         url: chunk.url,
         description: chunk.description,
-        assets: chunk.assets ?? [],
+        assets:
+          index === 0
+            ? mergeRankedAssets(queryTokens, chunk.assets, turnAssets)
+            : (chunk.assets ?? []),
       }) satisfies GroundedReference,
   );
 }
@@ -383,6 +473,14 @@ export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
   const chunks = await retrieveChunks(input);
+  const queryTokens = tokens(
+    [
+      input.participantMessage,
+      input.selectedNextQuestion,
+      input.selectedQuestionSourceContext,
+      input.currentQuestion,
+    ].join(" "),
+  );
 
   if (chunks.length === 0) {
     return {
@@ -396,7 +494,8 @@ export async function askControlledRagForSurveyInterviewerTurn(
     };
   }
 
-  const references = referencesForChunks(chunks);
+  const turnAssets = await retrieveTurnAssets(input, chunks);
+  const references = referencesForChunks(chunks, turnAssets, queryTokens);
   const composedAnswer = await composeSourceAnswer(input, chunks);
   const answer = [
     composedAnswer,
