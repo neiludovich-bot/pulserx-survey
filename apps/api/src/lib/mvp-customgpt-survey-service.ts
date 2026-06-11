@@ -29,6 +29,13 @@ import {
   PADCEV_SAFETY_LANE_QUESTION_IDS,
   PADCEV_SURVEY_INTENTS,
 } from "./mvp-padcev-intents";
+import {
+  matchedPadcevSideEffectBranches,
+  nextPadcevSideEffectHomeQuestionId,
+  padcevSideEffectMapApplies,
+  padcevSideEffectQuestionIdsForContent,
+  padcevSideEffectSourceDirective,
+} from "./mvp-padcev-interview-map";
 import { PADCEV_HCP_MVP_GUIDE } from "./mvp-padcev-guide";
 import {
   persistMvpSurveySessionStarted,
@@ -788,8 +795,25 @@ function queueExplicitIntentExcursions(
     return;
   }
 
-  const sideEffectIntent =
-    session.surveyIntent.slug === "side-effect-management";
+  const sideEffectIntent = padcevSideEffectMapApplies(
+    session.surveyIntent.slug,
+  );
+  if (sideEffectIntent) {
+    const matchedMapBranches =
+      matchedPadcevSideEffectBranches(participantContent);
+    const mappedQuestionIds = padcevSideEffectQuestionIdsForContent(
+      participantContent,
+    );
+    enqueueQuestionIds(
+      session,
+      mappedQuestionIds,
+      participantContent,
+    );
+    if (matchedMapBranches.length > 0) {
+      return;
+    }
+  }
+
   const rules: Array<{
     questionIds: string[];
     patterns: RegExp[];
@@ -888,16 +912,6 @@ function queueExplicitIntentExcursions(
 
   for (const rule of rules) {
     if (firstPatternIndex(normalized, rule.patterns) >= 0) {
-      const isDosingAdminRule = rule.questionIds.includes("dosing_admin");
-      const isSafetyManagementPhrase =
-        contentLooksLikePadcevSafetyQuestion(participantContent) &&
-        !/\b(administration|infusion|schedule|day 1|day 8|day 15|cycle|q\d|weekly|every week)\b/.test(
-          normalized,
-        );
-      if (sideEffectIntent && isDosingAdminRule && isSafetyManagementPhrase) {
-        continue;
-      }
-
       enqueueQuestionIds(session, rule.questionIds, participantContent, {
         allowOffIntent: true,
       });
@@ -1231,6 +1245,29 @@ function selectNextQuestion(
   }
 
   const current = currentQuestion(session);
+  if (
+    session.surveySlug === "padcev" &&
+    padcevSideEffectMapApplies(session.surveyIntent?.slug)
+  ) {
+    const mappedQuestionId = nextPadcevSideEffectHomeQuestionId({
+      currentQuestionId: session.currentQuestionId,
+      askedQuestionIds: session.askedQuestionIds,
+      queuedQuestionIds: session.queuedQuestionIds,
+      participantContent,
+    });
+    const mappedQuestion = mappedQuestionId
+      ? questionById(session, mappedQuestionId)
+      : null;
+
+    if (
+      mappedQuestion &&
+      intentAllowsQuestion(session.surveyIntent, mappedQuestion) &&
+      questionAllowedByDiseaseLane(session, mappedQuestion, participantContent)
+    ) {
+      return mappedQuestion;
+    }
+  }
+
   const requiredIntakeQuestionIds = new Set([
     "intro_consent",
     "role",
@@ -1700,6 +1737,17 @@ function sourceContextForReactiveQuestion(
   }
 
   if (session.surveySlug === "padcev") {
+    if (padcevSideEffectMapApplies(session.surveyIntent?.slug)) {
+      const mappedDirective = padcevSideEffectSourceDirective(
+        participantContent,
+        selectedQuestion?.id,
+      );
+
+      if (mappedDirective) {
+        return mappedDirective;
+      }
+    }
+
     if (contentLooksLikePadcevEfficacyQuestion(participantContent)) {
       return "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data. Prioritize the approved PADCEV HCP EV-302/KEYNOTE-A39 efficacy sources over the selected survey lane for this turn. Answer the specific efficacy endpoint or trial-design detail they raised using source-supported facts only, including OS, PFS, ORR, CR/PR, comparator, population, follow-up, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. Then return to the selected survey question.";
     }

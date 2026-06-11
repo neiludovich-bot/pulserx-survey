@@ -1658,6 +1658,8 @@ describe("MVP CustomGPT survey service", () => {
       "I would want dose modification guidance and monitoring steps.",
       "I would be most cautious in patients with baseline neuropathy.",
       "The adverse-reaction guides and monitoring checklist would help.",
+      "Infusion scheduling and patient education would be the operational barriers.",
+      "The remaining safety concern is recognizing neuropathy early enough.",
     ];
 
     let turn = started;
@@ -1917,7 +1919,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(returnTurn.currentQuestion).toContain(
-      "When a PADCEV adverse event emerges",
+      "From a safety-management standpoint",
     );
     expect(returnTurn.currentQuestion).not.toContain(
       "For which locally advanced or metastatic urothelial cancer patient types",
@@ -1991,9 +1993,15 @@ describe("MVP CustomGPT survey service", () => {
     expect(latestPrompt).toContain(
       "explicitly asked about PADCEV efficacy or EV-302",
     );
-    expect(latestPrompt).toContain("Prioritize the approved PADCEV HCP EV-302");
+    expect(latestPrompt).toContain("source-answer excursion");
+    expect(latestPrompt).toContain(
+      "return to the selected side-effect-management survey question",
+    );
     expect(latestPrompt).not.toContain(
       "Do not use or cite efficacy/PFS/OS pages",
+    );
+    expect(next.currentQuestion).toContain(
+      "When a PADCEV adverse event emerges",
     );
     expect(next.messages.at(-1)?.references[0]?.title).toContain("Efficacy");
   });

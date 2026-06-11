@@ -64,6 +64,44 @@ Use two cooperating layers:
 The controller decides **what** to ask. CustomGPT helps decide **how** to say it
 and supplies source-grounded context.
 
+## Modular Interview Maps
+
+For beta/prod builds, do not rely on one linear guide plus prompt instructions.
+Each survey should define a modular interview map for every major intent.
+
+An interview map contains:
+
+- `intent_slug`: the selected research intent, such as side-effect management.
+- `home_question_order`: the canonical questions that must be covered for that
+  intent.
+- `branch_rules`: respondent language that should route to a topic lane,
+  temporary source answer, or off-lane module.
+- `source_directive`: the approved-source retrieval instruction for that lane.
+- `source_only`: whether the branch should answer a participant question but
+  keep the survey in the current home lane.
+
+This distinction is critical:
+
+- A participant asking "What did EV-302 show?" during a PADCEV side-effect
+  survey is a source-answer excursion. Answer with EV-302 evidence, then return
+  to the side-effect-management question path.
+- A participant saying "Which patient populations are appropriate?" may be an
+  off-lane patient-selection branch if it is not framed as a side-effect or
+  monitoring concern.
+- A participant saying "Which patients worry you because of neuropathy?" stays
+  in the safety-caution lane.
+
+Brand-specific topics must live in the map, not in generic prompts. PADCEV
+uses topics such as EV-302/KEYNOTE-A39, neuropathy, rash, dose modification,
+monitoring checklists, and patient counseling resources. BRUKINSA should use
+its own map topics, such as SEQUOIA, ALPINE, CLL/SLL, BTKi comparison, NCCN,
+safety/tolerability, dosing, and support resources.
+
+The selector should use the map to choose the next canonical question. The
+source layer should use the map to retrieve the right approved material. The
+phraser may make the question sound natural, but it must not invent the next
+research step.
+
 ## Replicable Survey Strategy
 
 Define the interview around intentions, not only a list of questions. A good
