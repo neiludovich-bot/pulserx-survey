@@ -118,8 +118,8 @@ export const PADCEV_HCP_MVP_GUIDE = [
     routeKeywords: ["indication", "first line", "combination", "pembrolizumab", "monotherapy"],
     completionSignals: ["reaction to PADCEV positioning is stated"],
     adaptiveProbes: [
-      "If positive: What makes that role most compelling?",
-      "If neutral or negative: What prevents it from being more compelling?",
+      "If positive: Which facts or use-case details support that reaction?",
+      "If neutral or negative: Which facts, evidence gaps, or implementation issues limit that reaction?",
     ],
     analyzableOutputs: ["positioning_reaction", "role_in_framework"],
   },
@@ -128,7 +128,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     module: "Source reaction",
     objective: "Capture reaction to EV-302/KEYNOTE-A39 first-line evidence.",
     canonicalQuestion:
-      "What stands out to you from the EV-302/KEYNOTE-A39 evidence, and how does it affect your view of PADCEV plus pembrolizumab in first-line locally advanced or metastatic urothelial cancer?",
+      "Which EV-302/KEYNOTE-A39 results, if any, affect your view of PADCEV plus pembrolizumab in first-line locally advanced or metastatic urothelial cancer?",
     sourceContextRequirement:
       "Before asking the EV-302/KEYNOTE-A39 reaction question, retrieve and summarize the PADCEV HCP source context for the trial. Include setting/population, phase/design if supported, comparator or treatment arms, primary or key endpoints, concrete source-supported efficacy results, safety or discontinuation context when available, and caveats. If the source includes a chart, table, or study graphic, cite the source most likely to display it.",
     routeKeywords: ["ev-302", "keynote-a39", "overall survival", "progression free", "pfs", "os"],
