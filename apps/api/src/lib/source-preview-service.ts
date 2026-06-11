@@ -787,7 +787,10 @@ export async function previewSourceImages(
   input: MvpCustomGptSourcePreviewRequest,
 ) {
   const curatedAssetSignature = (input.assets ?? [])
-    .map((asset) => asset.url)
+    .map(
+      (asset) =>
+        `${asset.url}::${asset.assetKind}::${asset.priority}::${asset.title}`,
+    )
     .join("|");
   const cacheKey = `${input.url}::${curatedAssetSignature}`;
   const cached = sourcePreviewCache.get(cacheKey);

@@ -921,6 +921,31 @@ table, dosing/admin guide, brochure, form, PI/ISI, or other useful document.
 Do not let generic page title text like "Official HCP Site" make a lifestyle
 hero image look clinically relevant.
 
+Citations and side-panel display are separate decisions. Citations should show
+where the answer came from; the side panel should show the most useful asset for
+the respondent's current topic. Each production survey should define a
+topic-to-asset display map, for example:
+
+- `padcev_ev302_response`: EV-302/KEYNOTE-A39 response, ORR, CR, PR, and RECIST
+  visuals before safety cards.
+- `padcev_ev302_survival`: EV-302 OS/PFS/Kaplan-Meier visuals before resource
+  cards.
+- `padcev_neuropathy_management`: peripheral neuropathy informational resource,
+  monitoring prompts, and grade-based dose-modification visual before generic
+  safety PDFs.
+- `padcev_dose_modification`: dose-modification table or dosing/admin guide
+  before general support links.
+- `padcev_safety_resources`: monitoring checklist, adverse-reaction guide,
+  patient education, and downloadable resource materials before efficacy
+  figures.
+
+The selector/source layer should classify the current turn into one display
+topic and boost matching assets before the UI receives the references. The UI
+may still fall back to citation preview when no mapped display asset exists,
+but it should not be the primary decision-maker. This avoids the inconsistent
+behavior where the same answer sometimes shows a graph, sometimes shows a PDF
+card, and sometimes shows a blocked preview.
+
 ## Why This Style
 
 This style preserves the strongest parts of CustomGPT, especially source

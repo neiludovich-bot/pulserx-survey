@@ -11,6 +11,14 @@ type WeightedTokenGroup = {
   tokens: string[];
   weight: number;
 };
+type DisplayTopic =
+  | "padcev_ev302_response"
+  | "padcev_ev302_survival"
+  | "padcev_neuropathy_management"
+  | "padcev_dose_modification"
+  | "padcev_safety_resources"
+  | "padcev_safety_management"
+  | null;
 
 export type ControlledRagSurveyTurnInput = {
   surveySlug: "brukinsa" | "padcev";
@@ -185,6 +193,246 @@ function scoreAsset(
   return score;
 }
 
+function assetSearchText(asset: ControlledRagAsset) {
+  return normalizeText(
+    [
+      asset.title,
+      asset.description ?? "",
+      asset.url,
+      asset.assetKind,
+      asset.tags.join(" "),
+    ].join(" "),
+  );
+}
+
+function textMatchesAny(value: string, patterns: RegExp[]) {
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function displayTopicForTurn(input: ControlledRagSurveyTurnInput): DisplayTopic {
+  if (input.surveySlug !== "padcev") {
+    return null;
+  }
+
+  const query = normalizeText(
+    [
+      input.participantMessage,
+      input.selectedNextQuestion ?? "",
+      input.selectedQuestionSourceContext ?? "",
+      input.currentQuestion ?? "",
+    ].join(" "),
+  );
+
+  const mentionsEv302 = /\b(?:ev-302|ev 302|ev302|keynote-a39|keynote a39|keynote)\b/.test(query);
+  const mentionsResponse =
+    /\b(?:orr|overall response|response rate|complete response|partial response|cr|pr|recist)\b/.test(
+      query,
+    );
+  const mentionsSurvival =
+    /\b(?:overall survival|survival|os|progression free|progression-free|pfs|hazard ratio|kaplan|km)\b/.test(
+      query,
+    );
+
+  if (mentionsEv302 && mentionsResponse) {
+    return "padcev_ev302_response";
+  }
+
+  if (mentionsEv302 || mentionsSurvival) {
+    return "padcev_ev302_survival";
+  }
+
+  if (
+    /\b(?:neuropathy|peripheral neuropathy|pn|numbness|tingling|muscle weakness)\b/.test(
+      query,
+    )
+  ) {
+    return "padcev_neuropathy_management";
+  }
+
+  if (
+    /\b(?:dose modification|dose modifications|dose reduction|dose reductions|dose interruption|dose interruptions|withhold|resume|discontinue|discontinuation|reduce dose|interrupt dosing)\b/.test(
+      query,
+    )
+  ) {
+    return "padcev_dose_modification";
+  }
+
+  if (
+    /\b(?:resource|resources|guide|checklist|download|pdf|patient education|counsel|counseling|support material|management material)\b/.test(
+      query,
+    )
+  ) {
+    return "padcev_safety_resources";
+  }
+
+  if (
+    /\b(?:safety|side effect|side effects|adverse|toxicity|rash|skin|hyperglycemia|pneumonitis|ild|ocular|extravasation|monitor|monitoring|manage|management)\b/.test(
+      query,
+    )
+  ) {
+    return "padcev_safety_management";
+  }
+
+  return null;
+}
+
+function displayTopicAssetScore(
+  asset: ControlledRagAsset,
+  topic: DisplayTopic,
+) {
+  if (!topic) {
+    return 0;
+  }
+
+  const text = assetSearchText(asset);
+  const kind = asset.assetKind.toUpperCase();
+  const isVisual = ["CHART", "TABLE", "IMAGE"].includes(kind);
+  const isPdf = kind === "PDF" || /\.pdf(?:$|[?#])/i.test(asset.url);
+  let score = 0;
+
+  if (isVisual) {
+    score += 700;
+  }
+
+  if (isPdf) {
+    score += 80;
+  }
+
+  if (
+    textMatchesAny(text, [
+      /\b(?:hero|lifestyle|campaign|airplane|aircraft|plane|jet|flight|travel|splash|product shot|pill|tablet|capsule|stays on|stays off|up to 100)\b/,
+    ])
+  ) {
+    score -= 1400;
+  }
+
+  if (
+    topic === "padcev_ev302_response" &&
+    textMatchesAny(text, [
+      /\b(?:ev 302|ev302|keynote a39|keynote)\b/,
+      /\b(?:ev-302|keynote-a39)\b/,
+      /\b(?:orr|overall response|response rate|complete response|partial response|cr|pr|recist)\b/,
+    ])
+  ) {
+    score += 1600;
+  }
+
+  if (
+    topic === "padcev_ev302_survival" &&
+    textMatchesAny(text, [
+      /\b(?:ev 302|ev302|keynote a39|keynote)\b/,
+      /\b(?:ev-302|keynote-a39)\b/,
+      /\b(?:overall survival|survival|os|progression free|progression-free|pfs|hazard ratio|kaplan|km|curve)\b/,
+    ])
+  ) {
+    score += 1600;
+  }
+
+  if (
+    topic === "padcev_neuropathy_management" &&
+    textMatchesAny(text, [
+      /\b(?:neuropathy|peripheral neuropathy|\bpn\b|numbness|tingling|muscle weakness)\b/,
+      /\b(?:dose modification|dose reduction|withhold|resume|discontinue|monitoring|checklist|patient education|informational resource)\b/,
+    ])
+  ) {
+    score += 1800;
+  }
+
+  if (
+    topic === "padcev_dose_modification" &&
+    textMatchesAny(text, [
+      /\b(?:dose modification|dose modifications|dose reduction|dose interruption|withhold|resume|discontinue|recommended dose reduction schedule|dose modifications table)\b/,
+    ])
+  ) {
+    score += 1700;
+  }
+
+  if (
+    topic === "padcev_safety_resources" &&
+    textMatchesAny(text, [
+      /\b(?:resource|resources|guide|checklist|monitoring|patient education|counseling|support|adverse reaction management|informational resource)\b/,
+    ])
+  ) {
+    score += 1500;
+  }
+
+  if (
+    topic === "padcev_safety_management" &&
+    textMatchesAny(text, [
+      /\b(?:safety|adverse|side effect|toxicity|monitoring|dose modification|neuropathy|rash|skin|hyperglycemia|pneumonitis|ild|ocular|extravasation|checklist|management)\b/,
+    ])
+  ) {
+    score += 1200;
+  }
+
+  if (
+    topic?.startsWith("padcev_ev302") &&
+    textMatchesAny(text, [
+      /\b(?:safety|adverse|neuropathy|rash|dose modification|checklist|monitoring|patient education)\b/,
+    ])
+  ) {
+    score -= 500;
+  }
+
+  if (
+    topic?.startsWith("padcev_safety") ||
+    topic === "padcev_neuropathy_management" ||
+    topic === "padcev_dose_modification"
+  ) {
+    if (
+      textMatchesAny(text, [
+        /\b(?:overall survival|progression free|progression-free|pfs|os|efficacy|ev 302|ev302|keynote|orr|complete response)\b/,
+        /\b(?:ev-302|keynote-a39)\b/,
+      ])
+    ) {
+      score -= 450;
+    }
+  }
+
+  return score;
+}
+
+function rankAssetsForDisplay(
+  assets: ControlledRagAsset[],
+  queryTokens: string[],
+  topic: DisplayTopic,
+) {
+  if (!topic) {
+    return rankAssets(assets, queryTokens);
+  }
+
+  const seen = new Set<string>();
+
+  return [...assets]
+    .map((asset) => {
+      const genericScore = scoreAsset(asset, queryTokens);
+      const displayScore = displayTopicAssetScore(asset, topic);
+      const score = genericScore + displayScore;
+
+      return {
+        asset: {
+          ...asset,
+          priority:
+            displayScore > 0
+              ? Math.max(asset.priority, Math.round(score))
+              : asset.priority,
+        },
+        score,
+      };
+    })
+    .filter(({ score }) => score > 0)
+    .sort((left, right) => right.score - left.score)
+    .filter(({ asset }) => {
+      if (seen.has(asset.url)) {
+        return false;
+      }
+      seen.add(asset.url);
+      return true;
+    })
+    .slice(0, 8)
+    .map(({ asset }) => asset);
+}
+
 function rankAssets(
   assets: ControlledRagAsset[],
   queryTokens: string[],
@@ -329,6 +577,7 @@ async function retrieveTurnAssets(
     chunks.map((chunk) => `${chunk.title} ${chunk.tags.join(" ")}`).join(" "),
   ].join(" ");
   const queryTokens = tokens(query);
+  const displayTopic = displayTopicForTurn(input);
 
   try {
     const assets = await prisma.sourceAsset.findMany({
@@ -358,8 +607,7 @@ async function retrieveTurnAssets(
       },
     });
 
-    return rankAssets(
-      assets.map((asset) => ({
+    const mappedAssets = assets.map((asset) => ({
         title: asset.title,
         description:
           [
@@ -379,8 +627,12 @@ async function retrieveTurnAssets(
           ]),
         ),
         priority: asset.priority,
-      })),
+      }));
+
+    return rankAssetsForDisplay(
+      mappedAssets,
       queryTokens,
+      displayTopic,
     );
   } catch {
     return [];
@@ -523,3 +775,8 @@ export async function askControlledRagForSurveyInterviewerTurn(
     reason: null,
   };
 }
+
+export const controlledRagTestInternals = {
+  displayTopicForTurn,
+  rankAssetsForDisplay,
+};
