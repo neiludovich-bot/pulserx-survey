@@ -5,8 +5,12 @@ import {
   TurnRole,
   type Prisma,
 } from "@prisma/client";
-import type { GroundedReference, MvpCustomGptSurveyMessage } from "@interview/schemas";
+import type {
+  GroundedReference,
+  MvpCustomGptSurveyMessage,
+} from "@interview/schemas";
 import { prisma } from "./prisma";
+import type { MvpTurnRouteDecision } from "./mvp-turn-router";
 
 type MvpPersistenceSessionSnapshot = {
   sessionId: string;
@@ -42,10 +46,15 @@ type MvpTurnAuditInput = {
   actualAskedQuestion?: string | null;
   currentQuestionAfter?: string | null;
   sourceContextRequirement?: string | null;
+  turnRouteDecision?: MvpTurnRouteDecision | null;
   needsCustomGpt?: boolean;
   customGptStatus?: string | null;
   customGptReason?: string | null;
-  droppedReferences?: Array<Pick<GroundedReference, "citationId" | "title" | "url">>;
+  sourceProvider?: string | null;
+  sourceProviderShadow?: Record<string, unknown> | null;
+  droppedReferences?: Array<
+    Pick<GroundedReference, "citationId" | "title" | "url">
+  >;
   references?: Array<Pick<GroundedReference, "citationId" | "title" | "url">>;
   nextAction: string;
   remainingSeconds: number;
@@ -291,6 +300,7 @@ export async function persistMvpSurveyTurnAudit(input: {
             participantMessage: input.turn.participantMessage,
             currentQuestionBefore: input.turn.currentQuestionBefore,
             sourceContextRequirement: input.turn.sourceContextRequirement,
+            turnRouteDecision: input.turn.turnRouteDecision ?? null,
           },
           output: {
             selectedQuestionId: input.turn.selectedQuestionId,
@@ -299,6 +309,8 @@ export async function persistMvpSurveyTurnAudit(input: {
             actualAskedQuestion: input.turn.actualAskedQuestion,
             nextAction: input.turn.nextAction,
             customGptStatus: input.turn.customGptStatus,
+            sourceProvider: input.turn.sourceProvider ?? null,
+            sourceProviderShadow: input.turn.sourceProviderShadow ?? null,
             references: input.turn.references ?? [],
             droppedReferences: input.turn.droppedReferences ?? [],
           },

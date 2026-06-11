@@ -4,6 +4,7 @@ import {
   type ControlledRagChunk,
 } from "./controlled-rag-source-packs";
 import { getOptionalOpenAIGateway } from "./model-gateway";
+import { classifyMvpTurnRoute, type MvpDisplayTopic } from "./mvp-turn-router";
 import { prisma } from "./prisma";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
@@ -11,14 +12,7 @@ type WeightedTokenGroup = {
   tokens: string[];
   weight: number;
 };
-type DisplayTopic =
-  | "padcev_ev302_response"
-  | "padcev_ev302_survival"
-  | "padcev_neuropathy_management"
-  | "padcev_dose_modification"
-  | "padcev_safety_resources"
-  | "padcev_safety_management"
-  | null;
+type DisplayTopic = MvpDisplayTopic;
 
 export type ControlledRagSurveyTurnInput = {
   surveySlug: "brukinsa" | "padcev";
@@ -121,7 +115,10 @@ function chunkTagTokenSet(chunk: ControlledRagChunk) {
   return new Set(chunk.tags.flatMap((tag) => tokens(tag)));
 }
 
-function scoreChunk(chunk: ControlledRagChunk, queryTokenGroups: WeightedTokenGroup[]) {
+function scoreChunk(
+  chunk: ControlledRagChunk,
+  queryTokenGroups: WeightedTokenGroup[],
+) {
   const haystackTokens = chunkTokenSet(chunk);
   const tagTokens = chunkTagTokenSet(chunk);
   let score = 0;
@@ -149,10 +146,7 @@ function retrievalTokenGroups(input: ControlledRagSurveyTurnInput) {
   ].filter((group) => group.tokens.length > 0);
 }
 
-function scoreAsset(
-  asset: ControlledRagAsset,
-  queryTokens: string[],
-) {
+function scoreAsset(asset: ControlledRagAsset, queryTokens: string[]) {
   const haystackTokens = new Set(
     tokens(
       [
@@ -209,71 +203,16 @@ function textMatchesAny(value: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(value));
 }
 
-function displayTopicForTurn(input: ControlledRagSurveyTurnInput): DisplayTopic {
-  if (input.surveySlug !== "padcev") {
-    return null;
-  }
-
-  const query = normalizeText(
-    [
-      input.participantMessage,
-      input.selectedNextQuestion ?? "",
-      input.selectedQuestionSourceContext ?? "",
-      input.currentQuestion ?? "",
-    ].join(" "),
-  );
-
-  const mentionsEv302 = /\b(?:ev-302|ev 302|ev302|keynote-a39|keynote a39|keynote)\b/.test(query);
-  const mentionsResponse =
-    /\b(?:orr|overall response|response rate|complete response|partial response|cr|pr|recist)\b/.test(
-      query,
-    );
-  const mentionsSurvival =
-    /\b(?:overall survival|survival|os|progression free|progression-free|pfs|hazard ratio|kaplan|km)\b/.test(
-      query,
-    );
-
-  if (mentionsEv302 && mentionsResponse) {
-    return "padcev_ev302_response";
-  }
-
-  if (mentionsEv302 || mentionsSurvival) {
-    return "padcev_ev302_survival";
-  }
-
-  if (
-    /\b(?:neuropathy|peripheral neuropathy|pn|numbness|tingling|muscle weakness)\b/.test(
-      query,
-    )
-  ) {
-    return "padcev_neuropathy_management";
-  }
-
-  if (
-    /\b(?:dose modification|dose modifications|dose reduction|dose reductions|dose interruption|dose interruptions|withhold|resume|discontinue|discontinuation|reduce dose|interrupt dosing)\b/.test(
-      query,
-    )
-  ) {
-    return "padcev_dose_modification";
-  }
-
-  if (
-    /\b(?:resource|resources|guide|checklist|download|pdf|patient education|counsel|counseling|support material|management material)\b/.test(
-      query,
-    )
-  ) {
-    return "padcev_safety_resources";
-  }
-
-  if (
-    /\b(?:safety|side effect|side effects|adverse|toxicity|rash|skin|hyperglycemia|pneumonitis|ild|ocular|extravasation|monitor|monitoring|manage|management)\b/.test(
-      query,
-    )
-  ) {
-    return "padcev_safety_management";
-  }
-
-  return null;
+function displayTopicForTurn(
+  input: ControlledRagSurveyTurnInput,
+): DisplayTopic {
+  return classifyMvpTurnRoute({
+    surveySlug: input.surveySlug,
+    participantContent: input.participantMessage,
+    currentQuestion: input.currentQuestion,
+    selectedQuestionText: input.selectedNextQuestion,
+    selectedQuestionSourceContext: input.selectedQuestionSourceContext,
+  }).topic;
 }
 
 function displayTopicAssetScore(
@@ -433,10 +372,7 @@ function rankAssetsForDisplay(
     .map(({ asset }) => asset);
 }
 
-function rankAssets(
-  assets: ControlledRagAsset[],
-  queryTokens: string[],
-) {
+function rankAssets(assets: ControlledRagAsset[], queryTokens: string[]) {
   const seen = new Set<string>();
 
   return [...assets]
@@ -458,7 +394,10 @@ function mergeRankedAssets(
   queryTokens: string[],
   ...assetGroups: Array<ControlledRagAsset[] | undefined>
 ) {
-  return rankAssets(assetGroups.flatMap((assets) => assets ?? []), queryTokens);
+  return rankAssets(
+    assetGroups.flatMap((assets) => assets ?? []),
+    queryTokens,
+  );
 }
 
 async function databaseChunks(input: ControlledRagSurveyTurnInput) {
@@ -608,32 +547,27 @@ async function retrieveTurnAssets(
     });
 
     const mappedAssets = assets.map((asset) => ({
-        title: asset.title,
-        description:
-          [
-            asset.description,
-            asset.sourceDocument.description,
-            asset.sourceDocument.title,
-          ]
-            .filter(Boolean)
-            .join(" "),
-        assetKind: asset.assetKind,
-        url: asset.url,
-        tags: Array.from(
-          new Set([
-            ...asset.tags,
-            ...asset.sourceDocument.tags,
-            asset.sourceDocument.title,
-          ]),
-        ),
-        priority: asset.priority,
-      }));
+      title: asset.title,
+      description: [
+        asset.description,
+        asset.sourceDocument.description,
+        asset.sourceDocument.title,
+      ]
+        .filter(Boolean)
+        .join(" "),
+      assetKind: asset.assetKind,
+      url: asset.url,
+      tags: Array.from(
+        new Set([
+          ...asset.tags,
+          ...asset.sourceDocument.tags,
+          asset.sourceDocument.title,
+        ]),
+      ),
+      priority: asset.priority,
+    }));
 
-    return rankAssetsForDisplay(
-      mappedAssets,
-      queryTokens,
-      displayTopic,
-    );
+    return rankAssetsForDisplay(mappedAssets, queryTokens, displayTopic);
   } catch {
     return [];
   }
