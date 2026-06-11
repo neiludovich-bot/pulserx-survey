@@ -269,11 +269,12 @@ async function resolveVisualSourcePanelReference(
     return input;
   }
 
-  try {
-    const preview = await previewMvpCustomGptSource({
-      url: sourceUrl,
-      title: getReferenceLabel(input.reference, input.index),
-    });
+    try {
+      const preview = await previewMvpCustomGptSource({
+        url: sourceUrl,
+        title: getReferenceLabel(input.reference, input.index),
+        assets: input.reference.assets,
+      });
     const documents = preview.documents ?? [];
 
     return preview.images.length > 0 || documents.length > 0
@@ -791,7 +792,11 @@ function SourcePanel({
     }
 
     setIsPreviewLoading(true);
-    void previewMvpCustomGptSource({ url: sourceUrl, title: label })
+    void previewMvpCustomGptSource({
+      url: sourceUrl,
+      title: label,
+      assets: source.reference.assets,
+    })
       .then((result) => {
         if (!isCancelled) {
           setPreview(result);
@@ -815,7 +820,7 @@ function SourcePanel({
     return () => {
       isCancelled = true;
     };
-  }, [canEmbedSource, label, source.preview, sourceUrl]);
+  }, [canEmbedSource, label, source.preview, source.reference.assets, sourceUrl]);
 
   return (
     <>

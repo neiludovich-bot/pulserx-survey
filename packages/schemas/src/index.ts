@@ -24,6 +24,18 @@ export const groundedReferenceSchema = z.object({
   title: z.string().min(1).nullable(),
   url: z.string().min(1).nullable(),
   description: z.string().min(1).nullable(),
+  assets: z
+    .array(
+      z.object({
+        title: z.string().min(1),
+        url: z.string().url(),
+        description: z.string().min(1).nullable(),
+        assetKind: z.string().min(1),
+        tags: z.array(z.string()).default([]),
+        priority: z.number().int().default(0),
+      }),
+    )
+    .default([]),
 });
 
 export const selectorInputSchema = z.object({
@@ -1794,6 +1806,7 @@ export const mvpCustomGptSurveySpeechResponseSchema = z.object({
 export const mvpCustomGptSourcePreviewRequestSchema = z.object({
   url: z.string().url(),
   title: z.string().trim().min(1).max(240).optional(),
+  assets: groundedReferenceSchema.shape.assets.optional(),
 });
 
 export const mvpCustomGptSourcePreviewImageSchema = z.object({
@@ -1801,7 +1814,7 @@ export const mvpCustomGptSourcePreviewImageSchema = z.object({
   alt: z.string().min(1).nullable(),
   width: z.number().int().positive().nullable(),
   height: z.number().int().positive().nullable(),
-  source: z.enum(["open_graph", "twitter", "html_image"]),
+  source: z.enum(["open_graph", "twitter", "html_image", "source_library"]),
 });
 
 export const mvpCustomGptSourcePreviewDocumentSchema = z.object({
@@ -1809,7 +1822,7 @@ export const mvpCustomGptSourcePreviewDocumentSchema = z.object({
   title: z.string().min(1),
   description: z.string().min(1).nullable(),
   isPdf: z.boolean(),
-  source: z.enum(["pdf_link", "html_link"]),
+  source: z.enum(["pdf_link", "html_link", "source_library"]),
 });
 
 export const mvpCustomGptSourcePreviewResponseSchema = z.object({

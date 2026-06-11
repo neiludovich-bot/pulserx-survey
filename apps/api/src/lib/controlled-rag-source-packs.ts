@@ -6,6 +6,14 @@ export type ControlledRagChunk = {
   description: string;
   tags: string[];
   text: string;
+  assets?: Array<{
+    title: string;
+    url: string;
+    description: string | null;
+    assetKind: string;
+    tags: string[];
+    priority: number;
+  }>;
 };
 
 export const CONTROLLED_RAG_CHUNKS = [
