@@ -146,6 +146,32 @@ function getReferenceLabel(
   return reference.title ?? reference.description ?? `Reference ${index}`;
 }
 
+function sourceAssetUrlLooksLikeImage(url: string) {
+  try {
+    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(new URL(url).pathname);
+  } catch {
+    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(url);
+  }
+}
+
+function sourceAssetLooksLikeCuratedImage(
+  asset: MvpCustomGptSurveyMessage["references"][number]["assets"][number],
+) {
+  const kind = asset.assetKind.toUpperCase();
+
+  return (
+    ["CHART", "TABLE", "IMAGE"].includes(kind) &&
+    sourceAssetUrlLooksLikeImage(asset.url) &&
+    !sourceUrlLooksLikePdf(asset.url)
+  );
+}
+
+function referenceHasCuratedImageAssets(
+  reference: MvpCustomGptSurveyMessage["references"][number],
+) {
+  return reference.assets.some(sourceAssetLooksLikeCuratedImage);
+}
+
 function normalizeSourceText(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -173,6 +199,13 @@ function referenceSearchText(
     reference.description,
     reference.url,
     reference.citationId,
+    ...reference.assets.flatMap((asset) => [
+      asset.title,
+      asset.description,
+      asset.assetKind,
+      asset.url,
+      asset.tags.join(" "),
+    ]),
   ]
     .filter((value): value is string => Boolean(value))
     .join(" ");
@@ -338,7 +371,10 @@ async function resolveVisualSourcePanelReference(
     return input;
   }
 
-  if (sourceUrlLooksLikePdf(sourceUrl)) {
+  if (
+    sourceUrlLooksLikePdf(sourceUrl) &&
+    !referenceHasCuratedImageAssets(input.reference)
+  ) {
     return {
       ...input,
       preview: pdfSourcePreview(sourceUrl, getReferenceLabel(input.reference, input.index)),
@@ -999,6 +1035,7 @@ function SourcePanel({
   const sourceUrl = source.reference.url;
   const canEmbedSource = sourceUrl ? shouldEmbedSourceUrl(sourceUrl) : false;
   const canDownloadPdf = sourceUrl ? sourceUrlLooksLikePdf(sourceUrl) : false;
+  const hasCuratedImageAssets = referenceHasCuratedImageAssets(source.reference);
   const [preview, setPreview] =
     useState<MvpCustomGptSourcePreviewResponse | null>(
       source.preview ?? null,
@@ -1034,7 +1071,7 @@ function SourcePanel({
       };
     }
 
-    if (canDownloadPdf) {
+    if (canDownloadPdf && !hasCuratedImageAssets) {
       setPreview(pdfSourcePreview(sourceUrl, label));
       setIsPreviewLoading(false);
       return () => {
@@ -1074,6 +1111,7 @@ function SourcePanel({
   }, [
     canDownloadPdf,
     canEmbedSource,
+    hasCuratedImageAssets,
     label,
     source.preview,
     source.reference.assets,
