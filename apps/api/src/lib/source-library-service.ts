@@ -274,92 +274,30 @@ export async function importSourceLibraryDocuments(
     throw new Error("Source library database is not configured.");
   }
 
-  const importedDocuments = await prisma.$transaction(async (tx) => {
-    if (input.replaceExisting) {
-      await tx.sourceDocument.deleteMany({
-        where: {
-          surveySlug: input.surveySlug,
-        },
-      });
-    }
+  if (input.replaceExisting) {
+    await prisma.sourceDocument.deleteMany({
+      where: {
+        surveySlug: input.surveySlug,
+      },
+    });
+  }
 
-    const createdDocuments: SourceLibraryDocumentRecord[] = [];
+  const importedDocuments = [];
 
-    for (const documentInput of input.documents) {
-      const normalizedInput: CreateSourceLibraryDocument = {
-        ...documentInput,
-        surveySlug: documentInput.surveySlug ?? input.surveySlug,
-        sourceBrand: documentInput.sourceBrand ?? input.sourceBrand,
-      };
-      const tags = normalizeTags(normalizedInput.tags);
-      const sourceText = sourceTextForChunking(normalizedInput);
-      const chunks = chunkSourceText(sourceText);
-      const created = await tx.sourceDocument.create({
-        data: {
-          surveySlug: normalizedInput.surveySlug,
-          sourceBrand: normalizedInput.sourceBrand,
-          title: normalizedInput.title,
-          description: normalizedInput.description ?? null,
-          sourceType: normalizedInput.sourceType,
-          url: normalizedInput.url ?? null,
-          content: normalizedInput.content ?? null,
-          tags,
-          priority: normalizedInput.priority,
-          status: normalizedInput.status,
-        },
-      });
-
-      if (chunks.length > 0) {
-        await tx.sourceChunk.createMany({
-          data: chunks.map((chunk, index) => ({
-            sourceDocumentId: created.id,
-            surveySlug: normalizedInput.surveySlug,
-            content: chunk,
-            tags,
-            position: index,
-            tokenEstimate: estimateTokens(chunk),
-          })),
-        });
-      }
-
-      if (normalizedInput.assets.length > 0) {
-        await tx.sourceAsset.createMany({
-          data: normalizedInput.assets.map((asset) => ({
-            sourceDocumentId: created.id,
-            surveySlug: normalizedInput.surveySlug,
-            title: asset.title,
-            description: asset.description ?? null,
-            assetKind: normalizeAssetKind(asset.assetKind),
-            url: asset.url,
-            tags: normalizeTags(asset.tags),
-            priority: asset.priority,
-          })),
-        });
-      }
-
-      const loaded = await tx.sourceDocument.findUniqueOrThrow({
-        where: {
-          id: created.id,
-        },
-        include: {
-          _count: {
-            select: {
-              chunks: true,
-              assets: true,
-            },
-          },
-        },
-      });
-      createdDocuments.push(loaded);
-    }
-
-    return createdDocuments;
-  });
+  for (const documentInput of input.documents) {
+    const normalizedInput: CreateSourceLibraryDocument = {
+      ...documentInput,
+      surveySlug: documentInput.surveySlug ?? input.surveySlug,
+      sourceBrand: documentInput.sourceBrand ?? input.sourceBrand,
+    };
+    const result = await createSourceLibraryDocument(normalizedInput);
+    importedDocuments.push(result.document);
+  }
 
   return sourceLibraryBulkImportResponseSchema.parse({
     dbConfigured: true,
     generatedAt: new Date().toISOString(),
     importedCount: importedDocuments.length,
-    documents: importedDocuments.map(mapDocument),
+    documents: importedDocuments,
   });
 }
