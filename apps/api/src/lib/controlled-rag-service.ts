@@ -3,6 +3,7 @@ import {
   CONTROLLED_RAG_CHUNKS,
   type ControlledRagChunk,
 } from "./controlled-rag-source-packs";
+import { getOptionalOpenAIGateway } from "./model-gateway";
 import { prisma } from "./prisma";
 
 export type ControlledRagSurveyTurnInput = {
@@ -224,6 +225,63 @@ function selectedQuestionLead(question: string | null) {
     : "\n\nThank you for participating. Your feedback has been recorded, and we can close the interview here.";
 }
 
+function fallbackSourceAnswer(
+  input: ControlledRagSurveyTurnInput,
+  chunks: ControlledRagChunk[],
+) {
+  const contextNote = input.selectedQuestionSourceContext
+    ? `Relevant source need: ${compact(input.selectedQuestionSourceContext, 260)}\n\n`
+    : "";
+  const alreadyCovered = input.recentInterviewerContext
+    ? `Previously covered context was considered, so this answer focuses on the current angle.\n\n`
+    : "";
+
+  return [contextNote, alreadyCovered, sourceSummary(chunks)].join("").trim();
+}
+
+function ensureCitationMarker(answer: string, chunks: ControlledRagChunk[]) {
+  if (/\[\d+\]/.test(answer) || chunks.length === 0) {
+    return answer;
+  }
+
+  return `${answer.trimEnd()} [1]`;
+}
+
+async function composeSourceAnswer(
+  input: ControlledRagSurveyTurnInput,
+  chunks: ControlledRagChunk[],
+) {
+  const gateway = getOptionalOpenAIGateway();
+
+  if (!gateway || process.env.NODE_ENV === "test") {
+    return fallbackSourceAnswer(input, chunks);
+  }
+
+  try {
+    const composition = await gateway.composeControlledRagAnswer({
+      surveySlug: input.surveySlug,
+      participantMessage: input.participantMessage,
+      surveyContext: input.surveyContext,
+      currentQuestion: input.currentQuestion,
+      selectedNextQuestion: input.selectedNextQuestion,
+      selectedQuestionSourceContext: input.selectedQuestionSourceContext,
+      recentInterviewerContext: input.recentInterviewerContext ?? null,
+      sources: chunks.map((chunk, index) => ({
+        index: index + 1,
+        title: chunk.title,
+        url: chunk.url,
+        description: chunk.description,
+        tags: chunk.tags,
+        text: compact(chunk.text, 1500),
+      })),
+    });
+
+    return ensureCitationMarker(composition.result.answerBody, chunks);
+  } catch {
+    return fallbackSourceAnswer(input, chunks);
+  }
+}
+
 export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
@@ -242,16 +300,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
   }
 
   const references = referencesForChunks(chunks);
-  const contextNote = input.selectedQuestionSourceContext
-    ? `Relevant source need: ${compact(input.selectedQuestionSourceContext, 260)}\n\n`
-    : "";
-  const alreadyCovered = input.recentInterviewerContext
-    ? `Previously covered context was considered, so this answer focuses on the current angle.\n\n`
-    : "";
+  const composedAnswer = await composeSourceAnswer(input, chunks);
   const answer = [
-    contextNote,
-    alreadyCovered,
-    sourceSummary(chunks),
+    composedAnswer,
     selectedQuestionLead(input.selectedNextQuestion),
   ]
     .join("")

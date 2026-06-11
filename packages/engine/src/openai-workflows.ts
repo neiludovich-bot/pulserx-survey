@@ -10,6 +10,8 @@ import {
 import {
   analysisInputSchema,
   analysisResultSchema,
+  controlledRagCompositionInputSchema,
+  controlledRagCompositionResultSchema,
   decisionInputSchema,
   decisionResultSchema,
   openAIDebugTraceSchema,
@@ -17,6 +19,8 @@ import {
   phrasingResultSchema,
   type AnalysisInput,
   type AnalysisResult,
+  type ControlledRagCompositionInput,
+  type ControlledRagCompositionResult,
   type DecisionInput,
   type DecisionResult,
   type OpenAIDebugTrace,
@@ -31,7 +35,7 @@ import {
   prepareDecisionTurn,
 } from "./turn-orchestrator";
 
-type CallType = "analysis" | "decision" | "phrasing";
+type CallType = "analysis" | "decision" | "phrasing" | "source_composition";
 
 type ModelConfig = {
   analysisModel: string;
@@ -170,6 +174,33 @@ export class OpenAIResponsesGateway {
       metadata: {
         session_id: phrasingInput.sessionId,
         question_id: phrasingInput.selectedQuestion.id
+      }
+    });
+  }
+
+  async composeControlledRagAnswer(input: ControlledRagCompositionInput) {
+    const parsed = controlledRagCompositionInputSchema.parse(input);
+
+    return this.runStructuredCall<ControlledRagCompositionResult>({
+      callType: "source_composition",
+      model: this.config.phrasingModel,
+      promptVersion: "controlled-rag-composition-v1",
+      schemaName: "controlled_rag_composition_result",
+      schema: controlledRagCompositionResultSchema,
+      instructions: [
+        "You compose source-grounded interviewer context for a structured medical market research interview.",
+        "Use only the provided source snippets. Do not add facts, claims, trial outcomes, labels, guidance, or caveats that are not supported by those snippets.",
+        "Do not choose the next survey question. The application has already selected it. Your job is only to answer or orient from the sources.",
+        "Write for an HCP respondent: concise, specific, and clinically useful. Avoid vague marketing language.",
+        "If the participant asks a direct source question, answer that question first. If the source snippets are thin, say what the provided sources do and do not support.",
+        "Avoid repeating context already covered in recent interviewer turns. Focus on the current angle.",
+        "Use one short paragraph or 2-4 focused bullets. Do not write a full label-style inventory unless the participant explicitly asked for a broad label summary.",
+        "Use plain text. Do not use Markdown emphasis. Cite factual claims with bracket markers like [1] or [2] matching the source index.",
+        "Do not include the selected next question in answerBody."
+      ],
+      input: parsed,
+      metadata: {
+        survey_slug: parsed.surveySlug
       }
     });
   }

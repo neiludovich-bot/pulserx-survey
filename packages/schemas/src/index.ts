@@ -85,6 +85,32 @@ export const phrasingResultSchema = z.object({
   styleNotes: z.array(z.string()),
 });
 
+export const controlledRagCompositionSourceSchema = z.object({
+  index: z.number().int().min(1).max(8),
+  title: z.string().min(1),
+  url: z.string().min(1).nullable(),
+  description: z.string().min(1).nullable(),
+  tags: z.array(z.string()).default([]),
+  text: z.string().min(1).max(1800),
+});
+
+export const controlledRagCompositionInputSchema = z.object({
+  surveySlug: z.string().min(1),
+  participantMessage: z.string().min(1),
+  surveyContext: z.string().default(""),
+  currentQuestion: z.string().min(1).nullable(),
+  selectedNextQuestion: z.string().min(1).nullable(),
+  selectedQuestionSourceContext: z.string().min(1).nullable(),
+  recentInterviewerContext: z.string().min(1).nullable().default(null),
+  sources: z.array(controlledRagCompositionSourceSchema).min(1).max(8),
+});
+
+export const controlledRagCompositionResultSchema = z.object({
+  answerBody: z.string().min(1).max(2600),
+  usedSourceIndexes: z.array(z.number().int().min(1).max(8)).min(1).max(8),
+  limitations: z.array(z.string().min(1).max(240)).max(4).default([]),
+});
+
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   service: z.enum(["api", "web"]),
@@ -390,7 +416,7 @@ export const decisionInputSchema = z.object({
 });
 
 export const openAIDebugTraceSchema = z.object({
-  callType: z.enum(["analysis", "decision", "phrasing"]),
+  callType: z.enum(["analysis", "decision", "phrasing", "source_composition"]),
   promptVersion: z.string().min(1),
   requestedAt: z.string().datetime(),
   request: z.object({
@@ -1927,6 +1953,12 @@ export type SelectorInput = z.infer<typeof selectorInputSchema>;
 export type SelectionDecision = z.infer<typeof selectionDecisionSchema>;
 export type PhrasingInput = z.infer<typeof phrasingInputSchema>;
 export type PhrasingResult = z.infer<typeof phrasingResultSchema>;
+export type ControlledRagCompositionInput = z.infer<
+  typeof controlledRagCompositionInputSchema
+>;
+export type ControlledRagCompositionResult = z.infer<
+  typeof controlledRagCompositionResultSchema
+>;
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type IntegrationReadinessResponse = z.infer<
   typeof integrationReadinessResponseSchema
