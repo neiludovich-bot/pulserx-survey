@@ -209,24 +209,24 @@ export async function createSourceLibraryDocument(
     surveySlug: input.surveySlug,
   }));
 
-  const document = await prisma.$transaction(async (tx) => {
-    const created = await tx.sourceDocument.create({
-      data: {
-        surveySlug: input.surveySlug,
-        sourceBrand: input.sourceBrand,
-        title: input.title,
-        description: input.description ?? null,
-        sourceType: input.sourceType,
-        url: input.url ?? null,
-        content: input.content ?? null,
-        tags,
-        priority: input.priority,
-        status: input.status,
-      },
-    });
+  const created = await prisma.sourceDocument.create({
+    data: {
+      surveySlug: input.surveySlug,
+      sourceBrand: input.sourceBrand,
+      title: input.title,
+      description: input.description ?? null,
+      sourceType: input.sourceType,
+      url: input.url ?? null,
+      content: input.content ?? null,
+      tags,
+      priority: input.priority,
+      status: input.status,
+    },
+  });
 
+  try {
     if (chunks.length > 0) {
-      await tx.sourceChunk.createMany({
+      await prisma.sourceChunk.createMany({
         data: chunks.map((chunk, index) => ({
           sourceDocumentId: created.id,
           surveySlug: input.surveySlug,
@@ -239,7 +239,7 @@ export async function createSourceLibraryDocument(
     }
 
     if (assets.length > 0) {
-      await tx.sourceAsset.createMany({
+      await prisma.sourceAsset.createMany({
         data: assets.map((asset) => ({
           ...asset,
           sourceDocumentId: created.id,
@@ -247,7 +247,7 @@ export async function createSourceLibraryDocument(
       });
     }
 
-    return tx.sourceDocument.findUniqueOrThrow({
+    const document = await prisma.sourceDocument.findUniqueOrThrow({
       where: {
         id: created.id,
       },
@@ -260,11 +260,21 @@ export async function createSourceLibraryDocument(
         },
       },
     });
-  });
 
-  return sourceLibraryMutationResponseSchema.parse({
-    document: mapDocument(document),
-  });
+    return sourceLibraryMutationResponseSchema.parse({
+      document: mapDocument(document),
+    });
+  } catch (error) {
+    await prisma.sourceDocument
+      .delete({
+        where: {
+          id: created.id,
+        },
+      })
+      .catch(() => undefined);
+
+    throw error;
+  }
 }
 
 export async function importSourceLibraryDocuments(
