@@ -98,7 +98,7 @@ export const PADCEV_SIDE_EFFECT_BRANCH_RULES = [
       /\bocular\b/,
     ],
     sourceDirective:
-      "The participant is in the PADCEV side-effect-management lane or asked a practical adverse-event management question. Answer the specific adverse-event, monitoring, dose interruption, dose reduction, discontinuation, counseling, or workflow angle they raised; do not provide a full label-style safety inventory. Use 2-4 focused bullets or one short paragraph. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.",
+      "The participant is in the PADCEV side-effect-management lane or asked a practical adverse-event management question. Answer the specific adverse-event, monitoring, dose interruption, dose reduction, discontinuation, counseling, or workflow angle they raised; do not provide a full label-style safety inventory. Use 2-4 focused bullets or one short paragraph. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. Do not cite efficacy/PFS/OS pages unless the respondent explicitly asks about risk-benefit. Do not use or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.",
   },
   {
     key: "safety_patient_caution",
@@ -148,7 +148,9 @@ function firstPatternIndex(content: string, patterns: RegExp[]) {
   return indexes.length ? Math.min(...indexes) : -1;
 }
 
-export function padcevSideEffectMapApplies(intentSlug: string | null | undefined) {
+export function padcevSideEffectMapApplies(
+  intentSlug: string | null | undefined,
+) {
   return intentSlug === PADCEV_SIDE_EFFECT_INTENT_SLUG;
 }
 
@@ -161,7 +163,9 @@ export function matchedPadcevSideEffectBranches(participantContent: string) {
     index: firstPatternIndex(normalized, rule.triggerPatterns),
   }))
     .filter((rule) => rule.index >= 0)
-    .sort((left, right) => left.index - right.index || left.order - right.order);
+    .sort(
+      (left, right) => left.index - right.index || left.order - right.order,
+    );
 }
 
 export function padcevSideEffectQuestionIdsForContent(
@@ -176,9 +180,8 @@ export function padcevSideEffectSourceDirective(
   participantContent: string,
   selectedQuestionId: string | null | undefined,
 ) {
-  const matchedDirective = matchedPadcevSideEffectBranches(
-    participantContent,
-  )[0]?.sourceDirective;
+  const matchedDirective =
+    matchedPadcevSideEffectBranches(participantContent)[0]?.sourceDirective;
 
   if (matchedDirective) {
     return matchedDirective;

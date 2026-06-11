@@ -41,6 +41,7 @@ import {
   persistMvpSurveySessionStarted,
   persistMvpSurveyTurnAudit,
 } from "./mvp-survey-persistence";
+import { classifyMvpTurnRoute } from "./mvp-turn-router";
 import {
   type MvpSurveyDefinition,
   type MvpSurveyIntent,
@@ -801,14 +802,9 @@ function queueExplicitIntentExcursions(
   if (sideEffectIntent) {
     const matchedMapBranches =
       matchedPadcevSideEffectBranches(participantContent);
-    const mappedQuestionIds = padcevSideEffectQuestionIdsForContent(
-      participantContent,
-    );
-    enqueueQuestionIds(
-      session,
-      mappedQuestionIds,
-      participantContent,
-    );
+    const mappedQuestionIds =
+      padcevSideEffectQuestionIdsForContent(participantContent);
+    enqueueQuestionIds(session, mappedQuestionIds, participantContent);
     if (matchedMapBranches.length > 0) {
       return;
     }
@@ -2268,9 +2264,26 @@ export async function submitMvpCustomGptSurveyTurn(
   const selectedQuestion = selectNextQuestion(session, input.content);
   const questionSourceContextRequirement =
     sourceContextForQuestion(selectedQuestion);
+  const turnRouteDecision = classifyMvpTurnRoute({
+    surveySlug: session.surveySlug,
+    activeIntentSlug: session.surveyIntent?.slug ?? null,
+    participantContent: input.content,
+    currentQuestion: questionText(currentQuestion(session)),
+    selectedQuestionId: selectedQuestion?.id ?? null,
+    selectedQuestionText: questionText(selectedQuestion),
+    selectedQuestionSourceContext: questionSourceContextRequirement,
+  });
+  const reactiveSourceContextRequirement = turnRouteDecision.isOutOfScope
+    ? null
+    : (turnRouteDecision.sourceDirective ??
+      sourceContextForReactiveQuestion(
+        session,
+        input.content,
+        selectedQuestion,
+      ));
   const sourceContextRequirement = combineSourceContextRequirements(
     questionSourceContextRequirement,
-    sourceContextForReactiveQuestion(session, input.content, selectedQuestion),
+    reactiveSourceContextRequirement,
   );
   const selectedQuestionText = questionText(selectedQuestion);
   let actualAskedQuestion = selectedQuestion;
@@ -2280,8 +2293,10 @@ export async function submitMvpCustomGptSurveyTurn(
   );
   const remaining = remainingSeconds(session);
   const needsCustomGpt =
-    Boolean(sourceContextRequirement) ||
-    contentLooksLikeReactiveQuestion(input.content);
+    !turnRouteDecision.isOutOfScope &&
+    (Boolean(sourceContextRequirement) ||
+      turnRouteDecision.needsSource ||
+      contentLooksLikeReactiveQuestion(input.content));
 
   let assistantContent: string;
   let references: GroundedReference[] = [];
@@ -2306,7 +2321,9 @@ export async function submitMvpCustomGptSurveyTurn(
     customGptStatus = "not_needed";
     nextAction = "wrap_up";
   } else if (!needsCustomGpt) {
-    assistantContent = selectedQuestionText ?? "Thanks, let's continue.";
+    assistantContent = turnRouteDecision.isOutOfScope
+      ? `I'll keep us focused on the ${session.sourceBrand} research interview. ${selectedQuestionText ?? "Let's continue."}`
+      : (selectedQuestionText ?? "Thanks, let's continue.");
     customGptStatus = "not_needed";
     nextAction = "ask";
   } else if (missingReason) {
@@ -2410,6 +2427,7 @@ export async function submitMvpCustomGptSurveyTurn(
     actualAskedQuestion: questionText(actualAskedQuestion),
     currentQuestionAfter: questionText(currentQuestion(session)),
     sourceContextRequirement,
+    turnRouteDecision,
     activeDiseaseAreas: [...session.activeDiseaseAreas],
     primaryDiseaseArea: session.primaryDiseaseArea,
     queuedQuestionIds: [...session.queuedQuestionIds],
@@ -2447,6 +2465,7 @@ export async function submitMvpCustomGptSurveyTurn(
       actualAskedQuestion: questionText(actualAskedQuestion),
       currentQuestionAfter: questionText(currentQuestion(session)),
       sourceContextRequirement,
+      turnRouteDecision,
       needsCustomGpt,
       customGptStatus,
       customGptReason,
