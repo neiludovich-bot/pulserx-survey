@@ -1,5 +1,5 @@
-import { MvpCustomGptSurveyModal } from "../../../src/components/MvpCustomGptSurveyModal";
+import { MvpCustomGptSurveyQueryPage } from "../../../src/components/MvpCustomGptSurveyQueryPage";
 
 export default function MvpCustomGptSurveyPage() {
-  return <MvpCustomGptSurveyModal />;
+  return <MvpCustomGptSurveyQueryPage />;
 }
