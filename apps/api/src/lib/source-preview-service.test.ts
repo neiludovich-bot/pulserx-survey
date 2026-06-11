@@ -416,4 +416,55 @@ describe("source preview service", () => {
       "Preview",
     );
   });
+
+  it("does not render curated page or PDF assets as broken images", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response("<html><head><title>PADCEV source</title></head><body></body></html>", {
+          headers: { "content-type": "text/html; charset=utf-8" },
+          status: 200,
+        }),
+      ),
+    );
+
+    const preview = await previewSourceImages({
+      url: "https://padcevhcp.com/ev-302/",
+      title: "PADCEV + Pembrolizumab Efficacy",
+      assets: [
+        {
+          title: "EV-302 efficacy page",
+          url: "https://padcevhcp.com/ev-302/",
+          description: "Source page with EV-302 efficacy chart",
+          assetKind: "CHART",
+          tags: ["ev-302", "os", "pfs"],
+          priority: 100,
+        },
+        {
+          title: "PADCEV full Prescribing Information",
+          url: "https://astellas.us/docs/PADCEV_label.pdf",
+          description: "FDA-approved prescribing information PDF",
+          assetKind: "IMAGE",
+          tags: ["label", "safety"],
+          priority: 90,
+        },
+        {
+          title: "EV-302 OS chart image",
+          url: "https://padcevhcp.com/assets/ev-302-os-chart.png",
+          description: "EV-302 OS chart",
+          assetKind: "CHART",
+          tags: ["ev-302", "os"],
+          priority: 80,
+        },
+      ],
+    });
+
+    expect(preview.images.map((image) => image.url)).toEqual([
+      "https://padcevhcp.com/assets/ev-302-os-chart.png",
+    ]);
+    expect(preview.documents.map((document) => document.url)).toEqual([
+      "https://padcevhcp.com/ev-302/",
+      "https://astellas.us/docs/PADCEV_label.pdf",
+    ]);
+  });
 });
