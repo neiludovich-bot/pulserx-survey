@@ -519,7 +519,11 @@ function urlLooksLikeImage(url: string) {
 function curatedAssetLooksLikeImage(asset: CuratedSourceAsset) {
   const kind = asset.assetKind.toUpperCase();
 
-  return ["CHART", "TABLE", "IMAGE"].includes(kind) || urlLooksLikeImage(asset.url);
+  return (
+    !urlLooksLikePdf(asset.url) &&
+    ["CHART", "TABLE", "IMAGE"].includes(kind) &&
+    urlLooksLikeImage(asset.url)
+  );
 }
 
 function curatedAssetLooksLikeDocument(asset: CuratedSourceAsset) {
