@@ -1300,6 +1300,14 @@ function contentLooksLikePadcevSafetyQuestion(content: string) {
   );
 }
 
+function contentLooksLikePadcevEfficacyQuestion(content: string) {
+  const normalized = normalizeText(content);
+
+  return /\b(ev 302|ev302|keynote a39|keynote-a39|overall survival|os|progression free|pfs|orr|response rate|complete response|cr|efficacy|survival|hazard ratio|endpoint|endpoints|data show|data)\b/.test(
+    normalized,
+  );
+}
+
 function contentLooksLikeBrukinsaSafetyQuestion(content: string) {
   const normalized = normalizeText(content);
 
@@ -1692,6 +1700,10 @@ function sourceContextForReactiveQuestion(
   }
 
   if (session.surveySlug === "padcev") {
+    if (contentLooksLikePadcevEfficacyQuestion(participantContent)) {
+      return "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data. Prioritize the approved PADCEV HCP EV-302/KEYNOTE-A39 efficacy sources over the selected survey lane for this turn. Answer the specific efficacy endpoint or trial-design detail they raised using source-supported facts only, including OS, PFS, ORR, CR/PR, comparator, population, follow-up, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. Then return to the selected survey question.";
+    }
+
     const sideEffectIntent =
       session.surveyIntent?.slug === "side-effect-management";
     const selectedSafetyLaneQuestion = Boolean(
