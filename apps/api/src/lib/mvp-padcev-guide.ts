@@ -185,7 +185,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     module: "Source reaction",
     objective: "Capture safety and tolerability barriers.",
     canonicalQuestion:
-      "Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
+      "What is the one PADCEV safety or tolerability issue that would most affect whether you start, continue, or support therapy?",
     sourceContextRequirement:
       "Before asking the safety/tolerability question, provide a compact source-grounded orientation to the specific safety-management angle most relevant to the respondent's last answer or the selected intent. Do not list every PADCEV warning, common adverse reaction, serious adverse reaction, lab abnormality, and dose-modification cause. Use 2-4 focused bullets or one short paragraph grouped around practical themes such as monitoring, dose interruption/reduction/discontinuation, patient counseling, or operational resources. Prioritize Important Safety Information, Prescribing Information, dose-modifications page, dosing/administration guide, Adverse Reactions Monitoring Checklist, adverse-reaction management resources, and Peripheral Neuropathy Informational Resource if available. If guide/checklist/PDF resources exist, cite the source most likely to expose them so the side panel can present the operational aid proactively. Keep it concise and non-patient-specific.",
     routeKeywords: [
@@ -229,7 +229,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     objective:
       "Understand what AE-management guidance would make clinicians more comfortable continuing or supporting therapy.",
     canonicalQuestion:
-      "When a PADCEV adverse event emerges, what guidance would most help you decide whether to monitor, interrupt dosing, reduce dosing, discontinue, counsel the patient, or involve additional support?",
+      "For that specific safety issue, what is the hardest management decision in practice: when to monitor, hold dosing, reduce dosing, discontinue, counsel the patient, or involve additional support?",
     sourceContextRequirement:
       "Before asking the AE-management workflow question, retrieve only the PADCEV source material relevant to practical adverse-event management, dose modifications, monitoring checklists, adverse-reaction management resources, dosing/administration guide, or Peripheral Neuropathy Informational Resource. If the respondent named a specific AE, focus on that AE and do not recap unrelated warnings. Do not cite efficacy/PFS/OS pages unless the respondent explicitly asks about risk-benefit.",
     routeKeywords: [
@@ -259,7 +259,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     objective:
       "Identify patient profiles that create caution specifically because of AE monitoring or management burden.",
     canonicalQuestion:
-      "From a safety-management standpoint, which patient profiles would make you more cautious with PADCEV, and what monitoring or mitigation plan would make you more comfortable?",
+      "Which patient profile makes that safety concern hardest to manage, and what would need to be in place before PADCEV felt workable for that patient?",
     sourceContextRequirement:
       "Before asking the safety-caution patient profile question, answer only source-supported safety-risk, monitoring, dose modification, or counseling considerations relevant to patient caution. Keep this framed around safety-management feasibility, not broad efficacy-based patient selection. Do not ask which patients are most attractive based on evidence, and do not show efficacy graphs unless the respondent asks about benefit-risk.",
     routeKeywords: [
@@ -286,7 +286,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     objective:
       "Assess whether operational safety resources would reduce barriers.",
     canonicalQuestion:
-      "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
+      "Which type of resource would actually change the workflow for that safety concern: a monitoring checklist, dose-modification table, patient handout, symptom tracker, staff-facing guide, or something else?",
     sourceContextRequirement:
       "Before asking the safety-resource question, retrieve PADCEV HCP source material most likely to expose monitoring checklists, adverse-reaction management guides, dosing/administration guides, patient counseling materials, or downloadable PDFs. Prefer resource pages and PDF assets over efficacy pages. If no usable resource is available, say that briefly and ask the question without inventing resources.",
     routeKeywords: [
@@ -309,7 +309,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     module: "Implementation",
     objective: "Identify practical adoption barriers.",
     canonicalQuestion:
-      "What practical barriers would most affect implementation: toxicity monitoring, infusion scheduling, patient education, coordination with pembrolizumab, access, or something else?",
+      "Where would PADCEV implementation most likely break down in your setting: patient calls, nursing triage, unscheduled visits, infusion scheduling, education, access, or another workflow point?",
     sourceContextRequirement:
       "Before asking the practical barriers question, retrieve PADCEV HCP source material on support resources, adverse-reaction monitoring checklists, patient materials, dosing resources, side-effect management guides, or access resources if available. If a guide/checklist/PDF exists, cite the source most likely to expose it. If no meaningful support resource detail is available in the source, say that briefly and ask the question without inventing programs.",
     routeKeywords: ["barrier", "monitoring", "scheduling", "education", "access", "support"],
@@ -323,7 +323,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     objective:
       "Synthesize the respondent's safety-management confidence and remaining barrier.",
     canonicalQuestion:
-      "After reviewing the PADCEV safety-management information and resources, what is the main side-effect concern that still remains, and what would most increase your confidence managing it?",
+      "After this safety-management discussion, what concern still remains, and what would most increase your confidence managing it?",
     sourceContextRequirement: null,
     routeKeywords: ["remaining", "confidence", "concern", "barrier"],
     completionSignals: ["remaining safety concern and confidence driver are stated"],

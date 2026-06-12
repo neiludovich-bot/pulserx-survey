@@ -12,7 +12,7 @@ import type {
 import { prisma } from "./prisma";
 import type { MvpTurnRouteDecision } from "./mvp-turn-router";
 
-type MvpPersistenceSessionSnapshot = {
+export type MvpPersistenceSessionSnapshot = {
   sessionId: string;
   surveySlug: string;
   sourceBrand: string;
@@ -31,6 +31,7 @@ type MvpPersistenceSessionSnapshot = {
   queuedQuestionIds: string[];
   excursionQuestionIds: string[];
   askedQuestionIds: string[];
+  adaptiveProbeQuestions: unknown[];
   completedReason: string | null;
 };
 
@@ -91,8 +92,51 @@ function metadataForSession(
     queuedQuestionIds: session.queuedQuestionIds,
     excursionQuestionIds: session.excursionQuestionIds,
     askedQuestionIds: session.askedQuestionIds,
+    adaptiveProbeQuestions: session.adaptiveProbeQuestions,
     completedReason: session.completedReason,
   };
+}
+
+function jsonRecord(value: Prisma.JsonValue | null | undefined) {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Prisma.JsonObject)
+    : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+function stringOrNull(value: unknown) {
+  return typeof value === "string" ? value : null;
+}
+
+function numberOrDefault(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function referencesFromPayload(
+  payload: Prisma.JsonValue | null,
+): GroundedReference[] {
+  const record = jsonRecord(payload);
+  const references = record.references;
+  return Array.isArray(references)
+    ? references.filter(
+        (reference): reference is GroundedReference =>
+          Boolean(reference) &&
+          typeof reference === "object" &&
+          "citationId" in reference &&
+          "title" in reference &&
+          "url" in reference,
+      )
+    : [];
+}
+
+function messageIdFromPayload(payload: Prisma.JsonValue | null, fallback: string) {
+  const record = jsonRecord(payload);
+  return stringOrNull(record.messageId) ?? fallback;
 }
 
 async function ensureMvpStudy(session: MvpPersistenceSessionSnapshot) {
@@ -321,5 +365,102 @@ export async function persistMvpSurveyTurnAudit(input: {
     ]);
   } catch {
     // DB audit must not block the respondent-facing MVP survey.
+  }
+}
+
+export async function loadMvpSurveySessionSnapshot(sessionId: string) {
+  if (!dbAuditEnabled()) {
+    return null;
+  }
+
+  try {
+    const persisted = await prisma.session.findUnique({
+      where: { id: sessionId },
+      include: {
+        study: true,
+        turns: {
+          orderBy: { sequence: "asc" },
+        },
+      },
+    });
+
+    if (!persisted) {
+      return null;
+    }
+
+    const metadata = jsonRecord(persisted.metadata);
+    if (metadata.runtime !== "mvp-customgpt-survey") {
+      return null;
+    }
+
+    const surveySlug = stringOrNull(metadata.surveySlug);
+    const sourceBrand = stringOrNull(metadata.sourceBrand);
+    if (!surveySlug || !sourceBrand) {
+      return null;
+    }
+
+    const messages = persisted.turns.flatMap((turn) => {
+      if (
+        turn.role !== TurnRole.INTERVIEWER &&
+        turn.role !== TurnRole.PARTICIPANT
+      ) {
+        return [];
+      }
+
+      return [
+        {
+          id: messageIdFromPayload(turn.payload, turn.id),
+          role:
+            turn.role === TurnRole.INTERVIEWER
+              ? ("interviewer" as const)
+              : ("participant" as const),
+          content: turn.content,
+          createdAt: turn.createdAt.toISOString(),
+          references: referencesFromPayload(turn.payload),
+        },
+      ] satisfies MvpCustomGptSurveyMessage[];
+    });
+
+    const turnCount = messages.filter(
+      (message) => message.role === "participant",
+    ).length;
+
+    return {
+      session: {
+        sessionId: persisted.id,
+        surveySlug,
+        sourceBrand,
+        studyName:
+          persisted.study?.name ??
+          stringOrNull(metadata.studyName) ??
+          `${sourceBrand} HCP MVP`,
+        surveyIntentSlug: stringOrNull(metadata.surveyIntentSlug),
+        surveyIntentLabel: stringOrNull(metadata.surveyIntentLabel),
+        surveyIntentCoverage: stringArray(metadata.surveyIntentCoverage),
+        projectId: stringOrNull(metadata.projectId),
+        projectIdEnvName:
+          stringOrNull(metadata.projectIdEnvName) ?? "CUSTOMGPT_PROJECT_ID",
+        targetDurationSeconds: numberOrDefault(
+          metadata.targetDurationSeconds,
+          600,
+        ),
+        startedAt: persisted.startedAt,
+        currentQuestionId: stringOrNull(metadata.currentQuestionId),
+        currentQuestion: stringOrNull(metadata.currentQuestion),
+        activeDiseaseAreas: stringArray(metadata.activeDiseaseAreas),
+        primaryDiseaseArea: stringOrNull(metadata.primaryDiseaseArea),
+        queuedQuestionIds: stringArray(metadata.queuedQuestionIds),
+        excursionQuestionIds: stringArray(metadata.excursionQuestionIds),
+        askedQuestionIds: stringArray(metadata.askedQuestionIds),
+        adaptiveProbeQuestions: Array.isArray(metadata.adaptiveProbeQuestions)
+          ? metadata.adaptiveProbeQuestions
+          : [],
+        completedReason: stringOrNull(metadata.completedReason),
+      } satisfies MvpPersistenceSessionSnapshot,
+      messages,
+      turnCount,
+    };
+  } catch {
+    return null;
   }
 }

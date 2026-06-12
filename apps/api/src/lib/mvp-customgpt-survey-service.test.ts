@@ -1343,7 +1343,7 @@ describe("MVP CustomGPT survey service", () => {
 
         const answer =
           prompts.length === 1
-            ? "Peripheral neuropathy and rash were already summarized with monitoring and dose modification guidance. Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?"
+            ? "Peripheral neuropathy and rash were already summarized with monitoring and dose modification guidance. What is the one PADCEV safety or tolerability issue that would most affect whether you start, continue, or support therapy?"
             : "Since we already covered the broad adverse-event profile, the added point is to focus on the respondent's specific rash workflow rather than restating the full AE list. For which locally advanced or metastatic urothelial cancer patient types, if any, would the PADCEV evidence make treatment more attractive, and where would you be cautious?";
 
         return new Response(
@@ -1470,7 +1470,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(safetyTurn.currentQuestion).toContain(
-      "Which safety or tolerability details",
+      "one PADCEV safety or tolerability issue",
     );
 
     const managementTurn = await submitMvpCustomGptSurveyTurn({
@@ -1479,7 +1479,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(managementTurn.currentQuestion).toContain(
-      "When a PADCEV adverse event emerges",
+      "hardest management decision",
     );
     expect(managementTurn.currentQuestion).not.toContain(
       "which locally advanced or metastatic urothelial cancer patient types seem like better fits",
@@ -1656,7 +1656,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(safetyTurn.currentQuestion).toContain(
-      "Which safety or tolerability details",
+      "one PADCEV safety or tolerability issue",
     );
     expect(safetyTurn.currentQuestion).not.toContain("To close");
   });
@@ -1748,7 +1748,7 @@ describe("MVP CustomGPT survey service", () => {
       });
     }
 
-    expect(turn.currentQuestion).toContain("main side-effect concern");
+    expect(turn.currentQuestion).toContain("what concern still remains");
 
     const followUp = await submitMvpCustomGptSurveyTurn({
       sessionId: started.sessionId,
@@ -1865,7 +1865,7 @@ describe("MVP CustomGPT survey service", () => {
             data: {
               openai_response: [
                 "PADCEV safety-management resources can include monitoring checklists, adverse-reaction management guides, dosing resources, and patient counseling materials when supported by the source.",
-                "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
+                "Which type of resource would actually change the workflow for that safety concern: a monitoring checklist, dose-modification table, patient handout, symptom tracker, staff-facing guide, or something else?",
                 selectedQuestion,
               ].join("\n\n"),
               citations: [],
@@ -1891,13 +1891,13 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(safetyTurn.currentQuestion).toContain(
-      "Which safety or tolerability details",
+      "one PADCEV safety or tolerability issue",
     );
     expect(safetyTurn.askedQuestions).toContain(
-      "Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
+      "What is the one PADCEV safety or tolerability issue that would most affect whether you start, continue, or support therapy?",
     );
     expect(safetyTurn.askedQuestions).not.toContain(
-      "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
+      "Which type of resource would actually change the workflow for that safety concern: a monitoring checklist, dose-modification table, patient handout, symptom tracker, staff-facing guide, or something else?",
     );
 
     const nextTurn = await submitMvpCustomGptSurveyTurn({
@@ -1907,10 +1907,10 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(nextTurn.currentQuestion).toContain(
-      "When a PADCEV adverse event emerges",
+      "hardest management decision",
     );
     expect(nextTurn.askedQuestions).not.toContain(
-      "Would PADCEV monitoring checklists, adverse-reaction management guides, dosing resources, or patient counseling materials meaningfully reduce side-effect-management barriers for you?",
+      "Which type of resource would actually change the workflow for that safety concern: a monitoring checklist, dose-modification table, patient handout, symptom tracker, staff-facing guide, or something else?",
     );
   });
 
@@ -1971,7 +1971,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(safetyTurn.currentQuestion).toContain(
-      "Which safety or tolerability details",
+      "one PADCEV safety or tolerability issue",
     );
 
     const excursionTurn = await submitMvpCustomGptSurveyTurn({
@@ -2033,7 +2033,7 @@ describe("MVP CustomGPT survey service", () => {
           JSON.stringify({
             data: {
               openai_response:
-                "EV-302 reported ORR and CR results from the efficacy source. Which safety or tolerability details most influence how comfortable you would be using or supporting PADCEV?",
+                "EV-302 reported ORR and CR results from the efficacy source. What is the one PADCEV safety or tolerability issue that would most affect whether you start, continue, or support therapy?",
               citations: [
                 {
                   id: "ev302-source",
@@ -2079,7 +2079,7 @@ describe("MVP CustomGPT survey service", () => {
       "Do not use or cite efficacy/PFS/OS pages",
     );
     expect(next.currentQuestion).toContain(
-      "When a PADCEV adverse event emerges",
+      "hardest management decision",
     );
     expect(next.messages.at(-1)?.references[0]?.title).toContain("Efficacy");
   });

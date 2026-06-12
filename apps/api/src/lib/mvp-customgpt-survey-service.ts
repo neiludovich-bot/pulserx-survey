@@ -38,8 +38,10 @@ import {
 } from "./mvp-padcev-interview-map";
 import { PADCEV_HCP_MVP_GUIDE } from "./mvp-padcev-guide";
 import {
+  loadMvpSurveySessionSnapshot,
   persistMvpSurveySessionStarted,
   persistMvpSurveyTurnAudit,
+  type MvpPersistenceSessionSnapshot,
 } from "./mvp-survey-persistence";
 import {
   classifyMvpTurnRouteHybrid,
@@ -183,8 +185,123 @@ function persistenceSnapshot(session: MvpSurveySession) {
     queuedQuestionIds: [...session.queuedQuestionIds],
     excursionQuestionIds: [...session.excursionQuestionIds],
     askedQuestionIds: [...session.askedQuestionIds],
+    adaptiveProbeQuestions: [...session.adaptiveProbeQuestions],
     completedReason: session.completedReason,
   };
+}
+
+function isMvpGuideQuestion(value: unknown): value is MvpGuideQuestion {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+
+  const question = value as Partial<MvpGuideQuestion>;
+  return (
+    typeof question.id === "string" &&
+    typeof question.module === "string" &&
+    typeof question.objective === "string" &&
+    typeof question.canonicalQuestion === "string" &&
+    Array.isArray(question.routeKeywords) &&
+    Array.isArray(question.completionSignals) &&
+    Array.isArray(question.adaptiveProbes) &&
+    Array.isArray(question.analyzableOutputs) &&
+    (question.sourceContextRequirement === null ||
+      typeof question.sourceContextRequirement === "string")
+  );
+}
+
+function restoreMvpSurveySession(input: {
+  session: MvpPersistenceSessionSnapshot;
+  messages: MvpCustomGptSurveyMessage[];
+  turnCount: number;
+}) {
+  const definition = surveyDefinitionForSlug(input.session.surveySlug);
+  const surveyIntent = surveyIntentForSlug(
+    definition,
+    input.session.surveyIntentSlug ?? undefined,
+  );
+  const guide = guideForIntent(definition, surveyIntent);
+  const fullGuide = definition.guide;
+  const knownQuestionIds = new Set([
+    ...fullGuide.map((question) => question.id),
+    ...input.session.adaptiveProbeQuestions
+      .filter(isMvpGuideQuestion)
+      .map((question) => question.id),
+  ]);
+  const currentQuestionId =
+    input.session.currentQuestionId &&
+    knownQuestionIds.has(input.session.currentQuestionId)
+      ? input.session.currentQuestionId
+      : null;
+
+  return {
+    sessionId: input.session.sessionId,
+    surveySlug: definition.slug,
+    sourceBrand: input.session.sourceBrand || definition.sourceBrand,
+    surveyIntent,
+    studyName: input.session.studyName,
+    projectId: input.session.projectId ?? definition.defaultProjectId(),
+    projectIdEnvName:
+      input.session.projectIdEnvName || definition.projectIdEnvName,
+    targetDurationSeconds: input.session.targetDurationSeconds,
+    startedAt: input.session.startedAt,
+    guide,
+    fullGuide,
+    adaptiveProbeQuestions:
+      input.session.adaptiveProbeQuestions.filter(isMvpGuideQuestion),
+    askedQuestionIds: input.session.askedQuestionIds.filter((questionId) =>
+      knownQuestionIds.has(questionId),
+    ),
+    currentQuestionId,
+    activeDiseaseAreas: input.session.activeDiseaseAreas.filter(
+      (area): area is DiseaseArea =>
+        area === "cll" ||
+        area === "wm" ||
+        area === "mcl" ||
+        area === "mzl" ||
+        area === "fl",
+    ),
+    primaryDiseaseArea:
+      input.session.primaryDiseaseArea === "cll" ||
+      input.session.primaryDiseaseArea === "wm" ||
+      input.session.primaryDiseaseArea === "mcl" ||
+      input.session.primaryDiseaseArea === "mzl" ||
+      input.session.primaryDiseaseArea === "fl"
+        ? input.session.primaryDiseaseArea
+        : null,
+    queuedQuestionIds: input.session.queuedQuestionIds.filter((questionId) =>
+      knownQuestionIds.has(questionId),
+    ),
+    excursionQuestionIds: input.session.excursionQuestionIds.filter(
+      (questionId) => knownQuestionIds.has(questionId),
+    ),
+    messages: input.messages,
+    turnCount: input.turnCount,
+    completedReason: input.session.completedReason,
+  } satisfies MvpSurveySession;
+}
+
+async function getMvpSurveySession(sessionId: string) {
+  const existing = sessions.get(sessionId);
+  if (existing) {
+    return existing;
+  }
+
+  const persisted = await loadMvpSurveySessionSnapshot(sessionId);
+  if (!persisted) {
+    return null;
+  }
+
+  const restored = restoreMvpSurveySession(persisted);
+  sessions.set(sessionId, restored);
+  appendMvpAuditEvent(restored, {
+    eventType: "session_restored_from_postgres",
+    currentQuestionId: restored.currentQuestionId,
+    askedQuestionIds: restored.askedQuestionIds,
+    queuedQuestionIds: restored.queuedQuestionIds,
+    messageCount: restored.messages.length,
+  });
+  return restored;
 }
 
 function turnSequenceBase(session: MvpSurveySession) {
@@ -2519,7 +2636,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
 export async function submitMvpCustomGptSurveyTurn(
   input: MvpCustomGptSurveyTurnRequest,
 ) {
-  const session = sessions.get(input.sessionId);
+  const session = await getMvpSurveySession(input.sessionId);
   if (!session) {
     throw new Error("MVP survey session was not found.");
   }
@@ -2915,7 +3032,7 @@ export async function submitMvpCustomGptSurveyTurn(
 export async function submitMvpCustomGptSurveyVoiceTurn(
   input: MvpCustomGptSurveyVoiceTurnRequest,
 ) {
-  const session = sessions.get(input.sessionId) ?? null;
+  const session = await getMvpSurveySession(input.sessionId);
   const audioBuffer = decodeAudio(input);
   const transcript = await transcribeAudio({
     audioBuffer,
@@ -2926,7 +3043,7 @@ export async function submitMvpCustomGptSurveyVoiceTurn(
     sessionId: input.sessionId,
     content: transcript,
   });
-  const updatedSession = sessions.get(input.sessionId);
+  const updatedSession = await getMvpSurveySession(input.sessionId);
   const spokenText = updatedSession
     ? cleanTextForSpeech(
         latestInterviewerMessage(updatedSession)?.content ?? "",
@@ -2948,7 +3065,7 @@ export async function transcribeMvpCustomGptSurveyVoice(
   input: MvpCustomGptSurveyVoiceTranscribeRequest,
 ) {
   const session = input.sessionId
-    ? (sessions.get(input.sessionId) ?? null)
+    ? await getMvpSurveySession(input.sessionId)
     : null;
   const audioBuffer = decodeAudio(input);
   const transcript = await transcribeAudio({
@@ -2974,7 +3091,7 @@ export async function transcribeMvpCustomGptSurveyVoice(
 export async function synthesizeMvpCustomGptSurveyLatestInterviewer(
   input: MvpCustomGptSurveySpeechRequest,
 ) {
-  const session = sessions.get(input.sessionId);
+  const session = await getMvpSurveySession(input.sessionId);
   if (!session) {
     throw new Error("MVP survey session was not found.");
   }
