@@ -83,6 +83,7 @@ type MvpSurveySession = {
   startedAt: Date;
   guide: MvpGuideQuestion[];
   fullGuide: MvpGuideQuestion[];
+  adaptiveProbeQuestions: MvpGuideQuestion[];
   askedQuestionIds: string[];
   currentQuestionId: string | null;
   activeDiseaseAreas: DiseaseArea[];
@@ -582,7 +583,10 @@ function askedQuestions(session: MvpSurveySession) {
 }
 
 function allQuestions(session: MvpSurveySession) {
-  return session.fullGuide.length ? session.fullGuide : session.guide;
+  const baseQuestions = session.fullGuide.length
+    ? session.fullGuide
+    : session.guide;
+  return [...baseQuestions, ...session.adaptiveProbeQuestions];
 }
 
 function questionWasAsked(
@@ -1271,6 +1275,18 @@ function dequeueNextQuestion(
   return null;
 }
 
+function dequeueNextExcursionQuestion(
+  session: MvpSurveySession,
+  participantContent: string,
+) {
+  const questionId = session.queuedQuestionIds[0];
+  if (!questionId || !session.excursionQuestionIds.includes(questionId)) {
+    return null;
+  }
+
+  return dequeueNextQuestion(session, participantContent);
+}
+
 function hasDequeuableQueuedQuestion(
   session: MvpSurveySession,
   participantContent: string,
@@ -1285,6 +1301,183 @@ function hasDequeuableQueuedQuestion(
       questionAllowedByDiseaseLane(session, question, participantContent)
     );
   });
+}
+
+function askedAdaptiveProbeCount(session: MvpSurveySession) {
+  return session.askedQuestionIds.filter((questionId) =>
+    questionId.startsWith("adaptive_"),
+  ).length;
+}
+
+function adaptivePadcevSafetyProbe(
+  session: MvpSurveySession,
+  participantContent: string,
+) {
+  const current = currentQuestion(session);
+
+  if (
+    session.surveySlug !== "padcev" ||
+    !padcevSideEffectMapApplies(session.surveyIntent?.slug) ||
+    current?.id.startsWith("adaptive_") ||
+    askedAdaptiveProbeCount(session) >= 3
+  ) {
+    return null;
+  }
+
+  const normalized = normalizeText(participantContent);
+  const probeCandidates: MvpGuideQuestion[] = [];
+
+  if (
+    /\b(neuropathy|numbness|tingling|hands|feet|residual symptoms?)\b/.test(
+      normalized,
+    ) &&
+    /\b(quit|stop|stopping|discontinu|come off|go off|drop off|hold treatment|want to quit)\b/.test(
+      normalized,
+    )
+  ) {
+    probeCandidates.push({
+      id: "adaptive_padcev_neuropathy_stop_trigger",
+      module: "Adaptive probe",
+      objective:
+        "Clarify what would prevent neuropathy from leading to treatment discontinuation.",
+      canonicalQuestion:
+        "You’re saying neuropathy becomes a treatment-continuation issue, not just a side-effect label. What would need to happen earlier to keep patients from reaching the point of wanting to stop: symptom prompts, faster triage, clearer dose-modification steps, counseling, or something else?",
+      sourceContextRequirement:
+        "If source context is needed, focus only on PADCEV peripheral neuropathy monitoring prompts, grade-based dose modification guidance, and patient-facing or staff-facing resources. Do not recap unrelated adverse events.",
+      routeKeywords: [
+        "neuropathy",
+        "discontinuation",
+        "triage",
+        "dose modification",
+      ],
+      completionSignals: [
+        "respondent identifies intervention or gap before discontinuation",
+      ],
+      adaptiveProbes: [],
+      analyzableOutputs: ["neuropathy_discontinuation_prevention_need"],
+    });
+  }
+
+  if (
+    /\b(staff|nurse|nursing|call|calls|call ins|triage|unscheduled|visit|visits|workflow|burden|clinic load)\b/.test(
+      normalized,
+    )
+  ) {
+    probeCandidates.push({
+      id: "adaptive_padcev_staff_burden",
+      module: "Adaptive probe",
+      objective:
+        "Clarify which operational burden created by side-effect management matters most.",
+      canonicalQuestion:
+        "That sounds like the barrier is the operational load around side effects. Where does that burden hit hardest in practice: patient call-ins, nursing triage, unscheduled visits, infusion-chair disruption, documentation, or something else?",
+      sourceContextRequirement:
+        "If source context is needed, focus on PADCEV monitoring checklists, patient symptom prompts, adverse-reaction management guides, and practical resources that could reduce clinic workflow burden.",
+      routeKeywords: ["staff", "triage", "call-ins", "workflow", "burden"],
+      completionSignals: [
+        "respondent identifies the operational burden point",
+      ],
+      adaptiveProbes: [],
+      analyzableOutputs: ["side_effect_workflow_burden"],
+    });
+  }
+
+  if (
+    /\b(resource|resources|guide|checklist|pdf|tool|tools|patient education|counseling|symptom tracker|materials?)\b/.test(
+      normalized,
+    )
+  ) {
+    probeCandidates.push({
+      id: "adaptive_padcev_resource_use_case",
+      module: "Adaptive probe",
+      objective:
+        "Clarify the practical use case for PADCEV side-effect-management resources.",
+      canonicalQuestion:
+        "When you think about a resource actually helping, who would need to use it and at what moment: the physician, nursing staff, infusion team, patient/caregiver, or someone else?",
+      sourceContextRequirement:
+        "If source context is needed, focus on PADCEV HCP and patient resource materials, monitoring checklists, patient counseling tools, and downloadable guides. Do not answer with a broad resource inventory.",
+      routeKeywords: ["resource", "checklist", "guide", "patient education"],
+      completionSignals: [
+        "respondent identifies resource user and workflow moment",
+      ],
+      adaptiveProbes: [],
+      analyzableOutputs: ["resource_user_and_moment"],
+    });
+  }
+
+  if (
+    /\b(older|elderly|baseline|preexisting|diabetes|diabetic|frail|risk|cautious|caution|avoid|comorbidity)\b/.test(
+      normalized,
+    )
+  ) {
+    probeCandidates.push({
+      id: "adaptive_padcev_caution_profile",
+      module: "Adaptive probe",
+      objective:
+        "Clarify whether patient caution is driven by baseline risk, monitoring feasibility, or willingness to modify dosing.",
+      canonicalQuestion:
+        "For the patients you’d be cautious about, is the issue baseline risk, ability to monitor early symptoms, willingness to hold or reduce dosing, patient tolerance for visits/calls, or something else?",
+      sourceContextRequirement:
+        "If source context is needed, focus on PADCEV safety-caution, monitoring, and dose-modification considerations relevant to patient profiles. Do not pivot into broad efficacy-based patient selection.",
+      routeKeywords: [
+        "patient",
+        "caution",
+        "risk",
+        "monitoring",
+        "dose modification",
+      ],
+      completionSignals: ["respondent identifies patient-caution driver"],
+      adaptiveProbes: [],
+      analyzableOutputs: ["patient_caution_driver"],
+    });
+  }
+
+  const probe = probeCandidates.find(
+    (candidate) =>
+      !questionWasAsked(session, candidate) &&
+      !session.queuedQuestionIds.includes(candidate.id),
+  );
+
+  if (!probe) {
+    return null;
+  }
+
+  if (
+    !session.adaptiveProbeQuestions.some((question) => question.id === probe.id)
+  ) {
+    session.adaptiveProbeQuestions.push(probe);
+  }
+
+  return probe;
+}
+
+function padcevSideEffectCloseRequested(
+  session: MvpSurveySession,
+  participantContent: string,
+) {
+  if (
+    session.surveySlug !== "padcev" ||
+    !padcevSideEffectMapApplies(session.surveyIntent?.slug)
+  ) {
+    return false;
+  }
+
+  const normalized = normalizeText(participantContent);
+  const enoughSafetyCoverage =
+    [
+      "safety",
+      "safety_management_workflow",
+      "safety_patient_caution",
+      "safety_resources",
+      "support_barriers",
+    ].filter((questionId) => session.askedQuestionIds.includes(questionId))
+      .length >= 3;
+
+  return (
+    enoughSafetyCoverage &&
+    /\b(remaining|still remains|main concern|safety concern|confidence|increase confidence|wrap up|close|finish)\b/.test(
+      normalized,
+    )
+  );
 }
 
 function forwardUnaskedQuestions(
@@ -1372,6 +1565,34 @@ function selectNextQuestion(
 
   if (closingPhaseStarted(session)) {
     return unasked.find((question) => question.close) ?? null;
+  }
+
+  if (padcevSideEffectCloseRequested(session, participantContent)) {
+    const safetyClose = questionById(session, "safety_close");
+    if (safetyClose && !questionWasAsked(session, safetyClose)) {
+      return safetyClose;
+    }
+  }
+
+  const queuedExcursionQuestion = dequeueNextExcursionQuestion(
+    session,
+    participantContent,
+  );
+  if (queuedExcursionQuestion) {
+    return queuedExcursionQuestion;
+  }
+
+  if (
+    session.surveySlug === "padcev" &&
+    padcevSideEffectMapApplies(session.surveyIntent?.slug)
+  ) {
+    const adaptiveProbe = adaptivePadcevSafetyProbe(session, participantContent);
+    if (
+      adaptiveProbe &&
+      questionAllowedByDiseaseLane(session, adaptiveProbe, participantContent)
+    ) {
+      return adaptiveProbe;
+    }
   }
 
   const queuedQuestion = dequeueNextQuestion(session, participantContent);
@@ -2257,6 +2478,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     startedAt: new Date(),
     guide,
     fullGuide: definition.guide,
+    adaptiveProbeQuestions: [],
     askedQuestionIds: [firstQuestion.id],
     currentQuestionId: firstQuestion.id,
     activeDiseaseAreas: [],

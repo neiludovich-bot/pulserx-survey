@@ -1502,7 +1502,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(resourceTurn.currentQuestion).toContain(
-      "monitoring checklists, adverse-reaction management guides",
+      "who would need to use it and at what moment",
     );
     expect(resourceTurn.currentQuestion).not.toContain(
       "which locally advanced or metastatic urothelial cancer patient types seem like better fits",
@@ -1532,7 +1532,10 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(neuropathyTurn.messages.at(-1)?.content).toContain(
-      "When neuropathy pushes patients toward stopping treatment",
+      "neuropathy becomes a treatment-continuation issue",
+    );
+    expect(neuropathyTurn.currentQuestion).toContain(
+      "What would need to happen earlier",
     );
 
     await submitMvpCustomGptSurveyTurn({
@@ -1547,8 +1550,13 @@ describe("MVP CustomGPT survey service", () => {
         "It is all about the whole staff handling call-ins, triage, and unscheduled visits.",
     });
 
-    expect(burdenTurn.messages.at(-1)?.content).toContain("staff");
+    expect(burdenTurn.messages.at(-1)?.content).toContain(
+      "operational load",
+    );
     expect(burdenTurn.messages.at(-1)?.content).toContain("call");
+    expect(burdenTurn.currentQuestion).toContain(
+      "Where does that burden hit hardest",
+    );
     expect(burdenTurn.messages.at(-1)?.content).not.toContain(
       "toxicity monitoring, infusion scheduling, patient education, coordination with pembrolizumab, access, or something else?",
     );
@@ -1740,7 +1748,7 @@ describe("MVP CustomGPT survey service", () => {
       });
     }
 
-    expect(turn.currentQuestion).toContain("To close");
+    expect(turn.currentQuestion).toContain("main side-effect concern");
 
     const followUp = await submitMvpCustomGptSurveyTurn({
       sessionId: started.sessionId,
@@ -1989,7 +1997,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(returnTurn.currentQuestion).toContain(
-      "From a safety-management standpoint",
+      "For the patients you’d be cautious about",
     );
     expect(returnTurn.currentQuestion).not.toContain(
       "which locally advanced or metastatic urothelial cancer patient types",
