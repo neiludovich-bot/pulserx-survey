@@ -157,9 +157,8 @@ export const PADCEV_HCP_MVP_GUIDE = [
     module: "Adaptive probe",
     objective: "Understand where the respondent sees PADCEV fit and caution.",
     canonicalQuestion:
-      "For which locally advanced or metastatic urothelial cancer patient types, if any, would the PADCEV evidence make treatment more attractive, and where would you be cautious?",
-    sourceContextRequirement:
-      "Before asking the patient-fit question, answer any source-specific patient population, subgroup, inclusion/exclusion, or risk-factor detail the participant has raised using only approved PADCEV HCP source material. Include limitations if the source does not provide the requested subgroup detail.",
+      "Based on your current understanding of PADCEV, which locally advanced or metastatic urothelial cancer patient types seem like better fits, and where would you be cautious?",
+    sourceContextRequirement: null,
     routeKeywords: ["patient", "fit", "eligible", "cisplatin", "renal", "neuropathy", "diabetes", "skin"],
     completionSignals: ["patient types and caution areas are stated"],
     adaptiveProbes: [
