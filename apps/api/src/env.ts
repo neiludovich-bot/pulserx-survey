@@ -32,6 +32,9 @@ const apiEnvSchema = z.object({
   MVP_SOURCE_PROVIDER: z
     .enum(["customgpt", "controlled_rag", "shadow"])
     .default("customgpt"),
+  MVP_TURN_ROUTER_PROVIDER: z
+    .enum(["deterministic", "openai_hybrid"])
+    .default("openai_hybrid"),
 });
 
 export type ApiEnv = z.infer<typeof apiEnvSchema>;

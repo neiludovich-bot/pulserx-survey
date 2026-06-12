@@ -47,6 +47,7 @@ type MvpTurnAuditInput = {
   currentQuestionAfter?: string | null;
   sourceContextRequirement?: string | null;
   turnRouteDecision?: MvpTurnRouteDecision | null;
+  turnRouteAnalysis?: Record<string, unknown> | null;
   needsCustomGpt?: boolean;
   customGptStatus?: string | null;
   customGptReason?: string | null;
@@ -301,6 +302,7 @@ export async function persistMvpSurveyTurnAudit(input: {
             currentQuestionBefore: input.turn.currentQuestionBefore,
             sourceContextRequirement: input.turn.sourceContextRequirement,
             turnRouteDecision: input.turn.turnRouteDecision ?? null,
+            turnRouteAnalysis: input.turn.turnRouteAnalysis ?? null,
           },
           output: {
             selectedQuestionId: input.turn.selectedQuestionId,

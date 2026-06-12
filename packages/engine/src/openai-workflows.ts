@@ -5,6 +5,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import {
   analysisSystemPrompt,
   decisionSystemPrompt,
+  mvpTurnRouterSystemPrompt,
   phraserSystemPrompt
 } from "@interview/prompts";
 import {
@@ -14,6 +15,8 @@ import {
   controlledRagCompositionResultSchema,
   decisionInputSchema,
   decisionResultSchema,
+  mvpTurnRouteAnalysisInputSchema,
+  mvpTurnRouteAnalysisResultSchema,
   openAIDebugTraceSchema,
   phrasingInputSchema,
   phrasingResultSchema,
@@ -23,6 +26,8 @@ import {
   type ControlledRagCompositionResult,
   type DecisionInput,
   type DecisionResult,
+  type MvpTurnRouteAnalysisInput,
+  type MvpTurnRouteAnalysisResult,
   type OpenAIDebugTrace,
   type PhrasingInput,
   type PhrasingResult
@@ -35,7 +40,12 @@ import {
   prepareDecisionTurn,
 } from "./turn-orchestrator";
 
-type CallType = "analysis" | "decision" | "phrasing" | "source_composition";
+type CallType =
+  | "analysis"
+  | "decision"
+  | "phrasing"
+  | "source_composition"
+  | "turn_route";
 
 type ModelConfig = {
   analysisModel: string;
@@ -156,6 +166,25 @@ export class OpenAIResponsesGateway {
       metadata: {
         session_id: input.sessionId,
         study_id: input.studyId
+      }
+    });
+  }
+
+  async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {
+    const parsed = mvpTurnRouteAnalysisInputSchema.parse(input);
+
+    return this.runStructuredCall<MvpTurnRouteAnalysisResult>({
+      callType: "turn_route",
+      model: this.config.analysisModel,
+      promptVersion: mvpTurnRouterSystemPrompt.version,
+      schemaName: "mvp_turn_route_analysis_result",
+      schema: mvpTurnRouteAnalysisResultSchema,
+      instructions: mvpTurnRouterSystemPrompt.instructions,
+      input: parsed,
+      metadata: {
+        survey_slug: parsed.surveySlug,
+        intent_slug: parsed.activeIntentSlug ?? "none",
+        current_question_id: parsed.currentQuestionId ?? "none"
       }
     });
   }
