@@ -1414,6 +1414,7 @@ describe("MVP CustomGPT survey service", () => {
 
   it("keeps the PADCEV side-effect intent inside safety-management questions", async () => {
     env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+    env.MVP_SOURCE_PROVIDER = "customgpt";
 
     const prompts: string[] = [];
     const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
@@ -1471,10 +1472,6 @@ describe("MVP CustomGPT survey service", () => {
     expect(safetyTurn.currentQuestion).toContain(
       "Which safety or tolerability details",
     );
-    expect(prompts.at(-1) ?? "").toContain(
-      "Intent-blocked question ids unless respondent explicitly asks off-lane",
-    );
-    expect(prompts.at(-1) ?? "").toContain("patient_fit");
 
     const managementTurn = await submitMvpCustomGptSurveyTurn({
       sessionId: started.sessionId,
@@ -1487,6 +1484,10 @@ describe("MVP CustomGPT survey service", () => {
     expect(managementTurn.currentQuestion).not.toContain(
       "which locally advanced or metastatic urothelial cancer patient types seem like better fits",
     );
+    expect(prompts.at(-1) ?? "").toContain(
+      "Intent-blocked question ids unless respondent explicitly asks off-lane",
+    );
+    expect(prompts.at(-1) ?? "").toContain("patient_fit");
     expect(prompts.at(-1) ?? "").toContain(
       "Do not cite efficacy/PFS/OS pages unless the respondent explicitly asks about risk-benefit",
     );
@@ -1505,6 +1506,51 @@ describe("MVP CustomGPT survey service", () => {
     );
     expect(resourceTurn.currentQuestion).not.toContain(
       "which locally advanced or metastatic urothelial cancer patient types seem like better fits",
+    );
+  });
+
+  it("phrases PADCEV safety follow-ups around the respondent's latest concern", async () => {
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+    env.MVP_SOURCE_PROVIDER = "customgpt";
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "side-effect-management",
+      targetDurationSeconds: 600,
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    const neuropathyTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "It's the peripheral neuropathy that is tough - it makes patients want to quit treatment.",
+    });
+
+    expect(neuropathyTurn.messages.at(-1)?.content).toContain(
+      "When neuropathy pushes patients toward stopping treatment",
+    );
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "A monitoring checklist and dose modification guide would help the most.",
+    });
+
+    const burdenTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "It is all about the whole staff handling call-ins, triage, and unscheduled visits.",
+    });
+
+    expect(burdenTurn.messages.at(-1)?.content).toContain("staff");
+    expect(burdenTurn.messages.at(-1)?.content).toContain("call");
+    expect(burdenTurn.messages.at(-1)?.content).not.toContain(
+      "toxicity monitoring, infusion scheduling, patient education, coordination with pembrolizumab, access, or something else?",
     );
   });
 

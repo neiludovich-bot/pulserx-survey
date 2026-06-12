@@ -400,6 +400,43 @@ function mergeRankedAssets(
   );
 }
 
+function isDisplayVisualAsset(asset: ControlledRagAsset) {
+  return ["CHART", "TABLE", "IMAGE"].includes(asset.assetKind);
+}
+
+function dedupeAssetsPreservingOrder(
+  ...assetGroups: Array<ControlledRagAsset[] | undefined>
+) {
+  const seen = new Set<string>();
+  const deduped: ControlledRagAsset[] = [];
+
+  for (const asset of assetGroups.flatMap((assets) => assets ?? [])) {
+    if (seen.has(asset.url)) {
+      continue;
+    }
+    seen.add(asset.url);
+    deduped.push(asset);
+  }
+
+  return deduped.slice(0, 8);
+}
+
+function referenceAssetsForChunk(
+  chunkAssets: ControlledRagAsset[] | undefined,
+  turnAssets: ControlledRagAsset[],
+  queryTokens: string[],
+) {
+  const ownAssets = rankAssets(chunkAssets ?? [], queryTokens);
+  const ownHasVisual = ownAssets.some(isDisplayVisualAsset);
+  const turnVisuals = turnAssets.filter(isDisplayVisualAsset);
+
+  if (ownHasVisual) {
+    return dedupeAssetsPreservingOrder(ownAssets, turnAssets);
+  }
+
+  return dedupeAssetsPreservingOrder(turnVisuals, ownAssets, turnAssets);
+}
+
 async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   if (!process.env.DATABASE_URL) {
     return [];
@@ -588,7 +625,7 @@ function referencesForChunks(
         assets:
           index === 0
             ? mergeRankedAssets(queryTokens, chunk.assets, turnAssets)
-            : (chunk.assets ?? []),
+            : referenceAssetsForChunk(chunk.assets, turnAssets, queryTokens),
       }) satisfies GroundedReference,
   );
 }
@@ -630,6 +667,29 @@ function ensureCitationMarker(answer: string, chunks: ControlledRagChunk[]) {
   return `${answer.trimEnd()} [1]`;
 }
 
+function lowerFirstPlainWord(value: string) {
+  return value.replace(/^([A-Z])(?=[a-z])/, (letter) =>
+    letter.toLowerCase(),
+  );
+}
+
+function removeParticipantVoiceMirror(answer: string) {
+  const leadingFamiliarityMirror =
+    /^\s*I(?:'m| am)\s+(?:not\s+)?(?:very\s+)?familiar(?:\s+with\s+[^.]+)?\.\s*/i;
+  const match = answer.match(leadingFamiliarityMirror);
+
+  if (!match) {
+    return answer;
+  }
+
+  const rest = answer.slice(match[0].length).trimStart();
+  if (!rest) {
+    return "For orientation, the source materials provide the following context.";
+  }
+
+  return `For orientation, ${lowerFirstPlainWord(rest)}`;
+}
+
 async function composeSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
@@ -659,7 +719,10 @@ async function composeSourceAnswer(
       })),
     });
 
-    return ensureCitationMarker(composition.result.answerBody, chunks);
+    return ensureCitationMarker(
+      removeParticipantVoiceMirror(composition.result.answerBody),
+      chunks,
+    );
   } catch {
     return fallbackSourceAnswer(input, chunks);
   }
@@ -713,4 +776,6 @@ export async function askControlledRagForSurveyInterviewerTurn(
 export const controlledRagTestInternals = {
   displayTopicForTurn,
   rankAssetsForDisplay,
+  referencesForChunks,
+  removeParticipantVoiceMirror,
 };
