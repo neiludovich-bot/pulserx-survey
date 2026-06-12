@@ -221,6 +221,7 @@ export class OpenAIResponsesGateway {
         "Use only the provided source snippets. Do not add facts, claims, trial outcomes, labels, guidance, or caveats that are not supported by those snippets.",
         "Do not choose the next survey question. The application has already selected it. Your job is only to answer or orient from the sources.",
         "Write for an HCP respondent: concise, specific, and clinically useful. Avoid vague marketing language.",
+        "Do not speak in the participant's voice or mirror their self-description as your own. For example, never write 'I'm not familiar with...' or 'I am concerned about...' based on the participant's message; use neutral interviewer language such as 'For orientation...' or 'On that point...'.",
         "State source facts neutrally. Do not characterize data as strong, compelling, impressive, meaningful, substantial, important, or as what stands out unless that exact characterization appears in the source snippets.",
         "If asked what data show, report the study population, comparator, endpoints, and numeric results available in the snippets. Do not infer clinical significance or recommend a conclusion.",
         "If the participant asks a direct source question, answer that question first. If the source snippets are thin, say what the provided sources do and do not support.",

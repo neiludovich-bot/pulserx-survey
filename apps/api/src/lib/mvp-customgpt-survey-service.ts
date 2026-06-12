@@ -497,6 +497,73 @@ function questionText(question: MvpGuideQuestion | null) {
   return question?.canonicalQuestion ?? null;
 }
 
+function participantFacingQuestionText(
+  session: MvpSurveySession,
+  question: MvpGuideQuestion | null,
+  participantContent: string,
+) {
+  const baseQuestion = questionText(question);
+  if (!baseQuestion || !question || session.surveySlug !== "padcev") {
+    return baseQuestion;
+  }
+
+  const normalized = normalizeText(participantContent);
+  const mentionsNeuropathy =
+    /\b(neuropathy|numbness|tingling|hands|feet|residual symptoms?)\b/.test(
+      normalized,
+    );
+  const mentionsStopping =
+    /\b(quit|stop|stopping|discontinu|come off|go off|drop off|hold treatment)\b/.test(
+      normalized,
+    );
+  const mentionsStaffBurden =
+    /\b(staff|nurse|nursing|call|calls|call ins|triage|unscheduled|visit|visits|workflow|burden|coordination|whole staff|clinic load)\b/.test(
+      normalized,
+    );
+  const mentionsResources =
+    /\b(resource|resources|guide|checklist|pdf|tool|tools|patient education|counseling|symptom tracker|materials?)\b/.test(
+      normalized,
+    );
+  const mentionsCautionProfile =
+    /\b(older|elderly|baseline|preexisting|diabetes|diabetic|frail|risk|cautious|caution|avoid)\b/.test(
+      normalized,
+    );
+
+  if (
+    question.id === "safety_management_workflow" &&
+    mentionsNeuropathy &&
+    mentionsStopping
+  ) {
+    return "When neuropathy pushes patients toward stopping treatment, what would help most before that point: earlier symptom detection, clearer grade-based hold/resume guidance, patient counseling, rapid call/visit triage, or something else?";
+  }
+
+  if (question.id === "safety_management_workflow" && mentionsNeuropathy) {
+    return "For neuropathy specifically, what guidance would most help you decide whether to monitor, hold dosing, resume at the same dose, reduce dosing, discontinue, or add patient counseling/support?";
+  }
+
+  if (question.id === "safety_resources" && mentionsStaffBurden) {
+    return "You’re describing staff burden from call-ins, triage, and unscheduled visits. Which resource would most reduce that load: a monitoring checklist, dose-modification guide, patient-facing symptom prompts, staff workflow support, or something else?";
+  }
+
+  if (question.id === "safety_resources" && mentionsResources) {
+    return "Which PADCEV resource would be most useful in practice: monitoring checklists, adverse-reaction management guides, dosing resources, patient counseling materials, or something else you would need?";
+  }
+
+  if (question.id === "support_barriers" && mentionsStaffBurden) {
+    return "You’re pointing to staff workload as the implementation issue. Which part is the real bottleneck: triage calls, unscheduled visits, toxicity monitoring, patient education, infusion coordination, access/support, or something else?";
+  }
+
+  if (question.id === "safety_patient_caution" && mentionsStaffBurden) {
+    return "You’re describing workflow burden more than a specific patient-profile concern. Which patient situations would make that staff burden hardest to manage, and what monitoring or support would make PADCEV more workable?";
+  }
+
+  if (question.id === "safety_patient_caution" && mentionsCautionProfile) {
+    return "For the patient profiles you flagged, what monitoring or mitigation plan would make PADCEV feel more workable, and where would you still remain cautious?";
+  }
+
+  return baseQuestion;
+}
+
 function currentQuestion(session: MvpSurveySession) {
   return (
     allQuestions(session).find(
@@ -2402,7 +2469,11 @@ export async function submitMvpCustomGptSurveyTurn(
     questionSourceContextRequirement,
     reactiveSourceContextRequirement,
   );
-  const selectedQuestionText = questionText(selectedQuestion);
+  const selectedQuestionText = participantFacingQuestionText(
+    session,
+    selectedQuestion,
+    input.content,
+  );
   let actualAskedQuestion = selectedQuestion;
   const missingReason = sourceProviderMissingReason(
     session.projectId,
@@ -2490,7 +2561,7 @@ export async function submitMvpCustomGptSurveyTurn(
         actualAskedQuestion = selectedQuestion;
         assistantContent = ensureReturnToSurvey(
           sourceTurn.answer,
-          questionText(actualAskedQuestion),
+          selectedQuestionText,
         );
         references = sourceTurn.references;
         const filtered = filterReferencesForDiseaseLane({

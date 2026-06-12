@@ -137,4 +137,78 @@ describe("controlled RAG source provider", () => {
     expect(topic).toBe("padcev_ev302_response");
     expect(ranked[0]?.title).toContain("EV-302");
   });
+
+  it("fills PDF-only citations with the turn's most relevant visual assets", () => {
+    const references = controlledRagTestInternals.referencesForChunks(
+      [
+        {
+          id: "chunk-visual",
+          surveySlug: "padcev",
+          title: "PADCEV Peripheral Neuropathy Informational Resource",
+          description: "Neuropathy management visual",
+          url: "https://example.com/neuropathy",
+          tags: ["neuropathy", "management"],
+          text: "Neuropathy management text.",
+          assets: [
+            {
+              title: "Peripheral Neuropathy Visual Guide",
+              url: "https://example.com/neuropathy-guide.png",
+              description: "Patient prompts and grade-based dose modifications",
+              assetKind: "IMAGE",
+              tags: ["neuropathy", "dose modification"],
+              priority: 100,
+            },
+          ],
+        },
+        {
+          id: "chunk-pdf",
+          surveySlug: "padcev",
+          title: "PADCEV Adverse Reactions Monitoring Checklist",
+          description: "Checklist PDF",
+          url: "https://example.com/checklist",
+          tags: ["checklist", "monitoring"],
+          text: "Checklist text.",
+          assets: [
+            {
+              title: "PADCEV Adverse Reactions Monitoring Checklist",
+              url: "https://example.com/checklist.pdf",
+              description: "PDF checklist resource",
+              assetKind: "PDF",
+              tags: ["checklist", "monitoring"],
+              priority: 100,
+            },
+          ],
+        },
+      ],
+      [
+        {
+          title: "Peripheral Neuropathy Visual Guide",
+          url: "https://example.com/neuropathy-guide.png",
+          description: "Patient prompts and grade-based dose modifications",
+          assetKind: "IMAGE",
+          tags: ["neuropathy", "dose modification"],
+          priority: 100,
+        },
+      ],
+      ["neuropathy", "management", "checklist"],
+    );
+
+    expect(references[1]?.assets?.[0]?.title).toContain(
+      "Peripheral Neuropathy Visual",
+    );
+    expect(references[1]?.assets?.some((asset) => asset.assetKind === "PDF")).toBe(
+      true,
+    );
+  });
+
+  it("removes participant-voice familiarity mirroring from composed answers", () => {
+    const cleaned =
+      controlledRagTestInternals.removeParticipantVoiceMirror(
+        "I'm not very familiar with PADCEV beyond the basics in the provided sources. From the source material, PADCEV is described in two roles [1].",
+      );
+
+    expect(cleaned).toBe(
+      "For orientation, from the source material, PADCEV is described in two roles [1].",
+    );
+  });
 });
