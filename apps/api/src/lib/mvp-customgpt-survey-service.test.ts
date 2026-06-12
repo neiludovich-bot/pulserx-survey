@@ -1485,7 +1485,7 @@ describe("MVP CustomGPT survey service", () => {
       "When a PADCEV adverse event emerges",
     );
     expect(managementTurn.currentQuestion).not.toContain(
-      "would the PADCEV evidence make treatment more attractive",
+      "which locally advanced or metastatic urothelial cancer patient types seem like better fits",
     );
     expect(prompts.at(-1) ?? "").toContain(
       "Do not cite efficacy/PFS/OS pages unless the respondent explicitly asks about risk-benefit",
@@ -1504,8 +1504,32 @@ describe("MVP CustomGPT survey service", () => {
       "monitoring checklists, adverse-reaction management guides",
     );
     expect(resourceTurn.currentQuestion).not.toContain(
-      "would the PADCEV evidence make treatment more attractive",
+      "which locally advanced or metastatic urothelial cancer patient types seem like better fits",
     );
+  });
+
+  it("asks PADCEV patient-fit intent directly after consent without a source preamble", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "patient-selection-barriers",
+      targetDurationSeconds: 600,
+    });
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(next.nextAction).toBe("ask");
+    expect(next.currentQuestion).toContain(
+      "which locally advanced or metastatic urothelial cancer patient types seem like better fits",
+    );
+    expect(next.messages.at(-1)?.content).toBe(next.currentQuestion);
+    expect(next.messages.at(-1)?.content).not.toContain("Yes, we can begin");
   });
 
   it("does not route early PADCEV side-effect concerns to the closing question", async () => {
@@ -1903,7 +1927,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(excursionTurn.currentQuestion).toContain(
-      "For which locally advanced or metastatic urothelial cancer patient types",
+      "which locally advanced or metastatic urothelial cancer patient types",
     );
     expect(prompts.at(-1) ?? "").toContain(
       "explicit respondent-requested off-lane excursion",
@@ -1922,7 +1946,7 @@ describe("MVP CustomGPT survey service", () => {
       "From a safety-management standpoint",
     );
     expect(returnTurn.currentQuestion).not.toContain(
-      "For which locally advanced or metastatic urothelial cancer patient types",
+      "which locally advanced or metastatic urothelial cancer patient types",
     );
   });
 
