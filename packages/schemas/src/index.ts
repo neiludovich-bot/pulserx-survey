@@ -123,6 +123,64 @@ export const controlledRagCompositionResultSchema = z.object({
   limitations: z.array(z.string().min(1).max(240)).max(4).default([]),
 });
 
+export const mvpTurnRouteKindSchema = z.enum([
+  "planned_answer",
+  "source_question",
+  "in_lane_topic",
+  "off_lane_excursion",
+  "unknown_in_domain",
+  "out_of_scope",
+]);
+
+export const mvpDisplayTopicSchema = z.enum([
+  "padcev_ev302_response",
+  "padcev_ev302_survival",
+  "padcev_neuropathy_management",
+  "padcev_dose_modification",
+  "padcev_safety_resources",
+  "padcev_safety_management",
+  "padcev_patient_selection",
+  "brukinsa_cll_sequoia",
+  "brukinsa_cll_alpine",
+  "brukinsa_safety_management",
+  "unknown_in_domain",
+]);
+
+export const mvpTurnRouteCandidateSchema = z.object({
+  id: z.string().min(1),
+  question: z.string().min(1),
+  objective: z.string().min(1),
+  module: z.string().min(1),
+  allowedByIntent: z.boolean(),
+  alreadyAsked: z.boolean(),
+  routeKeywords: z.array(z.string()).default([]),
+  sourceContextRequirement: z.string().min(1).nullable().default(null),
+});
+
+export const mvpTurnRouteAnalysisInputSchema = z.object({
+  surveySlug: z.enum(["brukinsa", "padcev"]),
+  sourceBrand: z.string().min(1),
+  activeIntentSlug: z.string().min(1).nullable(),
+  activeIntentLabel: z.string().min(1).nullable(),
+  activeIntentSteeringRule: z.string().min(1).nullable(),
+  currentQuestionId: z.string().min(1).nullable(),
+  currentQuestion: z.string().min(1).nullable(),
+  participantMessage: z.string().min(1),
+  recentInterviewerContext: z.string().min(1).nullable().default(null),
+  candidateQuestions: z.array(mvpTurnRouteCandidateSchema).min(1).max(16),
+});
+
+export const mvpTurnRouteAnalysisResultSchema = z.object({
+  kind: mvpTurnRouteKindSchema,
+  topic: mvpDisplayTopicSchema.nullable(),
+  needsSource: z.boolean(),
+  isOutOfScope: z.boolean(),
+  isUnanticipated: z.boolean(),
+  suggestedQuestionIds: z.array(z.string().min(1)).max(3).default([]),
+  sourceDirective: z.string().min(1).nullable().default(null),
+  rationale: z.string().min(1).max(500),
+});
+
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   service: z.enum(["api", "web"]),
@@ -428,7 +486,13 @@ export const decisionInputSchema = z.object({
 });
 
 export const openAIDebugTraceSchema = z.object({
-  callType: z.enum(["analysis", "decision", "phrasing", "source_composition"]),
+  callType: z.enum([
+    "analysis",
+    "decision",
+    "phrasing",
+    "source_composition",
+    "turn_route",
+  ]),
   promptVersion: z.string().min(1),
   requestedAt: z.string().datetime(),
   request: z.object({
@@ -1971,6 +2035,17 @@ export type ControlledRagCompositionInput = z.infer<
 >;
 export type ControlledRagCompositionResult = z.infer<
   typeof controlledRagCompositionResultSchema
+>;
+export type MvpTurnRouteKind = z.infer<typeof mvpTurnRouteKindSchema>;
+export type MvpDisplayTopic = z.infer<typeof mvpDisplayTopicSchema>;
+export type MvpTurnRouteCandidate = z.infer<
+  typeof mvpTurnRouteCandidateSchema
+>;
+export type MvpTurnRouteAnalysisInput = z.infer<
+  typeof mvpTurnRouteAnalysisInputSchema
+>;
+export type MvpTurnRouteAnalysisResult = z.infer<
+  typeof mvpTurnRouteAnalysisResultSchema
 >;
 export type HealthResponse = z.infer<typeof healthResponseSchema>;
 export type IntegrationReadinessResponse = z.infer<

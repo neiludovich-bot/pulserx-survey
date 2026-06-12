@@ -41,6 +41,10 @@ import {
   persistMvpSurveySessionStarted,
   persistMvpSurveyTurnAudit,
 } from "./mvp-survey-persistence";
+import {
+  classifyMvpTurnRouteHybrid,
+  type MvpRouteAnalysisCandidate,
+} from "./mvp-openai-turn-router";
 import { classifyMvpTurnRoute } from "./mvp-turn-router";
 import {
   type MvpSurveyDefinition,
@@ -570,6 +574,84 @@ function questionById(session: MvpSurveySession, questionId: string) {
   );
 }
 
+function routeCandidateForQuestion(
+  session: MvpSurveySession,
+  question: MvpGuideQuestion,
+): MvpRouteAnalysisCandidate {
+  return {
+    id: question.id,
+    question: questionText(question) ?? question.canonicalQuestion,
+    objective: question.objective,
+    module: question.module,
+    allowedByIntent: intentAllowsQuestion(session.surveyIntent, question),
+    alreadyAsked: questionWasAsked(session, question),
+    routeKeywords: question.routeKeywords,
+    sourceContextRequirement: sourceContextForQuestion(question),
+  };
+}
+
+function routeAnalysisCandidates(
+  session: MvpSurveySession,
+  participantContent: string,
+) {
+  const seen = new Set<string>();
+  const queuedQuestions = session.queuedQuestionIds.flatMap((questionId) => {
+    const question = questionById(session, questionId);
+    return question ? [question] : [];
+  });
+  const remainingQuestions = allQuestions(session).filter(
+    (question) =>
+      !questionWasAsked(session, question) &&
+      questionAllowedByDiseaseLane(session, question, participantContent),
+  );
+
+  return [...queuedQuestions, ...remainingQuestions]
+    .filter((question) => {
+      if (seen.has(question.id)) {
+        return false;
+      }
+      seen.add(question.id);
+      return true;
+    })
+    .slice(0, 16)
+    .map((question) => routeCandidateForQuestion(session, question));
+}
+
+function prioritizeRouteSuggestedQuestions(
+  session: MvpSurveySession,
+  suggestedQuestionIds: string[],
+  participantContent: string,
+  allowOffIntent: boolean,
+) {
+  for (const questionId of [...suggestedQuestionIds].reverse()) {
+    const question = questionById(session, questionId);
+    if (
+      !question ||
+      questionWasAsked(session, question) ||
+      !questionAllowedByDiseaseLane(session, question, participantContent)
+    ) {
+      continue;
+    }
+
+    const allowedByIntent = intentAllowsQuestion(session.surveyIntent, question);
+    if (!allowedByIntent && !allowOffIntent) {
+      continue;
+    }
+
+    session.queuedQuestionIds = session.queuedQuestionIds.filter(
+      (queuedQuestionId) => queuedQuestionId !== questionId,
+    );
+    session.queuedQuestionIds.unshift(questionId);
+
+    if (
+      !allowedByIntent &&
+      !session.excursionQuestionIds.includes(questionId)
+    ) {
+      session.excursionQuestionIds.push(questionId);
+    }
+  }
+}
+
 function questionIsClosingLane(question: MvpGuideQuestion | null | undefined) {
   return Boolean(
     question &&
@@ -596,11 +678,13 @@ function enqueueQuestionIds(
 ) {
   for (const questionId of questionIds) {
     const question = questionById(session, questionId);
+    if (!question) {
+      continue;
+    }
     const allowedByIntent =
       intentAllowsQuestion(session.surveyIntent, question) ||
       options.allowOffIntent === true;
     if (
-      !question ||
       questionWasAsked(session, question) ||
       session.queuedQuestionIds.includes(questionId) ||
       !allowedByIntent ||
@@ -2261,10 +2345,28 @@ export async function submitMvpCustomGptSurveyTurn(
     return responseForSession(session, "wrap_up");
   }
 
+  const preSelectionRouteAnalysis = await classifyMvpTurnRouteHybrid({
+    surveySlug: session.surveySlug,
+    sourceBrand: session.sourceBrand,
+    activeIntentSlug: session.surveyIntent?.slug ?? null,
+    activeIntentLabel: session.surveyIntent?.label ?? null,
+    activeIntentSteeringRule: session.surveyIntent?.steeringRule ?? null,
+    participantContent: input.content,
+    currentQuestionId: currentQuestionBefore?.id ?? null,
+    currentQuestion: questionText(currentQuestionBefore),
+    recentInterviewerContext: recentInterviewerSourceContext(session),
+    candidateQuestions: routeAnalysisCandidates(session, input.content),
+  });
+  prioritizeRouteSuggestedQuestions(
+    session,
+    preSelectionRouteAnalysis.suggestedQuestionIds,
+    input.content,
+    preSelectionRouteAnalysis.decision.kind === "off_lane_excursion",
+  );
   const selectedQuestion = selectNextQuestion(session, input.content);
   const questionSourceContextRequirement =
     sourceContextForQuestion(selectedQuestion);
-  const turnRouteDecision = classifyMvpTurnRoute({
+  const selectedQuestionRouteDecision = classifyMvpTurnRoute({
     surveySlug: session.surveySlug,
     activeIntentSlug: session.surveyIntent?.slug ?? null,
     participantContent: input.content,
@@ -2273,6 +2375,21 @@ export async function submitMvpCustomGptSurveyTurn(
     selectedQuestionText: questionText(selectedQuestion),
     selectedQuestionSourceContext: questionSourceContextRequirement,
   });
+  const turnRouteDecision =
+    preSelectionRouteAnalysis.provider === "openai_hybrid"
+      ? {
+          ...preSelectionRouteAnalysis.decision,
+          needsSource:
+            preSelectionRouteAnalysis.decision.needsSource ||
+            selectedQuestionRouteDecision.needsSource,
+          topic:
+            preSelectionRouteAnalysis.decision.topic ??
+            selectedQuestionRouteDecision.topic,
+          sourceDirective:
+            preSelectionRouteAnalysis.decision.sourceDirective ??
+            selectedQuestionRouteDecision.sourceDirective,
+        }
+      : selectedQuestionRouteDecision;
   const reactiveSourceContextRequirement = turnRouteDecision.isOutOfScope
     ? null
     : (turnRouteDecision.sourceDirective ??
@@ -2428,6 +2545,12 @@ export async function submitMvpCustomGptSurveyTurn(
     currentQuestionAfter: questionText(currentQuestion(session)),
     sourceContextRequirement,
     turnRouteDecision,
+    turnRouteAnalysis: {
+      provider: preSelectionRouteAnalysis.provider,
+      suggestedQuestionIds: preSelectionRouteAnalysis.suggestedQuestionIds,
+      modelResult: preSelectionRouteAnalysis.modelResult,
+      error: preSelectionRouteAnalysis.error,
+    },
     activeDiseaseAreas: [...session.activeDiseaseAreas],
     primaryDiseaseArea: session.primaryDiseaseArea,
     queuedQuestionIds: [...session.queuedQuestionIds],
@@ -2466,6 +2589,12 @@ export async function submitMvpCustomGptSurveyTurn(
       currentQuestionAfter: questionText(currentQuestion(session)),
       sourceContextRequirement,
       turnRouteDecision,
+      turnRouteAnalysis: {
+        provider: preSelectionRouteAnalysis.provider,
+        suggestedQuestionIds: preSelectionRouteAnalysis.suggestedQuestionIds,
+        modelResult: preSelectionRouteAnalysis.modelResult,
+        error: preSelectionRouteAnalysis.error,
+      },
       needsCustomGpt,
       customGptStatus,
       customGptReason,
