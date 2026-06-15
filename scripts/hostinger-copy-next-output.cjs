@@ -32,6 +32,36 @@ const staticRoutes = [
     targetParts: ["surveys", "data"],
   },
   {
+    label: "/admin/",
+    sourceParts: ["admin.html"],
+    targetParts: ["admin"],
+  },
+  {
+    label: "/admin/import/",
+    sourceParts: ["admin", "import.html"],
+    targetParts: ["admin", "import"],
+  },
+  {
+    label: "/admin/source-library/",
+    sourceParts: ["admin", "source-library.html"],
+    targetParts: ["admin", "source-library"],
+  },
+  {
+    label: "/admin/surveys/data/",
+    sourceParts: ["admin", "surveys", "data.html"],
+    targetParts: ["admin", "surveys", "data"],
+  },
+  {
+    label: "/admin/surveys/padcev/",
+    sourceParts: ["admin", "surveys", "padcev.html"],
+    targetParts: ["admin", "surveys", "padcev"],
+  },
+  {
+    label: "/admin/surveys/brukinsa/",
+    sourceParts: ["admin", "surveys", "brukinsa.html"],
+    targetParts: ["admin", "surveys", "brukinsa"],
+  },
+  {
     label: "/research/import/",
     sourceParts: ["research", "import.html"],
     targetParts: ["research", "import"],
@@ -49,12 +79,7 @@ const staticRoutes = [
 ];
 
 for (const route of staticRoutes) {
-  const htmlPath = path.join(
-    nextOutput,
-    "server",
-    "app",
-    ...route.sourceParts,
-  );
+  const htmlPath = path.join(nextOutput, "server", "app", ...route.sourceParts);
   if (!fs.existsSync(htmlPath)) {
     throw new Error(`Static page ${route.label} not found at ${htmlPath}`);
   }
@@ -68,17 +93,16 @@ if (fs.existsSync(publicDir)) {
 }
 
 fs.mkdirSync(path.join(target, "_next"), { recursive: true });
-fs.cpSync(path.join(nextOutput, "static"), path.join(target, "_next", "static"), {
-  recursive: true,
-});
+fs.cpSync(
+  path.join(nextOutput, "static"),
+  path.join(target, "_next", "static"),
+  {
+    recursive: true,
+  },
+);
 
 for (const route of staticRoutes) {
-  const htmlPath = path.join(
-    nextOutput,
-    "server",
-    "app",
-    ...route.sourceParts,
-  );
+  const htmlPath = path.join(nextOutput, "server", "app", ...route.sourceParts);
   const routeDir = path.join(target, ...route.targetParts);
   fs.mkdirSync(routeDir, { recursive: true });
   fs.copyFileSync(htmlPath, path.join(routeDir, "index.html"));
@@ -105,9 +129,10 @@ fs.writeFileSync(
 <main>
   <p style="text-transform:uppercase;letter-spacing:.08em;font-size:12px;font-weight:800;color:#52615f">Researcher Console</p>
   <h1>PulseRx Survey Admin</h1>
-  <p>This static admin landing page links to the deployed management tools available on Hostinger.</p>
-  <a class="primary" href="/research/import/">Import / Update Survey</a>
-  <a href="/research/source-library/">Source Library</a>
+  <p>The secure backend now lives at /admin. Use it to manage survey guides, sources, assets, and launch status.</p>
+  <a class="primary" href="/admin/">Open Admin Console</a>
+  <a href="/admin/import/">Import / Update Survey</a>
+  <a href="/admin/source-library/">Source Library</a>
   <a href="/surveys/data/">Open Data Survey</a>
   <a href="/surveys/padcev/">Open PADCEV Survey</a>
   <a href="/surveys/brukinsa/">Open BRUKINSA Survey</a>

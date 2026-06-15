@@ -39,6 +39,10 @@ const ASSET_KINDS: SourceAssetKind[] = [
   "OTHER",
 ];
 
+type SourceLibraryClientProps = {
+  initialSurveySlug?: string;
+};
+
 function parseTags(value: string) {
   return value
     .split(",")
@@ -55,8 +59,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
-export function SourceLibraryClient() {
-  const [surveySlug, setSurveySlug] = useState("padcev");
+export function SourceLibraryClient({
+  initialSurveySlug = "padcev",
+}: SourceLibraryClientProps = {}) {
+  const initialSurvey =
+    SURVEY_OPTIONS.find((option) => option.slug === initialSurveySlug)?.slug ??
+    "padcev";
+  const [surveySlug, setSurveySlug] = useState(initialSurvey);
   const [sourceBrand, setSourceBrand] = useState("PADCEV");
   const [sourceType, setSourceType] = useState<SourceDocumentType>("URL");
   const [status, setStatus] = useState<SourceDocumentStatus>("ACTIVE");

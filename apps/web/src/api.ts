@@ -1,5 +1,7 @@
 import type {
   AbandonStudyOpenSessionsResponse,
+  AdminLoginRequest,
+  AdminLoginResponse,
   AssetReactionResponse,
   RespondentSessionResponse,
   CreateStudyAsset,
@@ -64,12 +66,21 @@ import type {
   UpdateStudyQuestionGrounding,
   UpdateStudySettings,
 } from "@interview/schemas";
+import { readAdminSession, isAdminSessionCurrent } from "./admin-session";
 import { webEnv } from "./env";
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers);
   if (init?.body) {
     headers.set("Content-Type", "application/json");
+  }
+  const adminSession = readAdminSession();
+  if (
+    !headers.has("Authorization") &&
+    path !== "/admin/auth/login" &&
+    isAdminSessionCurrent(adminSession)
+  ) {
+    headers.set("Authorization", `Bearer ${adminSession?.token}`);
   }
 
   const response = await fetch(`${webEnv.NEXT_PUBLIC_API_BASE_URL}${path}`, {
@@ -93,6 +104,13 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return (await response.json()) as T;
+}
+
+export function loginAdmin(input: AdminLoginRequest) {
+  return apiFetch<AdminLoginResponse>("/admin/auth/login", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }
 
 export function getStudies() {

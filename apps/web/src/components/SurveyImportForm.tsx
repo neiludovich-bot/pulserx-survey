@@ -6,6 +6,13 @@ import type { ChangeEvent, FormEvent } from "react";
 import type { SurveyImportPreview } from "@interview/schemas";
 import { previewSurveyImport, publishSurveyImport } from "../api";
 
+type SurveyImportFormProps = {
+  mode?: "research" | "admin";
+  defaultStudyName?: string;
+  defaultTargetDurationMinutes?: number;
+  defaultCustomGptProjectId?: string;
+};
+
 function arrayBufferToBase64(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
   const chunkSize = 0x8000;
@@ -63,12 +70,21 @@ function getPreviewMetrics(preview: SurveyImportPreview) {
   };
 }
 
-export function SurveyImportForm() {
+export function SurveyImportForm({
+  mode = "research",
+  defaultStudyName = "",
+  defaultTargetDurationMinutes = 15,
+  defaultCustomGptProjectId = "",
+}: SurveyImportFormProps) {
   const router = useRouter();
   const [sourceText, setSourceText] = useState("");
-  const [studyName, setStudyName] = useState("");
-  const [targetDurationMinutes, setTargetDurationMinutes] = useState(15);
-  const [customGptProjectId, setCustomGptProjectId] = useState("");
+  const [studyName, setStudyName] = useState(defaultStudyName);
+  const [targetDurationMinutes, setTargetDurationMinutes] = useState(
+    defaultTargetDurationMinutes,
+  );
+  const [customGptProjectId, setCustomGptProjectId] = useState(
+    defaultCustomGptProjectId,
+  );
   const [assetTitle, setAssetTitle] = useState("");
   const [assetDescription, setAssetDescription] = useState("");
   const [assetStorageKey, setAssetStorageKey] = useState("");
@@ -141,7 +157,11 @@ export function SurveyImportForm() {
 
     try {
       const result = await publishSurveyImport(preview);
-      router.push(`/research/studies/${result.study.id}`);
+      if (mode === "admin") {
+        router.push(`/admin/surveys/${result.study.slug}/`);
+      } else {
+        router.push(`/research/studies/${result.study.id}`);
+      }
     } catch (error) {
       setStatus(
         error instanceof Error ? error.message : "Unable to publish study.",
@@ -290,7 +310,7 @@ export function SurveyImportForm() {
               onClick={handlePublish}
               type="button"
             >
-              Publish Study
+              {mode === "admin" ? "Publish to Admin" : "Publish Study"}
             </button>
           </div>
 

@@ -29,6 +29,8 @@ const apiEnvSchema = z.object({
     .default("https://app.customgpt.ai/api/v1"),
   CUSTOMGPT_PROJECT_ID: z.string().optional(),
   CUSTOMGPT_PADCEV_PROJECT_ID: z.string().optional(),
+  ADMIN_PASSWORD: z.string().min(8).optional(),
+  ADMIN_SESSION_SECRET: z.string().min(16).optional(),
   MVP_SOURCE_PROVIDER: z
     .enum(["customgpt", "controlled_rag", "shadow"])
     .default("customgpt"),
