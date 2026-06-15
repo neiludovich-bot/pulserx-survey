@@ -1,3 +1,5 @@
+import type { GroundedReference } from "@interview/schemas";
+
 export type MvpGuideQuestion = {
   id: string;
   module: string;
@@ -9,6 +11,7 @@ export type MvpGuideQuestion = {
   adaptiveProbes: string[];
   analyzableOutputs: string[];
   close?: boolean;
+  surfacedReferences?: GroundedReference[];
 };
 
 export function guideFromQuestionStrings(questions: string[]) {

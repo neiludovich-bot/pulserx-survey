@@ -13,13 +13,17 @@ function readSurveySlug() {
     ?.trim()
     .toLowerCase();
 
-  return survey === "padcev" ? "padcev" : "brukinsa";
+  if (survey === "padcev" || survey === "data") {
+    return survey;
+  }
+
+  return "brukinsa";
 }
 
 export function MvpCustomGptSurveyQueryPage() {
-  const [surveySlug, setSurveySlug] = useState<"brukinsa" | "padcev" | null>(
-    null,
-  );
+  const [surveySlug, setSurveySlug] = useState<
+    "brukinsa" | "padcev" | "data" | null
+  >(null);
 
   useEffect(() => {
     setSurveySlug(readSurveySlug());
@@ -34,6 +38,16 @@ export function MvpCustomGptSurveyQueryPage() {
       <MvpCustomGptSurveyModal
         surveySlug="padcev"
         studyName="PADCEV HCP MVP"
+        targetDurationSeconds={600}
+      />
+    );
+  }
+
+  if (surveySlug === "data") {
+    return (
+      <MvpCustomGptSurveyModal
+        surveySlug="data"
+        studyName="Data Survey"
         targetDurationSeconds={600}
       />
     );

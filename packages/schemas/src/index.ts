@@ -158,7 +158,7 @@ export const mvpTurnRouteCandidateSchema = z.object({
 });
 
 export const mvpTurnRouteAnalysisInputSchema = z.object({
-  surveySlug: z.enum(["brukinsa", "padcev"]),
+  surveySlug: z.enum(["brukinsa", "padcev", "data"]),
   sourceBrand: z.string().min(1),
   activeIntentSlug: z.string().min(1).nullable(),
   activeIntentLabel: z.string().min(1).nullable(),

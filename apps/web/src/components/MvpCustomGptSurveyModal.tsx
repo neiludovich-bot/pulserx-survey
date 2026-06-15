@@ -1299,6 +1299,8 @@ const BRUKINSA_INTENT_OPTIONS: SurveyIntentOption[] = [
   },
 ];
 
+const DATA_INTENT_OPTIONS: SurveyIntentOption[] = [];
+
 export function MvpCustomGptSurveyModal({
   surveySlug = "brukinsa",
   studyName = "BRUKINSA HCP MVP",
@@ -1307,6 +1309,8 @@ export function MvpCustomGptSurveyModal({
   const intentOptions =
     surveySlug === "padcev"
       ? PADCEV_INTENT_OPTIONS
+      : surveySlug === "data"
+        ? DATA_INTENT_OPTIONS
       : surveySlug === "brukinsa"
         ? BRUKINSA_INTENT_OPTIONS
         : [];

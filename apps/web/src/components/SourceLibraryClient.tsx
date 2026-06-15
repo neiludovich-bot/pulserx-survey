@@ -17,6 +17,7 @@ import {
 const SURVEY_OPTIONS = [
   { slug: "padcev", brand: "PADCEV" },
   { slug: "brukinsa", brand: "BRUKINSA" },
+  { slug: "data", brand: "DATA" },
 ];
 
 const SOURCE_TYPES: SourceDocumentType[] = [
