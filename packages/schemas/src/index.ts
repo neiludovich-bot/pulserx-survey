@@ -187,6 +187,15 @@ export const healthResponseSchema = z.object({
   timestamp: z.string().datetime(),
 });
 
+export const adminLoginRequestSchema = z.object({
+  password: z.string().min(1),
+});
+
+export const adminLoginResponseSchema = z.object({
+  token: z.string().min(1),
+  expiresAt: z.string().datetime(),
+});
+
 export const integrationReadinessStatusSchema = z.enum([
   "ready",
   "missing_config",
@@ -2038,9 +2047,7 @@ export type ControlledRagCompositionResult = z.infer<
 >;
 export type MvpTurnRouteKind = z.infer<typeof mvpTurnRouteKindSchema>;
 export type MvpDisplayTopic = z.infer<typeof mvpDisplayTopicSchema>;
-export type MvpTurnRouteCandidate = z.infer<
-  typeof mvpTurnRouteCandidateSchema
->;
+export type MvpTurnRouteCandidate = z.infer<typeof mvpTurnRouteCandidateSchema>;
 export type MvpTurnRouteAnalysisInput = z.infer<
   typeof mvpTurnRouteAnalysisInputSchema
 >;
@@ -2250,6 +2257,8 @@ export type RealtimeVoiceSessionResponse = z.infer<
   typeof realtimeVoiceSessionResponseSchema
 >;
 export type SessionAuditResponse = z.infer<typeof sessionAuditResponseSchema>;
+export type AdminLoginRequest = z.infer<typeof adminLoginRequestSchema>;
+export type AdminLoginResponse = z.infer<typeof adminLoginResponseSchema>;
 export type MvpCustomGptSurveyStartRequest = z.input<
   typeof mvpCustomGptSurveyStartRequestSchema
 >;

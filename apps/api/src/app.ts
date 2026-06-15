@@ -4,6 +4,7 @@ import {
   abandonStudyOpenSessionsSchema,
   addStudyCustomGptAssetSourceSchema,
   addStudyCustomGptSitemapSourceSchema,
+  adminLoginRequestSchema,
   applyStudyGuideCleanupSchema,
   createStudyAssetSchema,
   createStudyBranchRuleSchema,
@@ -34,6 +35,12 @@ import {
 } from "@interview/schemas";
 import Fastify from "fastify";
 import { env } from "./env";
+import {
+  AdminAuthError,
+  createAdminSessionToken,
+  requireAdminSession,
+  verifyAdminPassword,
+} from "./lib/admin-auth";
 import {
   getIntegrationReadiness,
   getStudyCustomGptProjectCount,
@@ -121,6 +128,8 @@ export function buildApp() {
     methods: ["GET", "HEAD", "POST", "PATCH", "OPTIONS"],
   });
 
+  app.addHook("preHandler", requireAdminSession);
+
   app.get("/health", async () =>
     healthResponseSchema.parse({
       status: "ok",
@@ -136,6 +145,36 @@ export function buildApp() {
       name: engine.productName,
       version: "v1",
     };
+  });
+
+  app.post<{
+    Body: unknown;
+  }>("/admin/auth/login", async (request, reply) => {
+    const body = adminLoginRequestSchema.safeParse(request.body);
+    if (!body.success) {
+      return reply.status(400).send({
+        message: "Invalid admin login payload.",
+        issues: body.error.flatten(),
+      });
+    }
+
+    try {
+      if (!verifyAdminPassword(body.data.password)) {
+        return reply.status(401).send({
+          message: "Invalid admin password.",
+        });
+      }
+
+      return createAdminSessionToken();
+    } catch (error) {
+      const statusCode =
+        error instanceof AdminAuthError ? error.statusCode : 500;
+      request.log.error(error);
+      return reply.status(statusCode).send({
+        message:
+          error instanceof Error ? error.message : "Unable to create session.",
+      });
+    }
   });
 
   app.post<{
