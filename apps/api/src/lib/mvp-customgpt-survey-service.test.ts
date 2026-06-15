@@ -71,6 +71,34 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.content).toBe("What is your clinical role?");
   });
 
+  it("runs the Data survey as a fixed sequence without source-provider setup", async () => {
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "data",
+      targetDurationSeconds: 600,
+    });
+
+    expect(started.status).toBe("active");
+    expect(started.customGptEnabled).toBe(false);
+    expect(started.studyName).toBe("Data Survey");
+    expect(started.currentQuestion).toContain("Is it okay to begin?");
+
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "1",
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(next.status).toBe("active");
+    expect(next.nextAction).toBe("ask");
+    expect(next.currentQuestion).toContain("first data point");
+    expect(next.messages.at(-1)?.content).toContain("first data point");
+  });
+
   it("runs selected BRUKINSA intents without the long intake block", async () => {
     env.CUSTOMGPT_API_KEY = undefined;
     env.CUSTOMGPT_PROJECT_ID = undefined;

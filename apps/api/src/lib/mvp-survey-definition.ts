@@ -4,7 +4,7 @@ import {
 } from "@interview/schemas";
 import type { MvpGuideQuestion } from "./mvp-brukinsa-guide";
 
-export type MvpSurveySlug = "brukinsa" | "padcev";
+export type MvpSurveySlug = "brukinsa" | "padcev" | "data";
 
 export type MvpSurveyDefinition = {
   slug: MvpSurveySlug;
@@ -14,6 +14,7 @@ export type MvpSurveyDefinition = {
   intents?: MvpSurveyIntent[];
   projectIdEnvName: string;
   defaultProjectId: () => string | null;
+  fixedFlow?: boolean;
 };
 
 export type MvpSurveyIntent = MvpSurveyIntentDefinition;

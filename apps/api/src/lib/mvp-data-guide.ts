@@ -1,0 +1,95 @@
+import type { MvpGuideQuestion } from "./mvp-brukinsa-guide";
+
+export const DATA_MVP_GUIDE = [
+  {
+    id: "intro_consent",
+    module: "Introduction",
+    objective: "Confirm permission and set neutral market research context.",
+    canonicalQuestion:
+      "Thank you for participating. We're conducting market research about the data we will review today. This is not a test of knowledge, and there are no right or wrong answers. Please don't include patient-identifying information. Is it okay to begin?",
+    sourceContextRequirement: null,
+    routeKeywords: [],
+    completionSignals: ["respondent agrees to begin"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["consent_to_begin"],
+  },
+  {
+    id: "data_q1_initial_reaction",
+    module: "Data Review",
+    objective: "Capture the respondent's immediate reaction to the first data point.",
+    canonicalQuestion:
+      "Looking at this first data point, what is your immediate reaction?",
+    sourceContextRequirement: null,
+    routeKeywords: [],
+    completionSignals: ["initial reaction is stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["initial_reaction"],
+    surfacedReferences: [],
+  },
+  {
+    id: "data_q2_main_takeaway",
+    module: "Data Review",
+    objective: "Capture what the respondent takes away from the data.",
+    canonicalQuestion:
+      "What is the main takeaway you would want another clinician or stakeholder to understand from this data?",
+    sourceContextRequirement: null,
+    routeKeywords: [],
+    completionSignals: ["main takeaway is stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["main_takeaway"],
+    surfacedReferences: [],
+  },
+  {
+    id: "data_q3_clarity",
+    module: "Data Review",
+    objective: "Identify whether the data presentation is clear or confusing.",
+    canonicalQuestion:
+      "Is anything unclear, confusing, or missing from how this data is presented?",
+    sourceContextRequirement: null,
+    routeKeywords: [],
+    completionSignals: ["clarity reaction is stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["clarity_issues", "missing_context"],
+    surfacedReferences: [],
+  },
+  {
+    id: "data_q4_credibility",
+    module: "Data Review",
+    objective: "Understand what makes the data feel credible or limited.",
+    canonicalQuestion:
+      "What, if anything, makes this data feel credible, limited, or not yet actionable?",
+    sourceContextRequirement: null,
+    routeKeywords: [],
+    completionSignals: ["credibility or limitation reaction is stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["credibility_drivers", "limitations"],
+    surfacedReferences: [],
+  },
+  {
+    id: "data_q5_behavioral_impact",
+    module: "Data Review",
+    objective: "Assess whether the data would change thinking or behavior.",
+    canonicalQuestion:
+      "Would this data change how you think, decide, recommend, or communicate in practice? Why or why not?",
+    sourceContextRequirement: null,
+    routeKeywords: [],
+    completionSignals: ["behavioral impact is stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["behavioral_impact", "reason_for_impact"],
+    surfacedReferences: [],
+  },
+  {
+    id: "data_close",
+    module: "Close",
+    objective: "Close with strongest impression and remaining question.",
+    canonicalQuestion:
+      "To close, what is the strongest point from the data, the biggest remaining concern, and what question would you still want answered?",
+    sourceContextRequirement: null,
+    routeKeywords: [],
+    completionSignals: ["strongest point, concern, and remaining question are stated"],
+    adaptiveProbes: [],
+    analyzableOutputs: ["strongest_point", "biggest_concern", "remaining_question"],
+    close: true,
+    surfacedReferences: [],
+  },
+] satisfies MvpGuideQuestion[];

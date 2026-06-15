@@ -784,6 +784,40 @@ appropriate.
    - missing CustomGPT configuration names the new project variable
    - source turns cite the correct brand/project
 
+## Adding A Fixed Data Review Survey
+
+Use a fixed-flow survey when the research task is to walk a respondent through
+an ordered set of canned questions rather than dynamically choose between
+clinical topic lanes. The same browser shell, side panel, voice behavior, turn
+capture, and audit trail can still be reused.
+
+1. Create a dedicated guide file under `apps/api/src/lib/` whose array order is
+   the question order.
+2. Register the survey definition with `fixedFlow: true`.
+3. Do not require CustomGPT or controlled RAG for routine turns. A fixed-flow
+   survey should start as `active` even when source-provider credentials are
+   absent.
+4. Bypass adaptive answer-quality rejection unless a fixed-flow-specific
+   validation rule is intentionally added. Short answers such as "yes", "no",
+   "1", or "not sure" may be valid in data-review testing.
+5. Attach per-question side-panel materials through `surfacedReferences` on the
+   guide question. Each surfaced reference can include:
+   - `title`
+   - `url`
+   - `description`
+   - `assets` with direct chart/table/image/PDF URLs
+6. Keep question selection deterministic: after each participant answer, select
+   the next unasked guide question in order.
+7. Reorder questions by reordering the guide array, or later by moving this
+   fixed-flow guide into an admin-backed ordered question table.
+8. Add a public web route such as `/surveys/data/` and include it in the
+   Hostinger static-copy script.
+
+For this pattern, the side panel should be driven by the selected canned
+question, not by source retrieval. If a question has no attached asset, the side
+panel should stay closed. If a question has one or more attached assets, the UI
+should surface them automatically when that question appears.
+
 ### PADCEV MVP Setup
 
 The PADCEV MVP uses `/surveys/padcev/` and the `padcev` survey slug. Its guide
