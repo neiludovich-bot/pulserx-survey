@@ -149,9 +149,11 @@ function getReferenceLabel(
 
 function sourceAssetUrlLooksLikeImage(url: string) {
   try {
-    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(new URL(url).pathname);
+    return /\.(?:png|jpe?g|webp|gif|svg)(?:$|[?#])/i.test(
+      new URL(url).pathname,
+    );
   } catch {
-    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(url);
+    return /\.(?:png|jpe?g|webp|gif|svg)(?:$|[?#])/i.test(url);
   }
 }
 
@@ -223,10 +225,21 @@ function shouldAutoPreviewReference(input: SourcePanelReference, messageText: st
     "evidence",
     "pfs",
     "progression free",
+    "rpfs",
+    "radiographic progression",
+    "radiological progression",
     "overall survival",
     "os",
+    "metastasis free",
+    "metastasis-free",
+    "mfs",
     "orr",
     "response rate",
+    "aranote",
+    "arasens",
+    "aramis",
+    "nubeqa",
+    "darolutamide",
     "first line",
     "first-line",
     "combination therapy",
@@ -435,9 +448,9 @@ function scoreResolvedSourcePanelReference(
   if (
     sourceTextMatches(sourceText, [
       /\b(?:graph|chart|curve|kaplan|km curve|table|forest plot|swimmer plot)\b/,
-      /\b(?:pfs|progression free|overall survival|survival|os|orr|response rate)\b/,
+      /\b(?:pfs|rpfs|progression free|radiographic progression|radiological progression|overall survival|survival|os|mfs|metastasis free|metastasis-free|orr|response rate)\b/,
       /\b(?:hazard ratio|confidence interval|95 ci|hr)\b/,
-      /\b(?:efficacy|study|trial|data|endpoint|cohort|ev 302|keynote a39|ev 301|ev 201|sequoia|alpine|aspen)\b/,
+      /\b(?:efficacy|study|trial|data|endpoint|cohort|ev 302|keynote a39|ev 301|ev 201|sequoia|alpine|aspen|aranote|arasens|aramis|nubeqa|darolutamide)\b/,
     ])
   ) {
     score += 350;
@@ -466,9 +479,15 @@ function scoreResolvedSourcePanelReference(
   if (
     sourceTextIncludesAny(messageText, [
       "pfs",
+      "rpfs",
       "progression free",
+      "radiographic progression",
+      "radiological progression",
       "overall survival",
       "os",
+      "mfs",
+      "metastasis free",
+      "metastasis-free",
       "efficacy",
       "data",
       "study",
@@ -571,6 +590,10 @@ function completionFollowUpUrl(surveySlug: string) {
 
   if (surveySlug === "brukinsa") {
     return "https://brukinsahcp.com/contact-a-representative/";
+  }
+
+  if (surveySlug === "nubeqa") {
+    return "https://www.nubeqahcp.com/access-and-support/contact-a-bayer-representative";
   }
 
   return null;
@@ -1300,6 +1323,39 @@ const BRUKINSA_INTENT_OPTIONS: SurveyIntentOption[] = [
   },
 ];
 
+const NUBEQA_INTENT_OPTIONS: SurveyIntentOption[] = [
+  {
+    slug: "general-nubeqa-reaction",
+    label: "General NUBEQA Reaction",
+    description: "Balanced pass across mCSPC, nmCRPC, safety, dosing, and fit.",
+  },
+  {
+    slug: "mcspc-evidence",
+    label: "mCSPC Evidence",
+    description: "Focus on ARANOTE, ARASENS, ADT, docetaxel, and patient fit.",
+  },
+  {
+    slug: "nmcrpc-evidence",
+    label: "nmCRPC Evidence",
+    description: "Focus on ARAMIS, MFS, OS, PSADT, and appropriate patients.",
+  },
+  {
+    slug: "safety-dosing-practicality",
+    label: "Safety, Dosing & Practicality",
+    description: "Focus on dosing, safety cautions, DDI, and implementation.",
+  },
+  {
+    slug: "patient-selection-barriers",
+    label: "Patient Selection & Barriers",
+    description: "Focus on fit, cautions, barriers, and evidence needed.",
+  },
+  {
+    slug: "familiar-whats-new",
+    label: "Already Familiar: What's New",
+    description: "Skip the basics and focus on newer or underappreciated points.",
+  },
+];
+
 const DATA_INTENT_OPTIONS: SurveyIntentOption[] = [];
 
 export function MvpCustomGptSurveyModal({
@@ -1312,9 +1368,11 @@ export function MvpCustomGptSurveyModal({
       ? PADCEV_INTENT_OPTIONS
       : surveySlug === "data"
         ? DATA_INTENT_OPTIONS
-      : surveySlug === "brukinsa"
-        ? BRUKINSA_INTENT_OPTIONS
-        : [];
+        : surveySlug === "nubeqa"
+          ? NUBEQA_INTENT_OPTIONS
+          : surveySlug === "brukinsa"
+            ? BRUKINSA_INTENT_OPTIONS
+            : [];
   const [selectedIntentSlug, setSelectedIntentSlug] = useState<string | null>(
     null,
   );

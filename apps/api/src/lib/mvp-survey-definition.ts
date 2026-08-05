@@ -4,7 +4,7 @@ import {
 } from "@interview/schemas";
 import type { MvpGuideQuestion } from "./mvp-brukinsa-guide";
 
-export type MvpSurveySlug = "brukinsa" | "padcev" | "data";
+export type MvpSurveySlug = "brukinsa" | "padcev" | "data" | "nubeqa";
 
 export type MvpSurveyDefinition = {
   slug: MvpSurveySlug;

@@ -15,7 +15,7 @@ type WeightedTokenGroup = {
 type DisplayTopic = MvpDisplayTopic;
 
 export type ControlledRagSurveyTurnInput = {
-  surveySlug: "brukinsa" | "padcev";
+  surveySlug: "brukinsa" | "padcev" | "nubeqa";
   participantMessage: string;
   surveyContext: string;
   currentQuestion: string | null;
@@ -302,6 +302,89 @@ function displayTopicAssetScore(
     ])
   ) {
     score += 1200;
+  }
+
+  if (
+    topic === "nubeqa_mcspc_aranote" &&
+    textMatchesAny(text, [
+      /\b(?:aranote|mcspc|mhspc|adt)\b/,
+      /\b(?:rpfs|radiographic progression|radiological progression|progression free|progression-free|risk of progression)\b/,
+    ])
+  ) {
+    score += 1700;
+  }
+
+  if (
+    topic === "nubeqa_mcspc_arasens" &&
+    textMatchesAny(text, [
+      /\b(?:arasens|docetaxel|triplet|mcspc|mhspc)\b/,
+      /\b(?:overall survival|survival|\bos\b|risk of death|time to mcrpc|secondary endpoint)\b/,
+    ])
+  ) {
+    score += 1700;
+  }
+
+  if (
+    topic === "nubeqa_nmcrpc_aramis" &&
+    textMatchesAny(text, [
+      /\b(?:aramis|nmcrpc|non metastatic|non-metastatic)\b/,
+      /\b(?:metastasis free|metastasis-free|\bmfs\b|overall survival|\bos\b|psadt|time to pain)\b/,
+    ])
+  ) {
+    score += 1700;
+  }
+
+  if (
+    topic === "nubeqa_safety_dosing" &&
+    textMatchesAny(text, [
+      /\b(?:safety|adverse|reaction|reactions|dosing|dose|dose modification|twice daily|food|renal|hepatic|ddi|drug interaction|ischemic|seizure)\b/,
+    ])
+  ) {
+    score += 1500;
+  }
+
+  if (
+    topic === "nubeqa_guidelines_resources" &&
+    textMatchesAny(text, [
+      /\b(?:guideline|guidelines|nccn|aua|access|support|resources|practice|formulary|coverage|representative)\b/,
+    ])
+  ) {
+    score += 1500;
+  }
+
+  if (
+    topic === "nubeqa_patient_selection" &&
+    textMatchesAny(text, [
+      /\b(?:patient|profile|fit|appropriate|cautious|caution|eligible|older|frail|docetaxel|renal|hepatic|cardiac|nmcrpc|mcspc)\b/,
+    ])
+  ) {
+    score += 1100;
+  }
+
+  if (
+    topic?.startsWith("nubeqa_mcspc") ||
+    topic === "nubeqa_nmcrpc_aramis"
+  ) {
+    if (
+      textMatchesAny(text, [
+        /\b(?:adverse reactions|safety|dose modification|dosing|ddi|renal|hepatic|ischemic|seizure)\b/,
+      ])
+    ) {
+      score -= 300;
+    }
+  }
+
+  if (
+    topic === "nubeqa_safety_dosing" ||
+    topic === "nubeqa_guidelines_resources"
+  ) {
+    if (
+      textMatchesAny(text, [
+        /\b(?:overall survival|metastasis free|metastasis-free|\bmfs\b|\bos\b|\brpfs\b|risk of death|risk of progression)\b/,
+      ])
+    ) {
+      score -= 250;
+    }
   }
 
   if (

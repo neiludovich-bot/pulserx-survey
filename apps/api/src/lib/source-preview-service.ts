@@ -258,7 +258,7 @@ function imageLooksUseful(candidate: ImageCandidate) {
   const directHaystack = `${candidate.url} ${candidate.alt ?? ""}`.toLowerCase();
   const haystack = `${directHaystack} ${candidate.context}`.toLowerCase();
   const clinicalOrDocumentPattern =
-    /\b(?:sequoia|alpine|aspen|ev-302|ev 302|keynote-a39|keynote a39|ev-301|ev 301|ev-201|ev 201|pfs|progression-free|progression free|os|overall survival|orr|km curve|kaplan|curve|chart|graph|table|forest plot|hazard ratio|95% ci|cohort|study design|trial design|patient management guide|dosing and administration guide|dosing guide|administration guide|dose modification|dose modifications|peripheral neuropathy informational resource|informational resource|prescribing information|brochure|form|enrollment|specialty pharmacies|distributors)\b/;
+    /\b(?:sequoia|alpine|aspen|aranote|arasens|aramis|ev-302|ev 302|keynote-a39|keynote a39|ev-301|ev 301|ev-201|ev 201|pfs|progression-free|progression free|rpfs|radiographic progression|radiological progression|mfs|metastasis-free|metastasis free|os|overall survival|orr|km curve|kaplan|curve|chart|graph|table|forest plot|hazard ratio|95% ci|cohort|study design|trial design|guideline|guidelines|adverse reaction|adverse reactions|patient management guide|dosing and administration guide|dosing guide|administration guide|dose modification|dose modifications|peripheral neuropathy informational resource|informational resource|prescribing information|brochure|form|enrollment|specialty pharmacies|distributors)\b/;
   const marketingPattern =
     /\b(?:hero|lifestyle|brand|campaign|atmosphere|airplane|aircraft|plane|jet|flight|travel|runway|jumping|splash|water|boy|girl|family|street|building|portrait|person|people|caregiver)\b/;
   const directClinicalOrDocumentSignal =
@@ -286,10 +286,6 @@ function imageLooksUseful(candidate: ImageCandidate) {
       haystack,
     )
   ) {
-    return false;
-  }
-
-  if (/\.(?:svg)(?:[?#].*)?$/i.test(candidate.url)) {
     return false;
   }
 
@@ -324,11 +320,11 @@ function scoreImage(
     `${directHaystack} ${candidate.context} ${pageTitle ?? ""}`.toLowerCase();
   let score = candidate.score;
 
-  if (/\b(?:sequoia|alpine|aspen)\b/.test(haystack)) {
+  if (/\b(?:sequoia|alpine|aspen|aranote|arasens|aramis)\b/.test(haystack)) {
     score += 70;
   }
 
-  if (/\b(?:pfs|progression-free|progression free|km curve|kaplan|curve|chart|graph)\b/.test(haystack)) {
+  if (/\b(?:pfs|progression-free|progression free|rpfs|mfs|metastasis-free|metastasis free|radiographic progression|radiological progression|km curve|kaplan|curve|chart|graph)\b/.test(haystack)) {
     score += 55;
   }
 
@@ -336,15 +332,15 @@ function scoreImage(
     score += 35;
   }
 
-  if (/\b(?:1l|first line|cll|sll)\b/.test(haystack)) {
+  if (/\b(?:1l|first line|cll|sll|mcspc|mhspc|nmcrpc|adt|docetaxel)\b/.test(haystack)) {
     score += 25;
   }
 
-  if (/\b(?:guide|brochure|form|enrollment|specialty pharmacies|distributors|dose modification|dose modifications|peripheral neuropathy informational resource|informational resource|prescribing information)\b/.test(haystack)) {
+  if (/\b(?:guide|guideline|guidelines|brochure|form|enrollment|specialty pharmacies|distributors|dose modification|dose modifications|peripheral neuropathy informational resource|informational resource|prescribing information)\b/.test(haystack)) {
     score += 18;
   }
 
-  if (/\b(?:brukinsa|zanubrutinib)\b/.test(haystack)) {
+  if (/\b(?:brukinsa|zanubrutinib|nubeqa|darolutamide)\b/.test(haystack)) {
     score += 12;
   }
 
@@ -510,9 +506,9 @@ function urlLooksLikePdf(url: string) {
 
 function urlLooksLikeImage(url: string) {
   try {
-    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(new URL(url).pathname);
+    return /\.(?:png|jpe?g|webp|gif|svg)(?:$|[?#])/i.test(new URL(url).pathname);
   } catch {
-    return /\.(?:png|jpe?g|webp|gif)(?:$|[?#])/i.test(url);
+    return /\.(?:png|jpe?g|webp|gif|svg)(?:$|[?#])/i.test(url);
   }
 }
 
@@ -544,7 +540,7 @@ function scoreCuratedAsset(asset: CuratedSourceAsset) {
     score += 90;
   }
 
-  if (/\b(?:graph|chart|curve|kaplan|km|table|forest plot|pfs|overall survival|os|orr|hazard ratio|confidence interval|95% ci|ev-302|keynote|ev-301|ev-201|sequoia|alpine|aspen)\b/.test(haystack)) {
+  if (/\b(?:graph|chart|curve|kaplan|km|table|forest plot|pfs|rpfs|mfs|metastasis-free|metastasis free|overall survival|os|orr|hazard ratio|confidence interval|95% ci|ev-302|keynote|ev-301|ev-201|sequoia|alpine|aspen|aranote|arasens|aramis)\b/.test(haystack)) {
     score += 90;
   }
 

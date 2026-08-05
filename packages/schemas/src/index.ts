@@ -143,6 +143,12 @@ export const mvpDisplayTopicSchema = z.enum([
   "brukinsa_cll_sequoia",
   "brukinsa_cll_alpine",
   "brukinsa_safety_management",
+  "nubeqa_mcspc_aranote",
+  "nubeqa_mcspc_arasens",
+  "nubeqa_nmcrpc_aramis",
+  "nubeqa_safety_dosing",
+  "nubeqa_guidelines_resources",
+  "nubeqa_patient_selection",
   "unknown_in_domain",
 ]);
 
@@ -158,7 +164,7 @@ export const mvpTurnRouteCandidateSchema = z.object({
 });
 
 export const mvpTurnRouteAnalysisInputSchema = z.object({
-  surveySlug: z.enum(["brukinsa", "padcev", "data"]),
+  surveySlug: z.enum(["brukinsa", "padcev", "data", "nubeqa"]),
   sourceBrand: z.string().min(1),
   activeIntentSlug: z.string().min(1).nullable(),
   activeIntentLabel: z.string().min(1).nullable(),

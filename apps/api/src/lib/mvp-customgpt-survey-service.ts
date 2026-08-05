@@ -37,6 +37,8 @@ import {
   padcevSideEffectSourceDirective,
 } from "./mvp-padcev-interview-map";
 import { DATA_MVP_GUIDE } from "./mvp-data-guide";
+import { NUBEQA_HCP_MVP_GUIDE } from "./mvp-nubeqa-guide";
+import { NUBEQA_SURVEY_INTENTS } from "./mvp-nubeqa-intents";
 import { PADCEV_HCP_MVP_GUIDE } from "./mvp-padcev-guide";
 import {
   loadMvpSurveySessionSnapshot,
@@ -121,6 +123,15 @@ const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
     defaultProjectId: () =>
       env.CUSTOMGPT_PADCEV_PROJECT_ID ?? PADCEV_DEFAULT_PROJECT_ID,
   },
+  nubeqa: {
+    slug: "nubeqa",
+    defaultStudyName: "NUBEQA HCP MVP",
+    sourceBrand: "NUBEQA",
+    guide: NUBEQA_HCP_MVP_GUIDE,
+    intents: NUBEQA_SURVEY_INTENTS,
+    projectIdEnvName: "CUSTOMGPT_NUBEQA_PROJECT_ID",
+    defaultProjectId: () => env.CUSTOMGPT_NUBEQA_PROJECT_ID ?? null,
+  },
   data: {
     slug: "data",
     defaultStudyName: "Data Survey",
@@ -144,6 +155,10 @@ function surveyDefinitionForSlug(slug?: string): MvpSurveyDefinition {
 
   if (normalized === "data") {
     return SURVEY_DEFINITIONS.data;
+  }
+
+  if (normalized === "nubeqa") {
+    return SURVEY_DEFINITIONS.nubeqa;
   }
 
   return SURVEY_DEFINITIONS.brukinsa;

@@ -32,6 +32,11 @@ const staticRoutes = [
     targetParts: ["surveys", "data"],
   },
   {
+    label: "/surveys/nubeqa/",
+    sourceParts: ["surveys", "nubeqa.html"],
+    targetParts: ["surveys", "nubeqa"],
+  },
+  {
     label: "/admin/",
     sourceParts: ["admin.html"],
     targetParts: ["admin"],
@@ -60,6 +65,11 @@ const staticRoutes = [
     label: "/admin/surveys/brukinsa/",
     sourceParts: ["admin", "surveys", "brukinsa.html"],
     targetParts: ["admin", "surveys", "brukinsa"],
+  },
+  {
+    label: "/admin/surveys/nubeqa/",
+    sourceParts: ["admin", "surveys", "nubeqa.html"],
+    targetParts: ["admin", "surveys", "nubeqa"],
   },
   {
     label: "/research/import/",
@@ -136,6 +146,7 @@ fs.writeFileSync(
   <a href="/surveys/data/">Open Data Survey</a>
   <a href="/surveys/padcev/">Open PADCEV Survey</a>
   <a href="/surveys/brukinsa/">Open BRUKINSA Survey</a>
+  <a href="/surveys/nubeqa/">Open NUBEQA Survey</a>
 </main>`,
 );
 

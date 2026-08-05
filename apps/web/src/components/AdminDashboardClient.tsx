@@ -31,6 +31,14 @@ const SURVEY_CARDS = [
       "Adaptive BRUKINSA interview using the same reusable admin and source workflow.",
     liveHref: "/surveys/brukinsa/",
   },
+  {
+    slug: "nubeqa",
+    name: "NUBEQA HCP",
+    mode: "Adaptive clinical survey",
+    description:
+      "Adaptive NUBEQA interview across mCSPC, nmCRPC, evidence, safety, dosing, and fit.",
+    liveHref: "/surveys/nubeqa/",
+  },
 ];
 
 function findStudy(studies: StudySummary[], slug: string) {

@@ -3,7 +3,7 @@ import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-servi
 import { askCustomGptForSurveyInterviewerTurn } from "./customgpt-service";
 
 export type SourceAnswerProviderInput = {
-  surveySlug: "brukinsa" | "padcev";
+  surveySlug: "brukinsa" | "padcev" | "nubeqa";
   projectId?: string | null;
   conversationId?: string | null;
   participantMessage: string;

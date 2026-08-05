@@ -24,6 +24,11 @@ const IMPORT_PRESETS: Record<
     targetMinutes: 10,
     label: "BRUKINSA",
   },
+  nubeqa: {
+    name: "NUBEQA HCP Survey",
+    targetMinutes: 10,
+    label: "NUBEQA",
+  },
 };
 
 export function AdminImportClient() {

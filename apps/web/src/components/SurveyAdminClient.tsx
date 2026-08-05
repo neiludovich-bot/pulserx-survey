@@ -12,7 +12,7 @@ import { AdminGate } from "./AdminGate";
 import { StudyAssetForm } from "./StudyAssetForm";
 
 type Props = {
-  surveySlug: "data" | "padcev" | "brukinsa";
+  surveySlug: "data" | "padcev" | "brukinsa" | "nubeqa";
   surveyName: string;
   surveyMode: string;
   liveHref: string;

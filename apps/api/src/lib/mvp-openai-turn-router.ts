@@ -48,7 +48,7 @@ function normalizeText(value: string) {
 function contentLooksClinicallyMeaningful(value: string) {
   const normalized = normalizeText(value);
 
-  return /\b(?:adverse|benefit|candidate|caution|cautious|clinical|complete response|cr|data|dose|efficacy|eligible|ev 302|ev302|guideline|inclusion|exclusion|keynote|management|monitor|neuropathy|orr|patient|pfs|population|rash|resource|safety|side effect|study|toxicity|trial)\b/.test(
+  return /\b(?:adverse|aranote|aramis|arasens|benefit|candidate|caution|cautious|clinical|complete response|cr|darolutamide|data|dose|efficacy|eligible|ev 302|ev302|guideline|inclusion|exclusion|keynote|management|mcspc|mfs|monitor|neuropathy|nmcrpc|nubeqa|orr|patient|pfs|population|rash|resource|rpfs|safety|side effect|study|toxicity|trial)\b/.test(
     normalized,
   );
 }
