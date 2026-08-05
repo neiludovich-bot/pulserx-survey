@@ -133,6 +133,34 @@ describe("CustomGPT clarification service", () => {
     expect(JSON.stringify(messageBodies)).not.toContain("one or two sentences");
   });
 
+  it("does not fall back to the global project when a survey explicitly has no project", async () => {
+    process.env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+    process.env.CUSTOMGPT_PROJECT_ID = "321";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const { askCustomGptForSurveyInterviewerTurn } =
+      await import("./customgpt-service");
+    const result = await askCustomGptForSurveyInterviewerTurn({
+      projectId: null,
+      participantMessage: "What does the NUBEQA site say?",
+      surveyContext: "NUBEQA HCP interview",
+      currentQuestion: null,
+      selectedNextQuestion: "What stands out about NUBEQA?",
+      selectedQuestionSourceContext: null,
+      remainingSeconds: 600,
+      askedQuestions: [],
+    });
+
+    expect(result).toMatchObject({
+      enabled: false,
+      answer: null,
+      references: [],
+      reason: "CUSTOMGPT_PROJECT_ID is not configured for this study.",
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("keeps inline CustomGPT citation objects as respondent-visible references", async () => {
     process.env.CUSTOMGPT_API_KEY = "test-customgpt-key";
     process.env.CUSTOMGPT_PROJECT_ID = "654";

@@ -1256,7 +1256,7 @@ function MessageBubble({
 }
 
 type MvpCustomGptSurveyModalProps = {
-  surveySlug?: string;
+  surveySlug?: "brukinsa" | "padcev" | "data" | "nubeqa";
   studyName?: string;
   targetDurationSeconds?: number;
 };
@@ -1410,6 +1410,19 @@ export function MvpCustomGptSurveyModal({
     null,
   );
 
+  const assertSurveyResponseMatches = useCallback(
+    (nextSurvey: MvpCustomGptSurveyResponse) => {
+      if (nextSurvey.surveySlug !== surveySlug) {
+        throw new Error(
+          `Survey session mismatch: expected ${surveySlug}, received ${nextSurvey.surveySlug}. Please refresh and restart this survey.`,
+        );
+      }
+
+      return nextSurvey;
+    },
+    [surveySlug],
+  );
+
   const startFreshSurvey = useCallback(
     async (notice?: string) => {
       try {
@@ -1424,12 +1437,14 @@ export function MvpCustomGptSurveyModal({
         setIsSpeaking(false);
         setVoiceStatus(null);
         setVoiceStatusTone("neutral");
-        const nextSurvey = await startMvpCustomGptSurvey({
-          surveySlug,
-          surveyIntentSlug: selectedIntentSlug ?? undefined,
-          studyName,
-          targetDurationSeconds,
-        });
+        const nextSurvey = assertSurveyResponseMatches(
+          await startMvpCustomGptSurvey({
+            surveySlug,
+            surveyIntentSlug: selectedIntentSlug ?? undefined,
+            studyName,
+            targetDurationSeconds,
+          }),
+        );
         setSurvey(nextSurvey);
         if (notice) {
           setRecoveryNotice(notice);
@@ -1446,7 +1461,13 @@ export function MvpCustomGptSurveyModal({
         setIsStarting(false);
       }
     },
-    [selectedIntentSlug, studyName, surveySlug, targetDurationSeconds],
+    [
+      assertSurveyResponseMatches,
+      selectedIntentSlug,
+      studyName,
+      surveySlug,
+      targetDurationSeconds,
+    ],
   );
 
   const recoverExpiredSession = useCallback(
@@ -1476,17 +1497,22 @@ export function MvpCustomGptSurveyModal({
         speechAudioRef.current = null;
         setIsSpeaking(false);
 
-        let rebuiltSurvey = await startMvpCustomGptSurvey({
-          surveySlug,
-          surveyIntentSlug: selectedIntentSlug ?? undefined,
-          studyName,
-          targetDurationSeconds,
-        });
+        let rebuiltSurvey = assertSurveyResponseMatches(
+          await startMvpCustomGptSurvey({
+            surveySlug,
+            surveyIntentSlug: selectedIntentSlug ?? undefined,
+            studyName,
+            targetDurationSeconds,
+          }),
+        );
 
         for (const turnContent of replayTurns) {
-          rebuiltSurvey = await submitMvpCustomGptSurveyTurn(
-            rebuiltSurvey.sessionId,
-            turnContent,
+          rebuiltSurvey = assertSurveyResponseMatches(
+            await submitMvpCustomGptSurveyTurn(
+              rebuiltSurvey.sessionId,
+              turnContent,
+              surveySlug,
+            ),
           );
         }
 
@@ -1509,6 +1535,7 @@ export function MvpCustomGptSurveyModal({
       }
     },
     [
+      assertSurveyResponseMatches,
       selectedIntentSlug,
       startFreshSurvey,
       studyName,
@@ -1693,9 +1720,12 @@ export function MvpCustomGptSurveyModal({
         references: [],
       });
       const requestStartedAt = performance.now();
-      const nextSurvey = await submitMvpCustomGptSurveyTurn(
-        survey.sessionId,
-        content,
+      const nextSurvey = assertSurveyResponseMatches(
+        await submitMvpCustomGptSurveyTurn(
+          survey.sessionId,
+          content,
+          surveySlug,
+        ),
       );
       await preserveResponsePacing(requestStartedAt);
       setSurvey(nextSurvey);

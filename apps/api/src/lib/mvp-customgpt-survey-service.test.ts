@@ -151,6 +151,26 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.references.length).toBeGreaterThan(0);
   });
 
+  it("identifies the survey on responses and rejects cross-survey turn reuse", async () => {
+    env.MVP_SOURCE_PROVIDER = "controlled_rag";
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "nubeqa",
+      targetDurationSeconds: 600,
+    });
+
+    expect(started.surveySlug).toBe("nubeqa");
+    expect(started.sourceBrand).toBe("NUBEQA");
+
+    await expect(
+      submitMvpCustomGptSurveyTurn({
+        sessionId: started.sessionId,
+        surveySlug: "brukinsa",
+        content: "Yes",
+      }),
+    ).rejects.toThrow("Survey session mismatch");
+  });
+
   it("keeps the selected BRUKINSA safety intent inside safety-management questions", async () => {
     env.CUSTOMGPT_API_KEY = undefined;
     env.CUSTOMGPT_PROJECT_ID = undefined;

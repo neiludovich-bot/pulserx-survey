@@ -17,6 +17,7 @@ import type {
   MvpCustomGptSurveySpeechRequest,
   MvpCustomGptSurveySpeechResponse,
   MvpCustomGptSurveyStartRequest,
+  MvpCustomGptSurveyTurnRequest,
   MvpCustomGptSurveyVoiceTranscribeRequest,
   MvpCustomGptSurveyVoiceTranscribeResponse,
   MvpCustomGptSurveyVoiceTurnRequest,
@@ -489,10 +490,11 @@ export function startMvpCustomGptSurvey(
 export function submitMvpCustomGptSurveyTurn(
   sessionId: string,
   content: string,
+  surveySlug?: MvpCustomGptSurveyTurnRequest["surveySlug"],
 ) {
   return apiFetch<MvpCustomGptSurveyResponse>("/mvp/customgpt-survey/turn", {
     method: "POST",
-    body: JSON.stringify({ sessionId, content }),
+    body: JSON.stringify({ sessionId, surveySlug, content }),
   });
 }
 

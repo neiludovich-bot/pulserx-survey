@@ -1759,12 +1759,14 @@ export type MvpSurveyIntentDefinition = z.infer<
 
 export const mvpCustomGptSurveyTurnRequestSchema = z.object({
   sessionId: z.string().min(1),
+  surveySlug: z.enum(["brukinsa", "padcev", "data", "nubeqa"]).optional(),
   content: z.string().trim().min(1).max(4000),
 });
 
 export const mvpCustomGptSurveyVoiceTurnRequestSchema =
   submitRespondentVoiceAnswerSchema.extend({
     sessionId: z.string().min(1),
+    surveySlug: z.enum(["brukinsa", "padcev", "data", "nubeqa"]).optional(),
   });
 
 export const mvpCustomGptSurveyVoiceTranscribeRequestSchema =
@@ -1787,6 +1789,8 @@ export const mvpCustomGptSurveyMessageSchema = z.object({
 
 export const mvpCustomGptSurveyResponseSchema = z.object({
   sessionId: z.string().min(1),
+  surveySlug: z.enum(["brukinsa", "padcev", "data", "nubeqa"]),
+  sourceBrand: z.string().min(1),
   studyName: z.string().min(1),
   status: z.enum(["active", "completed", "needs_setup"]),
   projectId: z.string().min(1).nullable(),
