@@ -18,6 +18,7 @@ const EDITABLE_ENV_KEYS = [
   "OPENAI_MODEL_REALTIME",
   "OPENAI_MODEL_TRANSCRIPTION",
   "OPENAI_MODEL_TTS",
+  "OPENAI_TTS_SPEED",
 ] as const;
 
 function findWorkspaceRoot(startDir = process.cwd()) {
@@ -123,6 +124,9 @@ function buildEnvUpdates(input: UpdateLocalEnvironmentConfig) {
   setIfPresent("OPENAI_MODEL_REALTIME", input.openaiRealtimeModel);
   setIfPresent("OPENAI_MODEL_TRANSCRIPTION", input.openaiTranscriptionModel);
   setIfPresent("OPENAI_MODEL_TTS", input.openaiTtsModel);
+  if (input.openaiTtsSpeed !== undefined) {
+    updates.OPENAI_TTS_SPEED = String(input.openaiTtsSpeed);
+  }
 
   return updates;
 }
@@ -158,6 +162,7 @@ export function getLocalEnvironmentConfig() {
     openaiRealtimeModel: env.OPENAI_MODEL_REALTIME,
     openaiTranscriptionModel: env.OPENAI_MODEL_TRANSCRIPTION,
     openaiTtsModel: env.OPENAI_MODEL_TTS,
+    openaiTtsSpeed: env.OPENAI_TTS_SPEED,
   });
 }
 

@@ -67,6 +67,9 @@ export function LocalEnvironmentForm({
   const [openaiTtsModel, setOpenaiTtsModel] = useState(
     initialConfig.openaiTtsModel,
   );
+  const [openaiTtsSpeed, setOpenaiTtsSpeed] = useState(
+    String(initialConfig.openaiTtsSpeed),
+  );
   const [status, setStatus] = useState<string | null>(null);
   const [verification, setVerification] =
     useState<IntegrationVerificationResponse | null>(null);
@@ -123,6 +126,7 @@ export function LocalEnvironmentForm({
       openaiRealtimeModel,
       openaiTranscriptionModel,
       openaiTtsModel,
+      openaiTtsSpeed: Number(openaiTtsSpeed),
     };
 
     if (openaiApiKey.trim()) {
@@ -252,6 +256,19 @@ export function LocalEnvironmentForm({
             disabled={!config.enabled}
             onChange={(event) => setOpenaiTtsModel(event.target.value)}
             value={openaiTtsModel}
+          />
+        </label>
+
+        <label className="form-field">
+          <span>TTS Speed</span>
+          <input
+            disabled={!config.enabled}
+            max="4"
+            min="0.25"
+            onChange={(event) => setOpenaiTtsSpeed(event.target.value)}
+            step="0.05"
+            type="number"
+            value={openaiTtsSpeed}
           />
         </label>
       </div>
