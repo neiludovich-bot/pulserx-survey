@@ -292,4 +292,43 @@ describe("controlled RAG source provider", () => {
     expect(topic).toBe("nubeqa_mcspc_aranote");
     expect(ranked[0]?.title).toBe("ARANOTE rPFS chart");
   });
+
+  it("moves NUBEQA source order off the safety card for ARANOTE evidence asks", async () => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      surveySlug: "nubeqa",
+      participantMessage: "What does ARANOTE show for rPFS without docetaxel?",
+      surveyContext:
+        "The respondent has been discussing NUBEQA safety, dosing, and DDI.",
+      currentQuestion:
+        "What safety, drug-interaction, or dosing issue would most affect your comfort with NUBEQA in practice?",
+      selectedNextQuestion:
+        "What safety, drug-interaction, or dosing issue would most affect your comfort with NUBEQA in practice?",
+      selectedQuestionSourceContext:
+        "Retrieve NUBEQA safety, dosing, and DDI source context.",
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.references[0]?.title).toContain("ARANOTE");
+    expect(result.references[0]?.title).not.toContain(
+      "Safety, Dosing, and DDI",
+    );
+  });
+
+  it("keeps the NUBEQA safety card first for actual safety, dosing, or DDI asks", async () => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      surveySlug: "nubeqa",
+      participantMessage:
+        "What safety, drug-interaction, or dosing issue should I worry about?",
+      surveyContext: "The respondent is discussing NUBEQA clinical fit.",
+      currentQuestion:
+        "What, if anything, does the ARANOTE mCSPC evidence change about NUBEQA plus ADT without docetaxel?",
+      selectedNextQuestion:
+        "Which prostate cancer patient types seem like better fits for NUBEQA, and where would you be cautious?",
+      selectedQuestionSourceContext:
+        "Retrieve NUBEQA patient fit and evidence context.",
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.references[0]?.title).toContain("Safety, Dosing, and DDI");
+  });
 });
