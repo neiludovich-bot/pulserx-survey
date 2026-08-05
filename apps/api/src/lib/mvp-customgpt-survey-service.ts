@@ -2582,6 +2582,8 @@ function responseForSession(
 
   return mvpCustomGptSurveyResponseSchema.parse({
     sessionId: session.sessionId,
+    surveySlug: session.surveySlug,
+    sourceBrand: session.sourceBrand,
     studyName: session.studyName,
     status,
     projectId: session.projectId,
@@ -2690,6 +2692,11 @@ export async function submitMvpCustomGptSurveyTurn(
   const session = await getMvpSurveySession(input.sessionId);
   if (!session) {
     throw new Error("MVP survey session was not found.");
+  }
+  if (input.surveySlug && input.surveySlug !== session.surveySlug) {
+    throw new Error(
+      `Survey session mismatch: expected ${input.surveySlug}, found ${session.surveySlug}. Please restart this survey.`,
+    );
   }
 
   if (session.completedReason) {
@@ -3178,6 +3185,7 @@ export async function submitMvpCustomGptSurveyVoiceTurn(
   });
   const survey = await submitMvpCustomGptSurveyTurn({
     sessionId: input.sessionId,
+    surveySlug: input.surveySlug,
     content: transcript,
   });
   const updatedSession = await getMvpSurveySession(input.sessionId);

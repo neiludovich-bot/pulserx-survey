@@ -87,7 +87,11 @@ export type CustomGptSourceSummary = {
 };
 
 function getProjectId(inputProjectId?: string | null) {
-  return inputProjectId ?? env.CUSTOMGPT_PROJECT_ID ?? null;
+  if (inputProjectId !== undefined) {
+    return inputProjectId;
+  }
+
+  return env.CUSTOMGPT_PROJECT_ID ?? null;
 }
 
 function requireCustomGptConfig(projectId?: string | null) {
