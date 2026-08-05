@@ -73,6 +73,16 @@ const PADCEV_DEFAULT_PROJECT_ID = "97350";
 const MVP_AUDIT_DIR_NAME = "mvp-turn-audits";
 const TIMEBOX_WRAP_UP_THRESHOLD_SECONDS = 90;
 const TIMEBOX_GRACE_SECONDS = 300;
+const REQUIRED_INTAKE_QUESTION_IDS = new Set([
+  "intro_consent",
+  "role",
+  "practice_setting",
+  "disease_involvement",
+  "uc_involvement",
+  "primary_disease_focus",
+  "patient_volume",
+  "familiarity",
+]);
 
 type DiseaseArea = "cll" | "wm" | "mcl" | "mzl" | "fl";
 
@@ -1707,6 +1717,201 @@ function selectQuestionForKeyword(
   return bestQuestion;
 }
 
+type ResponsiveTopic =
+  | "efficacy"
+  | "safety"
+  | "safety_management"
+  | "resources"
+  | "implementation"
+  | "patient_caution"
+  | "dosing"
+  | null;
+
+function responsiveTopicForContent(
+  session: MvpSurveySession,
+  participantContent: string,
+): ResponsiveTopic {
+  const normalized = normalizeText(participantContent);
+
+  if (session.surveySlug !== "padcev") {
+    return null;
+  }
+
+  if (
+    /\b(resource|resources|guide|checklist|pdf|tool|tools|handout|patient education|counseling|symptom tracker|materials|download)\b/.test(
+      normalized,
+    )
+  ) {
+    return "resources";
+  }
+
+  if (
+    /\b(staff|nurse|nursing|triage|call ins|call in|unscheduled|workflow|workload|clinic load|operational|implementation|scheduling|coordination|access)\b/.test(
+      normalized,
+    )
+  ) {
+    return "implementation";
+  }
+
+  if (
+    /\b(patient|profile|cautious|caution|avoid|risk|baseline|preexisting|older|elderly|frail|diabetes|diabetic|comorbidity)\b/.test(
+      normalized,
+    ) &&
+    /\b(side effect|side effects|adverse|toxicity|neuropathy|rash|skin|hyperglycemia|ocular|pneumonitis|ild|monitoring|manage|management)\b/.test(
+      normalized,
+    )
+  ) {
+    return "patient_caution";
+  }
+
+  if (
+    /\b(manage|management|monitor|monitoring|intervene|intervention|hold|withhold|resume|reduce|reduction|interrupt|interruption|discontinue|discontinuation|neuropathy|numbness|tingling|rash|skin|hyperglycemia|pneumonitis|ild|ocular|extravasation)\b/.test(
+      normalized,
+    )
+  ) {
+    return "safety_management";
+  }
+
+  if (/\b(dosing|dose|administration|infusion|schedule)\b/.test(normalized)) {
+    return "dosing";
+  }
+
+  if (/\b(safety|tolerability|side effect|side effects|adverse|toxicity)\b/.test(normalized)) {
+    return "safety";
+  }
+
+  if (
+    /\b(ev 302|ev302|keynote a39|keynote|overall survival|progression free|pfs|os|orr|response rate|complete response|cr|efficacy|data show)\b/.test(
+      normalized,
+    )
+  ) {
+    return "efficacy";
+  }
+
+  return null;
+}
+
+function responsiveQuestionTopicScore(
+  question: MvpGuideQuestion,
+  topic: ResponsiveTopic,
+) {
+  if (!topic) {
+    return 0;
+  }
+
+  const scoreByTopic: Partial<Record<ResponsiveTopic, Record<string, number>>> = {
+    efficacy: {
+      ev302: 55,
+      monotherapy_evidence: 35,
+      indication_positioning: 12,
+      patient_fit: 8,
+    },
+    safety: {
+      safety: 50,
+      safety_management_workflow: 35,
+      safety_patient_caution: 22,
+      safety_resources: 18,
+      support_barriers: 12,
+    },
+    safety_management: {
+      safety_management_workflow: 55,
+      safety_resources: 30,
+      safety_patient_caution: 24,
+      support_barriers: 18,
+      safety: 10,
+    },
+    resources: {
+      safety_resources: 55,
+      support_barriers: 28,
+      safety_management_workflow: 22,
+      dosing_admin: 10,
+    },
+    implementation: {
+      support_barriers: 55,
+      safety_resources: 32,
+      safety_management_workflow: 18,
+      dosing_admin: 16,
+      safety_patient_caution: 10,
+    },
+    patient_caution: {
+      safety_patient_caution: 55,
+      safety_management_workflow: 22,
+      safety_resources: 12,
+      patient_fit: 8,
+    },
+    dosing: {
+      dosing_admin: 50,
+      safety_management_workflow: 28,
+      safety_resources: 18,
+    },
+  };
+
+  return scoreByTopic[topic]?.[question.id] ?? 0;
+}
+
+function selectResponsiveQuestionForContent(
+  session: MvpSurveySession,
+  participantContent: string,
+) {
+  const topic = responsiveTopicForContent(session, participantContent);
+  const normalized = normalizeText(participantContent);
+  let bestQuestion: MvpGuideQuestion | null = null;
+  let bestScore = 0;
+
+  if (!topic) {
+    return null;
+  }
+
+  for (const question of allQuestions(session)) {
+    if (
+      question.close ||
+      questionWasAsked(session, question) ||
+      REQUIRED_INTAKE_QUESTION_IDS.has(question.id) ||
+      !questionAllowedByDiseaseLane(session, question, participantContent) ||
+      !intentAllowsQuestion(session.surveyIntent, question)
+    ) {
+      continue;
+    }
+
+    const matchingKeywords = question.routeKeywords.filter((keyword) =>
+      normalizedPhraseIncludes(normalized, keyword),
+    );
+    let score =
+      responsiveQuestionTopicScore(question, topic) +
+      matchingKeywords.length * 8;
+
+    if (question.sourceContextRequirement) {
+      score += 3;
+    }
+
+    if (
+      session.surveySlug === "padcev" &&
+      topic !== "efficacy" &&
+      ["ev302", "monotherapy_evidence", "indication_positioning", "overall"].includes(
+        question.id,
+      )
+    ) {
+      score -= 40;
+    }
+
+    if (
+      session.surveySlug === "padcev" &&
+      topic !== "patient_caution" &&
+      topic !== "efficacy" &&
+      question.id === "patient_fit"
+    ) {
+      score -= 35;
+    }
+
+    if (score > bestScore) {
+      bestQuestion = question;
+      bestScore = score;
+    }
+  }
+
+  return bestScore >= 24 ? bestQuestion : null;
+}
+
 function selectNextQuestion(
   session: MvpSurveySession,
   participantContent: string,
@@ -1752,6 +1957,14 @@ function selectNextQuestion(
     }
   }
 
+  const responsiveQuestion = selectResponsiveQuestionForContent(
+    session,
+    participantContent,
+  );
+  if (responsiveQuestion) {
+    return responsiveQuestion;
+  }
+
   const queuedQuestion = dequeueNextQuestion(session, participantContent);
   if (queuedQuestion) {
     return queuedQuestion;
@@ -1793,20 +2006,9 @@ function selectNextQuestion(
     }
   }
 
-  const requiredIntakeQuestionIds = new Set([
-    "intro_consent",
-    "role",
-    "practice_setting",
-    "disease_involvement",
-    "uc_involvement",
-    "primary_disease_focus",
-    "patient_volume",
-    "familiarity",
-  ]);
-
   if (
     current &&
-    requiredIntakeQuestionIds.has(current.id) &&
+    REQUIRED_INTAKE_QUESTION_IDS.has(current.id) &&
     !contentLooksLikeReactiveQuestion(participantContent)
   ) {
     return forwardUnasked[0] ?? unasked[0] ?? null;

@@ -1709,6 +1709,51 @@ describe("MVP CustomGPT survey service", () => {
     expect(safetyTurn.currentQuestion).not.toContain("To close");
   });
 
+  it("uses the latest PADCEV concern to choose a responsive next question", async () => {
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_PROJECT_ID = undefined;
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "padcev",
+      surveyIntentSlug: "general-padcev-reaction",
+      targetDurationSeconds: 600,
+    });
+
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Yes",
+    });
+    await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "Not very familiar.",
+    });
+    const safetyTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "The efficacy sounds reasonable, but I am concerned about peripheral neuropathy making patients want to stop treatment.",
+    });
+
+    expect(safetyTurn.currentQuestion).toContain(
+      "hardest management decision",
+    );
+    expect(safetyTurn.currentQuestion).not.toContain(
+      "locally advanced or metastatic urothelial cancer patient types seem like better fits",
+    );
+
+    const resourceTurn = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content:
+        "What would help is a checklist or guide the nurses can use for call-ins and triage.",
+    });
+
+    expect(resourceTurn.currentQuestion).toContain(
+      "resource would actually change the workflow",
+    );
+    expect(resourceTurn.currentQuestion).not.toContain(
+      "overall perception of PADCEV",
+    );
+  });
+
   it("allows engaged source questions during the timebox grace window", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));

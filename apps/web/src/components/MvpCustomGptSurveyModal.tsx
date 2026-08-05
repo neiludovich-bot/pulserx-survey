@@ -318,6 +318,129 @@ async function resolveVisualSourcePanelReference(
   }
 }
 
+function scoreResolvedSourcePanelReference(
+  input: SourcePanelReference,
+  messageText: string,
+) {
+  const preview = input.preview;
+  const referenceText = referenceSearchText(input.reference, input.index);
+  const sourceText = [
+    referenceText,
+    preview?.title,
+    preview?.sourceUrl,
+    ...(preview?.images ?? []).flatMap((image) => [
+      image.alt,
+      image.url,
+      image.source,
+    ]),
+    ...(preview?.documents ?? []).flatMap((document) => [
+      document.title,
+      document.description,
+      document.url,
+    ]),
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" ");
+  const turnText = `${messageText} ${sourceText}`;
+  let score = Math.max(0, 100 - input.index);
+
+  if ((preview?.images.length ?? 0) > 0) {
+    score += 600;
+  }
+
+  if (
+    sourceTextMatches(sourceText, [
+      /\b(?:graph|chart|curve|kaplan|km curve|table|forest plot|swimmer plot)\b/,
+      /\b(?:pfs|rpfs|progression free|radiographic progression|radiological progression|overall survival|survival|os|mfs|metastasis free|metastasis-free|orr|response rate)\b/,
+      /\b(?:hazard ratio|confidence interval|95 ci|hr)\b/,
+      /\b(?:efficacy|study|trial|data|endpoint|cohort|ev 302|keynote a39|ev 301|ev 201|sequoia|alpine|aspen|aranote|arasens|aramis|nubeqa|darolutamide)\b/,
+    ])
+  ) {
+    score += 350;
+  }
+
+  if (
+    sourceTextMatches(sourceText, [
+      /\b(?:dosing and administration guide|dose modification|monitoring checklist|adverse reaction management|peripheral neuropathy informational resource|patient management guide)\b/,
+    ])
+  ) {
+    score += 120;
+  }
+
+  if ((preview?.documents.length ?? 0) > 0) {
+    score += 50;
+  }
+
+  if (
+    sourceTextMatches(sourceText, [
+      /\b(?:hero|lifestyle|brand campaign|airplane|aircraft|plane|jet|flight|travel|jumping|splash|product shot|pill|tablet|capsule|stays on|stays off|up to 100)\b/,
+    ])
+  ) {
+    score -= 250;
+  }
+
+  if (
+    sourceTextIncludesAny(messageText, [
+      "pfs",
+      "rpfs",
+      "progression free",
+      "radiographic progression",
+      "radiological progression",
+      "overall survival",
+      "os",
+      "mfs",
+      "metastasis free",
+      "metastasis-free",
+      "efficacy",
+      "data",
+      "study",
+      "trial",
+      "graph",
+      "chart",
+      "table",
+    ]) &&
+    (preview?.images.length ?? 0) === 0
+  ) {
+    score -= 350;
+  }
+
+  if (
+    sourceTextIncludesAny(messageText, [
+      "safety",
+      "adverse",
+      "side effect",
+      "guide",
+      "checklist",
+      "resource",
+    ]) &&
+    sourceTextMatches(turnText, [
+      /\b(?:dosing and administration guide|dose modification|monitoring checklist|adverse reaction management|peripheral neuropathy informational resource|patient management guide)\b/,
+    ])
+  ) {
+    score += 80;
+  }
+
+  return score;
+}
+
+function chooseBestResolvedSourcePanelReference(
+  references: SourcePanelReference[],
+  messageText: string,
+) {
+  const imageReferences = references.filter(
+    (reference) => (reference.preview?.images.length ?? 0) > 0,
+  );
+  const candidateReferences = imageReferences.length ? imageReferences : references;
+
+  return [...candidateReferences].sort((left, right) => {
+    const scoreDelta =
+      scoreResolvedSourcePanelReference(right, messageText) -
+      scoreResolvedSourcePanelReference(left, messageText);
+
+    return scoreDelta || left.index - right.index;
+  })[0] ?? null;
+}
+
 function openSourceUrlInNewTab(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
@@ -1084,7 +1207,6 @@ export function MvpCustomGptSurveyModal({
     string | null
   >(null);
   const didStart = useRef(false);
-  const autoSourceLookupMessageIdRef = useRef<string | null>(null);
   const threadRef = useRef<HTMLDivElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const speechAudioRef = useRef<HTMLAudioElement | null>(null);
@@ -1150,16 +1272,27 @@ export function MvpCustomGptSurveyModal({
 
     if (
       !latestInterviewerMessage ||
-      latestInterviewerMessage.id === sourcePanel?.messageId ||
-      latestInterviewerMessage.id === closedSourceMessageId ||
-      latestInterviewerMessage.id === autoSourceLookupMessageIdRef.current
+      !latestInterviewerMessage.references.some((reference) =>
+        Boolean(reference.url),
+      )
     ) {
+      setSourcePanel(null);
       return;
     }
 
-    const latestMessageId = latestInterviewerMessage.id;
-    const latestMessageContent = latestInterviewerMessage.content;
-    const sourceReferences = latestInterviewerMessage.references
+    const sourcePanelMessage = latestInterviewerMessage;
+
+    if (sourcePanelMessage.id === closedSourceMessageId) {
+      return;
+    }
+
+    const latestMessageId = sourcePanelMessage.id;
+    if (closedSourceMessageId && closedSourceMessageId !== latestMessageId) {
+      setClosedSourceMessageId(null);
+    }
+
+    const latestMessageContent = sourcePanelMessage.content;
+    const sourceReferences = sourcePanelMessage.references
       .map((reference, index) => ({
         messageId: latestMessageId,
         index: index + 1,
@@ -1173,16 +1306,11 @@ export function MvpCustomGptSurveyModal({
       );
 
     if (sourceReferences.length === 0) {
-      setSourcePanel((currentPanel) =>
-        currentPanel?.messageId === latestMessageId
-          ? currentPanel
-          : null,
-      );
+      setSourcePanel(null);
       return;
     }
 
     let isCancelled = false;
-    autoSourceLookupMessageIdRef.current = latestInterviewerMessage.id;
 
     async function openFirstVisualReference() {
       const visualReferences = await Promise.all(
@@ -1197,21 +1325,12 @@ export function MvpCustomGptSurveyModal({
       const resolvedReferences = visualReferences.filter(
         (reference): reference is SourcePanelReference => Boolean(reference),
       );
-      const visualReference =
-        resolvedReferences.find(
-          (reference) => (reference.preview?.images.length ?? 0) > 0,
-        ) ?? resolvedReferences[0];
-
-      if (visualReference) {
-        setSourcePanel(visualReference);
-        return;
-      }
-
-      setSourcePanel((currentPanel) =>
-        currentPanel?.messageId === latestMessageId
-          ? currentPanel
-          : null,
+      const visualReference = chooseBestResolvedSourcePanelReference(
+        resolvedReferences,
+        latestMessageContent,
       );
+
+      setSourcePanel(visualReference);
     }
 
     void openFirstVisualReference();
@@ -1221,7 +1340,6 @@ export function MvpCustomGptSurveyModal({
     };
   }, [
     closedSourceMessageId,
-    sourcePanel?.messageId,
     survey?.messages,
   ]);
 
