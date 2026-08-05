@@ -22,7 +22,7 @@ const MAX_TTS_INPUT_LENGTH = 4096;
 const TRANSCRIPTION_PROMPT =
   "Transcribe this as English-language healthcare professional market research speech. The respondent may mention CLL, SLL, WM, MCL, MZL, FL, BRUKINSA, zanubrutinib, SEQUOIA, ALPINE, BTK inhibitors, oncology, hematology, practice setting, patient volume, evidence, safety, dosing, and access. Do not translate. Do not output non-English text. If speech is unclear or mostly silence, return an empty transcript.";
 const TTS_INSTRUCTIONS =
-  "Speak like a warm, natural medical market research interviewer. Conversational, lightly engaged, with varied intonation. Sound professional but human, not robotic or announcer-like. Use natural pauses and a brisk but unhurried pace.";
+  "Speak like a warm, natural medical market research interviewer. Conversational, lightly engaged, with varied intonation. Sound professional but human, not robotic or announcer-like. Keep a brisk, clear pace with short natural pauses.";
 
 const transcriptionResponseSchema = z
   .object({
@@ -406,6 +406,7 @@ export async function synthesizeSpeech(text: string, voice: VoiceAnswerVoice) {
       voice,
       instructions: TTS_INSTRUCTIONS,
       response_format: "mp3",
+      speed: env.OPENAI_TTS_SPEED,
     }),
   });
 

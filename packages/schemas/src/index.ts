@@ -272,6 +272,7 @@ export const localEnvironmentConfigResponseSchema = z.object({
   openaiRealtimeModel: z.string().min(1),
   openaiTranscriptionModel: z.string().min(1),
   openaiTtsModel: z.string().min(1),
+  openaiTtsSpeed: z.number().min(0.25).max(4),
 });
 
 export const updateLocalEnvironmentConfigSchema = z.object({
@@ -282,6 +283,7 @@ export const updateLocalEnvironmentConfigSchema = z.object({
   openaiRealtimeModel: z.string().trim().min(1).optional(),
   openaiTranscriptionModel: z.string().trim().min(1).optional(),
   openaiTtsModel: z.string().trim().min(1).optional(),
+  openaiTtsSpeed: z.coerce.number().min(0.25).max(4).optional(),
 });
 
 export const studyAssetTypeSchema = z.enum([

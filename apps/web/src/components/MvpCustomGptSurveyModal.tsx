@@ -21,8 +21,9 @@ function formatSeconds(seconds: number) {
   return `${minutes}:${String(remainder).padStart(2, "0")}`;
 }
 
-const MIN_RESPONSE_PACING_MS = 750;
+const MIN_RESPONSE_PACING_MS = 200;
 const MVP_INTERVIEWER_VOICE = "nova";
+const INTERVIEWER_AUDIO_PLAYBACK_RATE = 1.24;
 
 function wait(milliseconds: number) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -1389,7 +1390,7 @@ export function MvpCustomGptSurveyModal({
       const audio = new Audio(
         audioDataUrl(response.audio.mimeType, response.audio.base64),
       );
-      audio.playbackRate = 1.15;
+      audio.playbackRate = INTERVIEWER_AUDIO_PLAYBACK_RATE;
       speechAudioRef.current = audio;
       audio.onended = () => {
         setIsSpeaking(false);
@@ -1498,7 +1499,7 @@ export function MvpCustomGptSurveyModal({
               onClick={handleReadLatestInterviewer}
               type="button"
             >
-              {isSpeaking ? "Stop" : "Read"}
+              {isSpeaking ? "Stop" : "Speak"}
             </button>
             <span className="mvp-timer">
               {survey ? formatSeconds(survey.remainingSeconds) : "10:00"}
