@@ -215,6 +215,115 @@ function displayTopicForTurn(
   }).topic;
 }
 
+function scoreNubeqaTopicText(text: string, topic: DisplayTopic) {
+  if (!topic?.startsWith("nubeqa_")) {
+    return 0;
+  }
+
+  const safetyProfile = textMatchesAny(text, [
+    /\bnubeqa safety dosing and ddi profile\b/,
+    /\bsafety dosing and ddi\b/,
+  ]);
+  const aranoteSource = textMatchesAny(text, [
+    /\bnubeqa mcspc efficacy aranote\b/,
+    /\baranote\b.*\b(?:rpfs|radiographic progression|radiological progression|progression free|progression-free|study design|endpoint|treatment duration|efficacy)\b/,
+    /\b(?:rpfs|radiographic progression|radiological progression|progression free|progression-free|study design|endpoint|treatment duration|efficacy)\b.*\baranote\b/,
+  ]);
+  const arasensSource = textMatchesAny(text, [
+    /\bnubeqa mcspc efficacy arasens\b/,
+    /\barasens\b.*\b(?:overall survival|survival|\bos\b|time to mcrpc|risk of death|docetaxel|triplet|secondary endpoint|study design|efficacy)\b/,
+    /\b(?:overall survival|survival|\bos\b|time to mcrpc|risk of death|docetaxel|triplet|secondary endpoint|study design|efficacy)\b.*\barasens\b/,
+  ]);
+  const aramisSource = textMatchesAny(text, [
+    /\bnubeqa nmcrpc efficacy aramis\b/,
+    /\baramis\b.*\b(?:metastasis free|metastasis-free|\bmfs\b|overall survival|\bos\b|nmcrpc|non metastatic|non-metastatic|psadt|study design|efficacy)\b/,
+    /\b(?:metastasis free|metastasis-free|\bmfs\b|overall survival|\bos\b|nmcrpc|non metastatic|non-metastatic|psadt|study design|efficacy)\b.*\baramis\b/,
+  ]);
+  const safetySource = textMatchesAny(text, [
+    /\b(?:safety|adverse|reaction|reactions|toxicity|tolerability|dosing|dose|dose modification|twice daily|food|renal|hepatic|ddi|drug interaction|ischemic|seizure)\b/,
+  ]);
+  const guidelineSource = textMatchesAny(text, [
+    /\b(?:guideline|guidelines|nccn|aua|access|support|resources|practice|formulary|coverage|representative)\b/,
+  ]);
+  const patientFitSource = textMatchesAny(text, [
+    /\b(?:patient|profile|fit|appropriate|candidate|eligible|cautious|caution|older|frail|comorbidity|docetaxel fit|mspc|mcspc|mhspc|nmcrpc)\b/,
+  ]);
+  const studySource = aranoteSource || arasensSource || aramisSource;
+  let score = 0;
+
+  if (topic === "nubeqa_mcspc_aranote") {
+    if (aranoteSource) {
+      score += 2600;
+    }
+    if (safetySource && !aranoteSource) {
+      score -= safetyProfile ? 2600 : 1600;
+    }
+    if (arasensSource || aramisSource) {
+      score -= 1100;
+    }
+  }
+
+  if (topic === "nubeqa_mcspc_arasens") {
+    if (arasensSource) {
+      score += 2600;
+    }
+    if (safetySource && !arasensSource) {
+      score -= safetyProfile ? 2600 : 1600;
+    }
+    if (aranoteSource || aramisSource) {
+      score -= 1100;
+    }
+  }
+
+  if (topic === "nubeqa_nmcrpc_aramis") {
+    if (aramisSource) {
+      score += 2600;
+    }
+    if (safetySource && !aramisSource) {
+      score -= safetyProfile ? 2600 : 1600;
+    }
+    if (aranoteSource || arasensSource) {
+      score -= 1100;
+    }
+  }
+
+  if (topic === "nubeqa_safety_dosing") {
+    if (safetySource) {
+      score += safetyProfile ? 2600 : 1900;
+    }
+    if (studySource && !safetySource) {
+      score -= 1100;
+    }
+  }
+
+  if (topic === "nubeqa_guidelines_resources") {
+    if (guidelineSource) {
+      score += 2100;
+    }
+    if (safetyProfile && !guidelineSource) {
+      score -= 900;
+    }
+  }
+
+  if (topic === "nubeqa_patient_selection") {
+    if (patientFitSource) {
+      score += 1100;
+    }
+    if (studySource) {
+      score += 650;
+    }
+    if (safetyProfile && !patientFitSource) {
+      score -= 500;
+    }
+  }
+
+  return score;
+}
+
+function displayTopicChunkScore(chunk: ControlledRagChunk, topic: DisplayTopic) {
+  return scoreNubeqaTopicText(chunkHaystack(chunk), topic);
+}
+
 function displayTopicAssetScore(
   asset: ControlledRagAsset,
   topic: DisplayTopic,
@@ -400,6 +509,8 @@ function displayTopicAssetScore(
       score -= 250;
     }
   }
+
+  score += scoreNubeqaTopicText(text, topic);
 
   if (padcevEfficacyTopic && padcevSafetyAsset && !padcevEfficacyAsset) {
     score -= 1100;
@@ -599,6 +710,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
 
 async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
   const queryTokenGroups = retrievalTokenGroups(input);
+  const displayTopic = displayTopicForTurn(input);
   const activeDatabaseChunks = await databaseChunks(input);
   const candidateChunks = [
     ...activeDatabaseChunks,
@@ -610,7 +722,9 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
   return candidateChunks
     .map((chunk) => ({
       chunk,
-      score: scoreChunk(chunk, queryTokenGroups),
+      score:
+        scoreChunk(chunk, queryTokenGroups) +
+        displayTopicChunkScore(chunk, displayTopic),
     }))
     .filter((match) => match.score > 0)
     .sort((left, right) => right.score - left.score)
