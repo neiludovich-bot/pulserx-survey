@@ -23,6 +23,12 @@ export type MvpDisplayTopic =
   | "brukinsa_cll_sequoia"
   | "brukinsa_cll_alpine"
   | "brukinsa_safety_management"
+  | "nubeqa_mcspc_aranote"
+  | "nubeqa_mcspc_arasens"
+  | "nubeqa_nmcrpc_aramis"
+  | "nubeqa_safety_dosing"
+  | "nubeqa_guidelines_resources"
+  | "nubeqa_patient_selection"
   | "unknown_in_domain"
   | null;
 
@@ -163,6 +169,70 @@ function brukinsaDisplayTopic(normalized: string): MvpDisplayTopic {
   return null;
 }
 
+function nubeqaDisplayTopic(normalized: string): MvpDisplayTopic {
+  if (
+    anyMatch(normalized, [
+      /\b(?:safety|tolerability|adverse|side effect|side effects|dose|dosing|twice daily|food|drug interaction|ddi|cyp|bcrp|oatp|renal|hepatic|ischemic|seizure|cardiac)\b/,
+    ])
+  ) {
+    return "nubeqa_safety_dosing";
+  }
+
+  if (
+    anyMatch(normalized, [
+      /\b(?:guideline|guidelines|nccn|aua|access|support|resource|resources|coverage|formulary|representative|bayer)\b/,
+    ])
+  ) {
+    return "nubeqa_guidelines_resources";
+  }
+
+  if (
+    anyMatch(normalized, [
+      /\b(?:aranote|without docetaxel|adt alone|rpfs|radiographic progression|radiological progression)\b/,
+      /\b(?:mcspc|mhspc|metastatic castration sensitive|metastatic hormone sensitive).*(?:efficacy|evidence|progression|survival|data|study)\b/,
+      /\b(?:efficacy|evidence|progression|survival|data|study).*(?:mcspc|mhspc|metastatic castration sensitive|metastatic hormone sensitive)\b/,
+    ]) &&
+    !anyMatch(normalized, [/\b(?:arasens|triplet)\b/])
+  ) {
+    return "nubeqa_mcspc_aranote";
+  }
+
+  if (
+    anyMatch(normalized, [
+      /\b(?:arasens|docetaxel|triplet|time to mcrpc)\b/,
+      /\b(?:overall survival|survival|\bos\b|risk of death)\b/,
+    ])
+  ) {
+    return "nubeqa_mcspc_arasens";
+  }
+
+  if (
+    anyMatch(normalized, [
+      /\b(?:aramis|nmcrpc|non metastatic|non-metastatic|metastasis free|metastasis-free|\bmfs\b|psadt)\b/,
+    ])
+  ) {
+    return "nubeqa_nmcrpc_aramis";
+  }
+
+  if (
+    anyMatch(normalized, [
+      /\b(?:patient fit|patient population|patient populations|patient type|patient types|appropriate patient|candidate|eligible|inclusion|exclusion|cautious|caution|avoid|older|frail|comorbidity)\b/,
+    ])
+  ) {
+    return "nubeqa_patient_selection";
+  }
+
+  if (
+    anyMatch(normalized, [
+      /\b(?:nubeqa|darolutamide|prostate|mcspc|mhspc|nmcrpc|adt)\b/,
+    ])
+  ) {
+    return "nubeqa_patient_selection";
+  }
+
+  return null;
+}
+
 function genericPadcevDirective(topic: MvpDisplayTopic) {
   if (topic === "padcev_ev302_response" || topic === "padcev_ev302_survival") {
     return "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data. Treat this as a source-answer excursion if the active interview lane is not efficacy. Answer the specific endpoint or trial-design detail they raised using source-supported facts only, including comparator, population, follow-up, OS, PFS, ORR, CR/PR, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. Then return to the selected survey question.";
@@ -195,6 +265,34 @@ function genericBrukinsaDirective(topic: MvpDisplayTopic) {
   }
 
   return "The participant asked an in-domain BRUKINSA source question that does not match a predefined route. Answer only the specific question using approved BRUKINSA HCP source material, cite sources, avoid patient-specific treatment advice, and then return to the selected survey question.";
+}
+
+function genericNubeqaDirective(topic: MvpDisplayTopic) {
+  if (topic === "nubeqa_mcspc_aranote") {
+    return "The participant asked about NUBEQA ARANOTE, mCSPC without docetaxel, ADT-only backbone, rPFS, or radiographic progression. Answer using NUBEQA HCP source material only, including population, comparator, endpoint, concrete results, and caveats where source-supported. Cite the source most likely to expose ARANOTE rPFS and study-design visuals. Then return to the selected survey question.";
+  }
+
+  if (topic === "nubeqa_mcspc_arasens") {
+    return "The participant asked about NUBEQA ARASENS, docetaxel-containing mCSPC treatment, overall survival, time to mCRPC, or triplet therapy. Answer using NUBEQA HCP source material only, including population, comparator, endpoint, concrete results, and caveats where source-supported. Cite the source most likely to expose ARASENS OS, secondary endpoint, or study-design visuals. Then return to the selected survey question.";
+  }
+
+  if (topic === "nubeqa_nmcrpc_aramis") {
+    return "The participant asked about NUBEQA ARAMIS or nmCRPC evidence. Answer using NUBEQA HCP source material only, including MFS, OS, patient subgroup context, and caveats where source-supported. Cite the source most likely to expose ARAMIS MFS and OS visuals. Then return to the selected survey question.";
+  }
+
+  if (topic === "nubeqa_safety_dosing") {
+    return "The participant asked about NUBEQA safety, tolerability, dosing, renal/hepatic modification, DDI, ischemic heart disease, seizure warning, or operational medication management. Answer the specific angle using NUBEQA HCP source material without providing a full label-style inventory. Then return to the selected survey question.";
+  }
+
+  if (topic === "nubeqa_guidelines_resources") {
+    return "The participant asked about NUBEQA guidelines, access, support, resources, coverage, or practice implementation. Answer using NUBEQA HCP source material, cite guideline or resource pages when relevant, and then return to the selected survey question.";
+  }
+
+  if (topic === "nubeqa_patient_selection") {
+    return "The participant asked about NUBEQA patient fit, caution segments, or appropriate populations. Answer with source-supported disease-state, docetaxel-fit, safety/DDI, dosing, and guideline context only; avoid patient-specific treatment advice. Then return to the selected survey question.";
+  }
+
+  return "The participant asked an in-domain NUBEQA source question that does not match a predefined route. Answer only the specific question using approved NUBEQA HCP source material, cite sources, avoid patient-specific treatment advice, and then return to the selected survey question.";
 }
 
 export function classifyMvpTurnRoute(input: RouteInput): MvpTurnRouteDecision {
@@ -296,6 +394,37 @@ export function classifyMvpTurnRoute(input: RouteInput): MvpTurnRouteDecision {
         rationale:
           "Participant asked a source-like question that did not match a predefined BRUKINSA route.",
         sourceDirective: null,
+      };
+    }
+  }
+
+  if (input.surveySlug === "nubeqa") {
+    const participantTopic = nubeqaDisplayTopic(participantText);
+    const routeTopic = participantTopic ?? nubeqaDisplayTopic(combinedText);
+
+    if (participantTopic) {
+      return {
+        kind: "in_lane_topic",
+        topic: routeTopic,
+        needsSource: true,
+        isOutOfScope: false,
+        isUnanticipated: false,
+        rationale:
+          "Participant asked an in-domain NUBEQA question that maps to a known route.",
+        sourceDirective: genericNubeqaDirective(routeTopic),
+      };
+    }
+
+    if (participantAskedQuestion) {
+      return {
+        kind: "unknown_in_domain",
+        topic: "unknown_in_domain",
+        needsSource: true,
+        isOutOfScope: false,
+        isUnanticipated: true,
+        rationale:
+          "Participant asked a source-like question that did not match a predefined NUBEQA route.",
+        sourceDirective: genericNubeqaDirective(null),
       };
     }
   }

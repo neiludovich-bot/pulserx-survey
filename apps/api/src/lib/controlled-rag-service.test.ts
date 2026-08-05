@@ -211,4 +211,43 @@ describe("controlled RAG source provider", () => {
       "For orientation, from the source material, PADCEV is described in two roles [1].",
     );
   });
+
+  it("prioritizes NUBEQA ARANOTE rPFS visuals for mCSPC rPFS questions", () => {
+    const topic = controlledRagTestInternals.displayTopicForTurn({
+      surveySlug: "nubeqa",
+      participantMessage: "What does ARANOTE show for rPFS without docetaxel?",
+      surveyContext: "The respondent is discussing NUBEQA mCSPC evidence.",
+      currentQuestion: "What does ARANOTE change about your view?",
+      selectedNextQuestion:
+        "What, if anything, does the ARANOTE mCSPC evidence change about NUBEQA plus ADT without docetaxel?",
+      selectedQuestionSourceContext:
+        "Retrieve NUBEQA ARANOTE mCSPC source context and visuals.",
+    });
+    const ranked = controlledRagTestInternals.rankAssetsForDisplay(
+      [
+        {
+          title: "NUBEQA safety chart",
+          url: "https://example.com/safety.svg",
+          description: "Adverse reactions chart",
+          assetKind: "CHART",
+          tags: ["safety", "adverse"],
+          priority: 250,
+        },
+        {
+          title: "ARANOTE rPFS chart",
+          url: "https://example.com/aranote-rpfs.svg",
+          description:
+            "Radiographic progression-free survival chart for NUBEQA plus ADT",
+          assetKind: "CHART",
+          tags: ["aranote", "rpfs", "mcspc"],
+          priority: 20,
+        },
+      ],
+      ["aranote", "rpfs", "without", "docetaxel"],
+      topic,
+    );
+
+    expect(topic).toBe("nubeqa_mcspc_aranote");
+    expect(ranked[0]?.title).toBe("ARANOTE rPFS chart");
+  });
 });

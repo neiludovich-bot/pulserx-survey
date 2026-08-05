@@ -1,6 +1,6 @@
 export type ControlledRagChunk = {
   id: string;
-  surveySlug: "brukinsa" | "padcev";
+  surveySlug: "brukinsa" | "padcev" | "nubeqa";
   title: string;
   url: string;
   description: string;
@@ -177,5 +177,265 @@ export const CONTROLLED_RAG_CHUNKS = [
       "counseling",
     ],
     text: "PADCEV support resources can include access and reimbursement support, patient education, downloadable resource materials, dosing/administration materials, and adverse-reaction management resources. Use the live source for exact PDF titles and download URLs.",
+  },
+  {
+    id: "nubeqa-mcspc-aranote",
+    surveySlug: "nubeqa",
+    title: "NUBEQA mCSPC Efficacy: ARANOTE",
+    url: "https://www.nubeqahcp.com/efficacy/mcspc",
+    description:
+      "Curated source card for ARANOTE NUBEQA plus ADT in mCSPC, with rPFS visuals.",
+    tags: [
+      "nubeqa",
+      "darolutamide",
+      "mcspc",
+      "mhspc",
+      "aranote",
+      "adt",
+      "without docetaxel",
+      "rpfs",
+      "radiographic progression-free survival",
+      "efficacy",
+    ],
+    text: "The NUBEQA mCSPC HCP efficacy page presents ARANOTE as NUBEQA plus ADT versus placebo plus ADT in mCSPC. The page frames rPFS as the primary endpoint and states that median follow-up was 25.3 months for NUBEQA plus ADT and 25.0 months for placebo plus ADT. At 24 months, 70.3% of patients receiving NUBEQA plus ADT versus 52.1% receiving placebo plus ADT remained free of radiological progression and were alive. Use the source page for exact current curves, caveats, and references.",
+    assets: [
+      {
+        title: "ARANOTE rPFS chart",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/mcspc-aranote-chart.svg",
+        description:
+          "Graph showing risk of progression or death with NUBEQA plus ADT versus ADT alone in ARANOTE.",
+        assetKind: "CHART",
+        tags: ["aranote", "mcspc", "rpfs", "progression", "adt"],
+        priority: 100,
+      },
+      {
+        title: "ARANOTE study design and endpoints",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/aranote-study-desig.svg",
+        description: "ARANOTE study design and endpoints visual.",
+        assetKind: "CHART",
+        tags: ["aranote", "study design", "endpoint", "mcspc"],
+        priority: 88,
+      },
+      {
+        title: "ARANOTE treatment duration",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/treatment-duration-adt.svg",
+        description:
+          "Treatment duration visual for NUBEQA plus ADT compared with ADT alone in ARANOTE.",
+        assetKind: "CHART",
+        tags: ["aranote", "treatment duration", "adt", "mcspc"],
+        priority: 72,
+      },
+    ],
+  },
+  {
+    id: "nubeqa-mcspc-arasens",
+    surveySlug: "nubeqa",
+    title: "NUBEQA mCSPC Efficacy: ARASENS",
+    url: "https://www.nubeqahcp.com/efficacy/mcspc",
+    description:
+      "Curated source card for ARASENS NUBEQA plus ADT plus docetaxel in mCSPC.",
+    tags: [
+      "nubeqa",
+      "darolutamide",
+      "mcspc",
+      "mhspc",
+      "arasens",
+      "docetaxel",
+      "adt",
+      "triplet",
+      "overall survival",
+      "os",
+      "time to mcrpc",
+      "efficacy",
+    ],
+    text: "The NUBEQA mCSPC HCP efficacy page presents ARASENS as NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel. The page states that NUBEQA in combination with docetaxel significantly reduced the risk of death by nearly a third versus docetaxel and ADT alone, and separately describes time to mCRPC and other secondary endpoints. Use the source page for exact current Kaplan-Meier visuals, landmark analysis caveats, and endpoint hierarchy.",
+    assets: [
+      {
+        title: "ARASENS overall survival chart",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/mhspc-chart.svg",
+        description:
+          "Graph of risk of death with NUBEQA plus docetaxel and ADT versus docetaxel and ADT alone in ARASENS.",
+        assetKind: "CHART",
+        tags: ["arasens", "overall survival", "os", "docetaxel", "mcspc"],
+        priority: 100,
+      },
+      {
+        title: "ARASENS secondary endpoint results",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-05/arasens-study-results.svg",
+        description: "Secondary endpoint results visual from ARASENS.",
+        assetKind: "CHART",
+        tags: ["arasens", "secondary endpoints", "mcspc"],
+        priority: 86,
+      },
+      {
+        title: "ARASENS time to mCRPC chart",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/mhspc-64-chart.svg",
+        description:
+          "Graph showing risk reduction in time to CRPC with NUBEQA plus docetaxel and ADT versus docetaxel and ADT alone.",
+        assetKind: "CHART",
+        tags: ["arasens", "time to mcrpc", "secondary endpoint", "mcspc"],
+        priority: 82,
+      },
+      {
+        title: "ARASENS study design and endpoints",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-05/arasens-study-design.svg",
+        description: "ARASENS study design and endpoints visual.",
+        assetKind: "CHART",
+        tags: ["arasens", "study design", "docetaxel", "mcspc"],
+        priority: 78,
+      },
+    ],
+  },
+  {
+    id: "nubeqa-nmcrpc-aramis",
+    surveySlug: "nubeqa",
+    title: "NUBEQA nmCRPC Efficacy: ARAMIS",
+    url: "https://www.nubeqahcp.com/efficacy/nmcrpc",
+    description:
+      "Curated source card for ARAMIS NUBEQA plus ADT in nmCRPC, with MFS and OS visuals.",
+    tags: [
+      "nubeqa",
+      "darolutamide",
+      "nmcrpc",
+      "aramis",
+      "adt",
+      "metastasis-free survival",
+      "mfs",
+      "overall survival",
+      "os",
+      "psadt",
+      "efficacy",
+    ],
+    text: "The NUBEQA nmCRPC HCP efficacy page presents ARAMIS as NUBEQA plus ADT versus ADT/placebo alone. It states that NUBEQA significantly improved metastasis-free survival and overall survival in nmCRPC, describes MFS as the primary endpoint, and notes consistent MFS results across subgroups such as PSADT and prior bone-targeting agent use. Use the source page for exact current Kaplan-Meier visuals, secondary endpoint details, and caveats.",
+    assets: [
+      {
+        title: "ARAMIS metastasis-free survival chart",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/mfs-adt-alone.svg",
+        description:
+          "Graph showing probability of MFS with NUBEQA plus ADT versus ADT alone in ARAMIS.",
+        assetKind: "CHART",
+        tags: ["aramis", "mfs", "metastasis-free survival", "nmcrpc"],
+        priority: 100,
+      },
+      {
+        title: "ARAMIS overall survival chart",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/nubeqa-adt-survival.svg",
+        description:
+          "Graph showing risk of death with NUBEQA plus ADT versus ADT alone in ARAMIS.",
+        assetKind: "CHART",
+        tags: ["aramis", "overall survival", "os", "nmcrpc"],
+        priority: 94,
+      },
+      {
+        title: "ARAMIS study design",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-05/Placebo-controlled-study-nmcrpc.svg",
+        description:
+          "Double-blind, placebo-controlled ARAMIS study in patients with nmCRPC.",
+        assetKind: "CHART",
+        tags: ["aramis", "study design", "nmcrpc"],
+        priority: 78,
+      },
+    ],
+  },
+  {
+    id: "nubeqa-safety-dosing",
+    surveySlug: "nubeqa",
+    title: "NUBEQA Safety, Dosing, and DDI Profile",
+    url: "https://www.nubeqahcp.com/dosing",
+    description:
+      "Curated source card for NUBEQA dosing, dose modification, safety, and drug-interaction discussion.",
+    tags: [
+      "nubeqa",
+      "darolutamide",
+      "safety",
+      "dosing",
+      "dose",
+      "600 mg twice daily",
+      "food",
+      "dose modification",
+      "renal",
+      "hepatic",
+      "ddi",
+      "drug interaction",
+      "ischemic heart disease",
+      "seizure",
+    ],
+    text: "The NUBEQA HCP dosing page describes 600 mg twice daily with food, continuing treatment until disease progression or unacceptable toxicity, and dose modification to 300 mg twice daily for severe renal impairment not receiving hemodialysis, moderate hepatic impairment, Grade 3 or greater toxicity, or intolerable adverse reaction when source-supported. The page also notes that in ARASENS NUBEQA continues even if a docetaxel cycle is delayed, interrupted, or discontinued. Important Safety Information includes ischemic heart disease and seizure warnings, plus adverse reaction context across ARAMIS, ARANOTE, and ARASENS.",
+    assets: [
+      {
+        title: "NUBEQA mCSPC dosing options",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-05/nubeqa-docetaxel-dosage.svg",
+        description:
+          "Graphic showing NUBEQA plus ADT twice daily with or without docetaxel for mCSPC.",
+        assetKind: "CHART",
+        tags: ["dosing", "mcspc", "docetaxel", "adt"],
+        priority: 92,
+      },
+      {
+        title: "NUBEQA mCSPC ARANOTE adverse reaction chart",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/mcspc-all-grades-3-and-4-ar_0.svg",
+        description:
+          "Comparison of adverse reactions in ARANOTE for NUBEQA plus ADT versus placebo plus ADT.",
+        assetKind: "CHART",
+        tags: ["safety", "aranote", "adverse reactions", "mcspc"],
+        priority: 86,
+      },
+      {
+        title: "NUBEQA ARASENS Grade 3-4 adverse reaction chart",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/mcspc-grade-3-4.svg",
+        description:
+          "Comparison of Grade 3-4 adverse reactions in ARASENS for NUBEQA plus docetaxel versus placebo plus docetaxel.",
+        assetKind: "CHART",
+        tags: ["safety", "arasens", "adverse reactions", "docetaxel"],
+        priority: 82,
+      },
+    ],
+  },
+  {
+    id: "nubeqa-guidelines-resources",
+    surveySlug: "nubeqa",
+    title: "NUBEQA Guidelines, Access, and Practice Resources",
+    url: "https://www.nubeqahcp.com/about-nubeqa/guidelines",
+    description:
+      "Curated source card for NUBEQA guideline positioning and practice-resource discussion.",
+    tags: [
+      "nubeqa",
+      "darolutamide",
+      "guidelines",
+      "nccn",
+      "aua",
+      "access",
+      "support",
+      "resources",
+      "practice",
+      "formulary",
+    ],
+    text: "The NUBEQA HCP guidelines page presents treatment-guideline context for mCSPC and nmCRPC and explains category/preferred-option terminology from guideline bodies such as NCCN and AUA when source-supported. The HCP site also includes access and support areas, formulary coverage, Access Services by Bayer, contact-a-representative pathways, Bayer Den, KOL videos, practice resources, patient resources, and patient profiles. Use source pages for exact current wording and resource names.",
+    assets: [
+      {
+        title: "NUBEQA treatment guideline visual",
+        url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57696/files/2025-06/guideline-treatment.png",
+        description: "Treatment guidelines for mCSPC and nmCRPC.",
+        assetKind: "CHART",
+        tags: ["guidelines", "nccn", "aua", "mcspc", "nmcrpc"],
+        priority: 96,
+      },
+      {
+        title: "NUBEQA practice resources",
+        url: "https://www.nubeqahcp.com/resources/for-your-practice",
+        description: "NUBEQA HCP practice resources page.",
+        assetKind: "LINK",
+        tags: ["resources", "practice", "support"],
+        priority: 58,
+      },
+      {
+        title: "Access Services by Bayer",
+        url: "https://www.nubeqahcp.com/access-and-support/access-services-by-bayer",
+        description: "NUBEQA access support resource page.",
+        assetKind: "LINK",
+        tags: ["access", "support", "coverage"],
+        priority: 56,
+      },
+    ],
   },
 ] satisfies ControlledRagChunk[];

@@ -81,4 +81,36 @@ describe("MVP turn router", () => {
     expect(decision.sourceDirective).toContain("BRUKINSA");
     expect(decision.sourceDirective).not.toContain("EV-302");
   });
+
+  it("routes NUBEQA ARANOTE questions to mCSPC source context", () => {
+    const decision = classifyMvpTurnRoute({
+      surveySlug: "nubeqa",
+      activeIntentSlug: "mcspc-evidence",
+      participantContent:
+        "What does ARANOTE show for rPFS without docetaxel?",
+      selectedQuestionText:
+        "What, if anything, does ARANOTE change about NUBEQA plus ADT?",
+    });
+
+    expect(decision.kind).toBe("in_lane_topic");
+    expect(decision.topic).toBe("nubeqa_mcspc_aranote");
+    expect(decision.needsSource).toBe(true);
+    expect(decision.sourceDirective).toContain("ARANOTE");
+  });
+
+  it("keeps unanticipated NUBEQA source questions answerable", () => {
+    const decision = classifyMvpTurnRoute({
+      surveySlug: "nubeqa",
+      activeIntentSlug: "general-nubeqa-reaction",
+      participantContent:
+        "What do the approved materials say about clinic workflow and follow-up?",
+      selectedQuestionText:
+        "What safety, drug-interaction, or dosing issue would most affect comfort?",
+    });
+
+    expect(decision.kind).toBe("unknown_in_domain");
+    expect(decision.topic).toBe("unknown_in_domain");
+    expect(decision.needsSource).toBe(true);
+    expect(decision.sourceDirective).toContain("NUBEQA");
+  });
 });
