@@ -97,6 +97,48 @@ describe("controlled RAG source provider", () => {
     expect(ranked[0]?.title).toContain("Peripheral Neuropathy");
   });
 
+  it("keeps PADCEV efficacy charts out of safety-management visual selection", () => {
+    const topic = controlledRagTestInternals.displayTopicForTurn({
+      surveySlug: "padcev",
+      participantMessage: "How should I think about neuropathy risk with PADCEV?",
+      surveyContext: "The respondent is in the side-effect management lane.",
+      currentQuestion: "Which safety or tolerability details matter?",
+      selectedNextQuestion:
+        "When a PADCEV adverse event emerges, what guidance would help?",
+      selectedQuestionSourceContext:
+        "Retrieve PADCEV safety-management resources and dose-modification guidance.",
+    });
+    const ranked = controlledRagTestInternals.rankAssetsForDisplay(
+      [
+        {
+          title: "EV-302 overall survival chart",
+          url: "https://example.com/ev-302-overall-survival.png",
+          description: "Overall survival Kaplan-Meier curve",
+          assetKind: "CHART",
+          tags: ["ev-302", "overall survival", "efficacy"],
+          priority: 500,
+        },
+        {
+          title: "Peripheral Neuropathy Dose Modification Summary",
+          url: "https://example.com/peripheral-neuropathy-dose-modification.png",
+          description:
+            "Grade-based dose modification and patient prompts for peripheral neuropathy",
+          assetKind: "IMAGE",
+          tags: ["neuropathy", "dose modification", "monitoring"],
+          priority: 10,
+        },
+      ],
+      ["neuropathy", "padcev"],
+      topic,
+    );
+
+    expect(topic).toBe("padcev_neuropathy_management");
+    expect(ranked[0]?.title).toContain("Peripheral Neuropathy");
+    expect(
+      ranked.some((asset) => asset.title.includes("overall survival")),
+    ).toBe(false);
+  });
+
   it("maps EV-302 response questions to response visuals instead of safety assets", () => {
     const topic = controlledRagTestInternals.displayTopicForTurn({
       surveySlug: "padcev",

@@ -227,6 +227,20 @@ function displayTopicAssetScore(
   const kind = asset.assetKind.toUpperCase();
   const isVisual = ["CHART", "TABLE", "IMAGE"].includes(kind);
   const isPdf = kind === "PDF" || /\.pdf(?:$|[?#])/i.test(asset.url);
+  const padcevSafetyTopic =
+    topic?.startsWith("padcev_safety") ||
+    topic === "padcev_neuropathy_management" ||
+    topic === "padcev_dose_modification";
+  const padcevEfficacyTopic =
+    topic === "padcev_ev302_response" ||
+    topic === "padcev_ev302_survival";
+  const padcevSafetyAsset = textMatchesAny(text, [
+    /\b(?:safety|adverse|side effect|toxicity|monitoring|checklist|guide|resource|resources|dose modification|dose modifications|dose reduction|dose interruption|withhold|resume|discontinue|neuropathy|rash|skin|hyperglycemia|pneumonitis|ild|ocular|extravasation|patient education|counseling)\b/,
+  ]);
+  const padcevEfficacyAsset = textMatchesAny(text, [
+    /\b(?:overall survival|progression free|progression-free|\bpfs\b|\bos\b|efficacy|ev 302|ev302|keynote|orr|complete response|partial response|response rate|hazard ratio|kaplan|curve)\b/,
+    /\b(?:ev-302|keynote-a39)\b/,
+  ]);
   let score = 0;
 
   if (isVisual) {
@@ -387,28 +401,12 @@ function displayTopicAssetScore(
     }
   }
 
-  if (
-    topic?.startsWith("padcev_ev302") &&
-    textMatchesAny(text, [
-      /\b(?:safety|adverse|neuropathy|rash|dose modification|checklist|monitoring|patient education)\b/,
-    ])
-  ) {
-    score -= 500;
+  if (padcevEfficacyTopic && padcevSafetyAsset && !padcevEfficacyAsset) {
+    score -= 1100;
   }
 
-  if (
-    topic?.startsWith("padcev_safety") ||
-    topic === "padcev_neuropathy_management" ||
-    topic === "padcev_dose_modification"
-  ) {
-    if (
-      textMatchesAny(text, [
-        /\b(?:overall survival|progression free|progression-free|pfs|os|efficacy|ev 302|ev302|keynote|orr|complete response)\b/,
-        /\b(?:ev-302|keynote-a39)\b/,
-      ])
-    ) {
-      score -= 450;
-    }
+  if (padcevSafetyTopic && padcevEfficacyAsset && !padcevSafetyAsset) {
+    score -= 1300;
   }
 
   return score;

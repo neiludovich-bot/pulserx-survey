@@ -538,47 +538,6 @@ function chooseBestResolvedSourcePanelReference(
   })[0] ?? null;
 }
 
-function mostVisibleSourceMessageId(thread: HTMLDivElement) {
-  const threadRect = thread.getBoundingClientRect();
-  const candidates = Array.from(
-    thread.querySelectorAll<HTMLElement>("[data-source-message-id]"),
-  );
-  let best: { id: string; visibleArea: number; distanceFromCenter: number } | null =
-    null;
-  const threadCenter = threadRect.top + threadRect.height / 2;
-
-  for (const candidate of candidates) {
-    const id = candidate.dataset.sourceMessageId;
-    if (!id) {
-      continue;
-    }
-
-    const rect = candidate.getBoundingClientRect();
-    const visibleHeight =
-      Math.min(rect.bottom, threadRect.bottom) - Math.max(rect.top, threadRect.top);
-
-    if (visibleHeight <= 0) {
-      continue;
-    }
-
-    const visibleArea = visibleHeight * rect.width;
-    const distanceFromCenter = Math.abs(
-      rect.top + rect.height / 2 - threadCenter,
-    );
-
-    if (
-      !best ||
-      visibleArea > best.visibleArea ||
-      (visibleArea === best.visibleArea &&
-        distanceFromCenter < best.distanceFromCenter)
-    ) {
-      best = { id, visibleArea, distanceFromCenter };
-    }
-  }
-
-  return best?.id ?? null;
-}
-
 function openSourceUrlInNewTab(url: string) {
   window.open(url, "_blank", "noopener,noreferrer");
 }
@@ -1395,9 +1354,6 @@ export function MvpCustomGptSurveyModal({
   const [sourcePanel, setSourcePanel] = useState<SourcePanelReference | null>(
     null,
   );
-  const [visibleSourceMessageId, setVisibleSourceMessageId] = useState<
-    string | null
-  >(null);
   const [closedSourceMessageId, setClosedSourceMessageId] = useState<
     string | null
   >(null);
@@ -1573,66 +1529,31 @@ export function MvpCustomGptSurveyModal({
   }, [survey?.messages.length, optimisticMessage]);
 
   useEffect(() => {
-    const thread = threadRef.current;
-    if (!thread) {
-      setVisibleSourceMessageId(null);
+    const latestInterviewerMessage = [...(survey?.messages ?? [])]
+      .reverse()
+      .find((message) => message.role === "interviewer");
+
+    if (
+      !latestInterviewerMessage ||
+      !latestInterviewerMessage.references.some((reference) =>
+        Boolean(reference.url),
+      )
+    ) {
+      setSourcePanel(null);
       return;
     }
 
-    let frameId = 0;
-    const updateVisibleSourceMessage = () => {
-      frameId = 0;
-      setVisibleSourceMessageId(mostVisibleSourceMessageId(thread));
-    };
-    const scheduleUpdate = () => {
-      if (frameId) {
-        return;
-      }
-      frameId = window.requestAnimationFrame(updateVisibleSourceMessage);
-    };
+    const sourcePanelMessage = latestInterviewerMessage;
 
-    scheduleUpdate();
-    thread.addEventListener("scroll", scheduleUpdate, { passive: true });
-    window.addEventListener("resize", scheduleUpdate);
-
-    return () => {
-      thread.removeEventListener("scroll", scheduleUpdate);
-      window.removeEventListener("resize", scheduleUpdate);
-      if (frameId) {
-        window.cancelAnimationFrame(frameId);
-      }
-    };
-  }, [
-    intentOptions.length,
-    optimisticMessage,
-    selectedIntentSlug,
-    survey?.messages.length,
-    isStarting,
-  ]);
-
-  useEffect(() => {
-    const sourceMessages = (survey?.messages ?? []).filter(
-      (message) =>
-        message.role === "interviewer" &&
-        message.references.some((reference) => Boolean(reference.url)),
-    );
-    const visibleMessage = sourceMessages.find(
-      (message) => message.id === visibleSourceMessageId,
-    );
-    const latestInterviewerMessage = [...sourceMessages]
-      .reverse()
-      .at(0);
-    const sourcePanelMessage = visibleMessage ?? latestInterviewerMessage;
-
-    if (
-      !sourcePanelMessage ||
-      sourcePanelMessage.id === sourcePanel?.messageId ||
-      sourcePanelMessage.id === closedSourceMessageId
-    ) {
+    if (sourcePanelMessage.id === closedSourceMessageId) {
       return;
     }
 
     const latestMessageId = sourcePanelMessage.id;
+    if (closedSourceMessageId && closedSourceMessageId !== latestMessageId) {
+      setClosedSourceMessageId(null);
+    }
+
     const latestMessageContent = sourcePanelMessage.content;
     const sourceReferences = sourcePanelMessage.references
       .map((reference, index) => ({
@@ -1648,11 +1569,7 @@ export function MvpCustomGptSurveyModal({
       );
 
     if (sourceReferences.length === 0) {
-      setSourcePanel((currentPanel) =>
-        currentPanel?.messageId === latestMessageId
-          ? currentPanel
-          : null,
-      );
+      setSourcePanel(null);
       return;
     }
 
@@ -1676,16 +1593,7 @@ export function MvpCustomGptSurveyModal({
         latestMessageContent,
       );
 
-      if (visualReference) {
-        setSourcePanel(visualReference);
-        return;
-      }
-
-      setSourcePanel((currentPanel) =>
-        currentPanel?.messageId === latestMessageId
-          ? currentPanel
-          : null,
-      );
+      setSourcePanel(visualReference);
     }
 
     void openFirstVisualReference();
@@ -1695,9 +1603,7 @@ export function MvpCustomGptSurveyModal({
     };
   }, [
     closedSourceMessageId,
-    sourcePanel?.messageId,
     survey?.messages,
-    visibleSourceMessageId,
   ]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
