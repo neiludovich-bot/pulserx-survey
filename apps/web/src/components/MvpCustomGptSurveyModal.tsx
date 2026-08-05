@@ -476,6 +476,84 @@ function scoreResolvedSourcePanelReference(
     score -= 250;
   }
 
+  const asksNubeqaAranote = sourceTextMatches(messageText, [
+    /\baranote\b/,
+    /\brpfs\b/,
+    /\bradiographic progression\b/,
+    /\bradiological progression\b/,
+    /\bwithout docetaxel\b/,
+  ]);
+  const asksNubeqaArasens = sourceTextMatches(messageText, [
+    /\barasens\b/,
+    /\bdocetaxel\b/,
+    /\btriplet\b/,
+    /\btime to mcrpc\b/,
+    /\brisk of death\b/,
+  ]);
+  const asksNubeqaAramis = sourceTextMatches(messageText, [
+    /\baramis\b/,
+    /\bnmcrpc\b/,
+    /\bnon metastatic\b/,
+    /\bnonmetastatic\b/,
+    /\bmetastasis free\b/,
+    /\bmfs\b/,
+  ]);
+  const asksNubeqaSafety = sourceTextMatches(messageText, [
+    /\bsafety\b/,
+    /\btolerability\b/,
+    /\badverse\b/,
+    /\bside effect\b/,
+    /\bdosing\b/,
+    /\bdose\b/,
+    /\bddi\b/,
+    /\bdrug interaction\b/,
+    /\bhepatic\b/,
+    /\brenal\b/,
+    /\bischemic\b/,
+    /\bseizure\b/,
+  ]);
+  const sourceIsNubeqaSafetyProfile = sourceTextMatches(sourceText, [
+    /\bnubeqa safety dosing and ddi profile\b/,
+    /\bsafety dosing and ddi\b/,
+  ]);
+  const sourceIsNubeqaAranote = sourceTextMatches(sourceText, [
+    /\baranote\b/,
+    /\brpfs\b/,
+    /\bradiographic progression\b/,
+    /\bradiological progression\b/,
+  ]);
+  const sourceIsNubeqaArasens = sourceTextMatches(sourceText, [
+    /\barasens\b/,
+    /\bdocetaxel\b/,
+    /\btime to mcrpc\b/,
+    /\brisk of death\b/,
+  ]);
+  const sourceIsNubeqaAramis = sourceTextMatches(sourceText, [
+    /\baramis\b/,
+    /\bnmcrpc\b/,
+    /\bmetastasis free\b/,
+    /\bmfs\b/,
+  ]);
+
+  if (asksNubeqaAranote) {
+    score += sourceIsNubeqaAranote ? 700 : 0;
+    score -= sourceIsNubeqaSafetyProfile && !sourceIsNubeqaAranote ? 900 : 0;
+  }
+
+  if (asksNubeqaArasens) {
+    score += sourceIsNubeqaArasens ? 700 : 0;
+    score -= sourceIsNubeqaSafetyProfile && !sourceIsNubeqaArasens ? 900 : 0;
+  }
+
+  if (asksNubeqaAramis) {
+    score += sourceIsNubeqaAramis ? 700 : 0;
+    score -= sourceIsNubeqaSafetyProfile && !sourceIsNubeqaAramis ? 900 : 0;
+  }
+
+  if (asksNubeqaSafety) {
+    score += sourceIsNubeqaSafetyProfile ? 420 : 0;
+  }
+
   if (
     sourceTextIncludesAny(messageText, [
       "pfs",
