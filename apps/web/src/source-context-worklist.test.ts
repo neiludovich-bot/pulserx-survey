@@ -63,6 +63,7 @@ describe("source context worklist helpers", () => {
             title: "ALPINE source",
             url: "https://example.test/alpine",
             description: null,
+            assets: [],
           },
         ],
       },
@@ -152,12 +153,14 @@ describe("source context worklist helpers", () => {
         title: "SEQUOIA source",
         url: "https://example.test/sequoia",
         description: "Official source detail.",
+        assets: [],
       },
       {
         citationId: "customgpt:home",
         title: null,
         url: "https://example.test",
         description: "Main HCP website.",
+        assets: [],
       },
     ]);
 

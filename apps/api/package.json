@@ -17,7 +17,7 @@
     "@interview/prompts": "0.1.0",
     "@interview/schemas": "0.1.0",
     "@prisma/client": "^6.5.0",
-    "fastify": "^5.2.1",
+    "fastify": "^5.11.2",
     "zod": "^3.24.2"
   },
   "devDependencies": {
