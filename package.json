@@ -39,17 +39,16 @@
     "seed": "tsx prisma/seed.ts"
   },
   "devDependencies": {
-    "@eslint/js": "^9.24.0",
+    "@eslint/js": "^10.0.1",
     "@next/eslint-plugin-next": "^16.3.0",
     "@prisma/client": "^6.5.0",
     "@types/node": "^22.14.1",
     "@types/react": "^19.1.1",
     "@types/react-dom": "^19.1.2",
     "dotenv-cli": "^8.0.0",
-    "eslint": "^9.24.0",
+    "eslint": "^10.8.0",
     "eslint-config-prettier": "^10.1.1",
-    "eslint-plugin-react": "^7.37.5",
-    "eslint-plugin-react-hooks": "^5.2.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^16.0.0",
     "prettier": "^3.5.3",
     "prisma": "^6.5.0",
@@ -57,7 +56,7 @@
     "tsx": "^4.19.3",
     "turbo": "^2.5.0",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.29.0",
+    "typescript-eslint": "^8.66.0",
     "vitest": "^3.1.1"
   },
   "overrides": {
