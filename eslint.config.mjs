@@ -2,7 +2,6 @@ import js from "@eslint/js";
 import nextPlugin from "@next/eslint-plugin-next";
 import prettier from "eslint-config-prettier";
 import globals from "globals";
-import reactPlugin from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
@@ -59,21 +58,13 @@ export default tseslint.config(
       }
     },
     plugins: {
-      react: reactPlugin,
       "react-hooks": reactHooks,
       "@next/next": nextPlugin
     },
-    settings: {
-      react: {
-        version: "detect"
-      }
-    },
     rules: {
-      ...reactPlugin.configs.recommended.rules,
       ...reactHooks.configs.recommended.rules,
       ...nextPlugin.configs.recommended.rules,
-      ...nextPlugin.configs["core-web-vitals"].rules,
-      "react/react-in-jsx-scope": "off"
+      ...nextPlugin.configs["core-web-vitals"].rules
     }
   },
   prettier
