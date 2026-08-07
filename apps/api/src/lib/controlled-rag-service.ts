@@ -386,11 +386,9 @@ function buildClinicalEvidenceCard(
         "For mCSPC with docetaxel, ARASENS frames NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel, including OS and time-to-mCRPC context.",
         "The dosing/safety material adds 600 mg twice daily with food plus dose-modification, renal/hepatic, DDI, ischemic-heart-disease, and seizure-warning context where relevant.",
       ],
-      caveats: [
-        "Keep the answer descriptive and ask the respondent how this disease-state split fits their own treatment framework.",
-      ],
+      caveats: [],
       answerDirective:
-        "Give a concise clinical map across nmCRPC, mCSPC without docetaxel, and mCSPC with docetaxel. Do not say 'source areas' or imply a page inventory.",
+        "Give a concise clinical map across nmCRPC, mCSPC without docetaxel, and mCSPC with docetaxel. Do not say 'source areas,' imply a page inventory, or add a follow-up question.",
       preferredSourceIds: [
         "nubeqa-nmcrpc-aramis",
         "nubeqa-mcspc-aranote",
@@ -486,7 +484,7 @@ function buildClinicalEvidenceCard(
       ],
       caveats: ["Do not turn this into a full label inventory unless the participant explicitly asks."],
       answerDirective:
-        "Answer the named safety, DDI, dosing, or management issue first, then bridge to the survey question.",
+        "Answer the named safety, DDI, dosing, or management issue first. Do not add a follow-up question.",
       preferredSourceIds: ["nubeqa-safety-dosing", "safety dosing ddi"],
       preferredAssetTags: ["safety", "dosing", "dose modification", "ddi", "adverse reactions"],
     };
@@ -1379,6 +1377,48 @@ function selectedQuestionLead(
     : "\n\nThank you for participating. Your feedback has been recorded, and we can close the interview here.";
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripQuestionSentences(value: string) {
+  return value
+    .split(/\n{2,}/)
+    .map((paragraph) => {
+      const sentences =
+        paragraph.match(/[^.!?\n]+[.!?]+(?:\s+|$)|[^.!?\n]+$/g) ?? [
+          paragraph,
+        ];
+
+      return sentences
+        .map((sentence) => sentence.trim())
+        .filter((sentence) => sentence.length > 0 && !sentence.endsWith("?"))
+        .join(" ")
+        .trim();
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
+function stripComposerFollowUpQuestions(
+  answer: string,
+  selectedQuestion: string | null,
+  responseMode: "answer_only" | "answer_then_ask",
+) {
+  if (responseMode !== "answer_then_ask") {
+    return answer.trim();
+  }
+
+  let cleaned = answer.trim();
+
+  if (selectedQuestion) {
+    cleaned = cleaned.replace(new RegExp(escapeRegExp(selectedQuestion), "gi"), "");
+  }
+
+  return stripQuestionSentences(cleaned);
+}
+
 function fallbackSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
@@ -1607,8 +1647,12 @@ export async function askControlledRagForSurveyInterviewerTurn(
 
   const turnAssets = await retrieveTurnAssets(input, chunks, evidenceCard);
   const references = referencesForChunks(chunks, turnAssets, queryTokens);
-  const composedAnswer = await composeSourceAnswer(input, chunks, evidenceCard);
   const responseMode = input.responseMode ?? "answer_then_ask";
+  const composedAnswer = stripComposerFollowUpQuestions(
+    await composeSourceAnswer(input, chunks, evidenceCard),
+    input.selectedNextQuestion,
+    responseMode,
+  );
   const answer = [
     composedAnswer,
     selectedQuestionLead(input.selectedNextQuestion, responseMode),
@@ -1635,4 +1679,5 @@ export const controlledRagTestInternals = {
   referencesForChunks,
   removeInternalSourceNarration,
   removeParticipantVoiceMirror,
+  stripComposerFollowUpQuestions,
 };
