@@ -242,10 +242,13 @@ function genericPadcevDirective(topic: MvpDisplayTopic) {
     topic === "padcev_neuropathy_management" ||
     topic === "padcev_dose_modification" ||
     topic === "padcev_safety_resources" ||
-    topic === "padcev_safety_management" ||
-    topic === "padcev_patient_selection"
+    topic === "padcev_safety_management"
   ) {
     return "The participant asked a PADCEV safety-management, patient-caution, dose-modification, or resource question. Answer the specific angle they raised; do not provide a full label-style safety inventory. Prefer source-supported monitoring, counseling, dose hold/reduction/discontinuation, and operational resources. If patient profiles are discussed, frame them as safety-caution or monitoring/mitigation considerations unless the participant explicitly asks for broad efficacy-based patient selection. The controller will resume the parked survey question after this source-answer turn when appropriate.";
+  }
+
+  if (topic === "padcev_patient_selection") {
+    return "The participant explicitly asked about PADCEV patient fit, appropriate populations, or caution segments. Treat this as a source-answer excursion if the active interview lane is not patient selection. Answer the specific population or caution angle they raised using source-supported facts only, including labeled setting, treatment-line context, relevant efficacy context, and safety-caution considerations such as neuropathy, rash/skin reactions, hyperglycemia/diabetes, ocular issues, renal/cisplatin context, and dose-modification feasibility only where supported. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   return "The participant asked an in-domain PADCEV source question that does not match a predefined route. Answer only the specific question using approved PADCEV HCP source material, cite sources, and avoid patient-specific treatment advice. The controller will resume the parked survey question after this source-answer turn when appropriate.";

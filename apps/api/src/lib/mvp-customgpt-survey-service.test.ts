@@ -42,14 +42,13 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(next.nextAction).toBe("setup_required");
-    expect(next.currentQuestion).toContain("SEQUOIA");
+    expect(next.currentQuestion).toContain("Is it okay to begin?");
     expect(next.messages.at(-1)?.content).toContain(
       "CUSTOMGPT_API_KEY is not configured",
     );
     expect(next.messages.at(-1)?.content).toContain("Source context needed");
-    expect(next.messages.at(-1)?.content).toContain(
-      "How does the SEQUOIA evidence affect your view",
-    );
+    expect(next.messages.at(-1)?.content).toContain("SEQUOIA");
+    expect(next.messages.at(-1)?.content).toContain("Is it okay to begin?");
     expect(next.messages.at(-1)?.content).not.toContain("guarded survey flow");
   });
 
@@ -124,7 +123,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.currentQuestion).not.toBe("What is your clinical role?");
   });
 
-  it("can answer source turns from the controlled RAG provider and resume the parked question", async () => {
+  it("can answer source turns from the controlled RAG provider and continue the survey", async () => {
     env.MVP_SOURCE_PROVIDER = "controlled_rag";
     env.CUSTOMGPT_API_KEY = undefined;
     env.CUSTOMGPT_PROJECT_ID = undefined;
@@ -146,28 +145,15 @@ describe("MVP CustomGPT survey service", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(next.status).toBe("active");
-    expect(next.nextAction).toBe("ask");
-    expect(next.currentQuestion).toContain("Is it okay to begin");
+    expect(next.nextAction).toBe("answer_then_ask");
+    expect(next.currentQuestion).toContain("Is it okay to begin?");
     expect(next.messages.at(-1)?.content).toContain("SEQUOIA");
     expect(next.messages.at(-1)?.content).toContain("[1]");
     expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
-    expect(next.messages.at(-1)?.content).not.toContain(
-      "How does the SEQUOIA evidence affect your view",
-    );
+    expect(next.messages.at(-1)?.content).toContain("Is it okay to begin?");
     expect(next.messages.at(-1)?.references.length).toBeGreaterThan(0);
-
-    const resumed = await submitMvpCustomGptSurveyTurn({
-      sessionId: started.sessionId,
-      content: "That helps, continue.",
-    });
-
-    expect(resumed.nextAction).toBe("ask");
-    expect(resumed.currentQuestion).toContain("SEQUOIA");
-    expect(resumed.messages.at(-1)?.content).toContain(
-      "How does the SEQUOIA evidence affect your view",
-    );
   });
 
   it("identifies the survey on responses and rejects cross-survey turn reuse", async () => {
@@ -420,7 +406,7 @@ describe("MVP CustomGPT survey service", () => {
     ).rejects.toThrow("does not look like an answer");
   });
 
-  it("returns a cited CustomGPT source answer and parks the selected question", async () => {
+  it("returns a cited CustomGPT source answer and continues with the selected question", async () => {
     env.CUSTOMGPT_API_KEY = "test-customgpt-key";
     env.CUSTOMGPT_PROJECT_ID = "96737";
 
@@ -484,7 +470,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(next.status).toBe("active");
-    expect(next.nextAction).toBe("ask");
+    expect(next.nextAction).toBe("answer_then_ask");
     expect(next.currentQuestion).toContain("BRUKINSA");
     expect(next.messages.at(-1)?.content).toContain("[1]");
     expect(next.messages.at(-1)?.content).not.toContain(
@@ -509,7 +495,7 @@ describe("MVP CustomGPT survey service", () => {
     const messageBody = JSON.parse(String(messageRequest?.body)) as {
       prompt: string;
     };
-    expect(messageBody.prompt).toContain("Turn response mode: answer_only");
+    expect(messageBody.prompt).toContain("Turn response mode: answer_then_ask");
     expect(messageBody.prompt).toContain(
       "Selected next survey question reserved for the survey controller",
     );
@@ -591,7 +577,7 @@ describe("MVP CustomGPT survey service", () => {
       content: "well what are the known drug drug interactions",
     });
 
-    expect(next.nextAction).toBe("ask");
+    expect(next.nextAction).toBe("answer_then_ask");
     expect(next.messages.at(-1)?.content).toContain("CYP3A4/P-gp");
     expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
@@ -791,7 +777,9 @@ describe("MVP CustomGPT survey service", () => {
         "I want to know what are the appropriate patient populations, including exclusions or inclusions based on gene mutation or high risk for a known side effect.",
     });
 
-    expect(next.currentQuestion).toContain("patients in that primary disease");
+    expect(next.currentQuestion).toContain(
+      "About how many patients in that primary disease area",
+    );
     expect(next.messages.at(-1)?.references).toEqual([
       {
         citationId: "cll-source",
@@ -810,14 +798,8 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.content).not.toContain(
       "For which first-line CLL/SLL patient types",
     );
-
-    const resumed = await submitMvpCustomGptSurveyTurn({
-      sessionId: started.sessionId,
-      content: "That helps, continue.",
-    });
-
-    expect(resumed.currentQuestion).toContain(
-      "first-line CLL/SLL patient types",
+    expect(next.messages.at(-1)?.content).toContain(
+      "About how many patients in that primary disease area",
     );
   });
 
@@ -1127,7 +1109,7 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     const lastPrompt = prompts.at(-1) ?? "";
-    expect(next.currentQuestion).toContain("safety and tolerability");
+    expect(next.currentQuestion).toContain("safety issue");
     expect(next.currentQuestion).not.toContain("Waldenstrom");
     expect(next.currentQuestion).not.toContain("WM evidence");
     expect(lastPrompt).toContain("Active disease lane: CLL/SLL");
@@ -1434,17 +1416,19 @@ describe("MVP CustomGPT survey service", () => {
         const prompt = body.prompt ?? "";
         prompts.push(prompt);
 
-        const answer = prompt.includes("Turn response mode: answer_only")
+        const answer = prompt.includes("what does the data show")
           ? "Here are the concrete study highlights from the BRUKINSA source material, including design, endpoints, numeric results, and caveats. Which part of this evidence is most relevant to your view: CLL/SLL SEQUOIA first-line data, CLL/SLL ALPINE head-to-head data, MCL/MZL/FL response-focused data, safety/tolerability, or something else?"
-          : prompt.includes("What is your clinical role?")
-          ? "What is your clinical role?"
-          : prompt.includes("What type of practice setting do you work in?")
-            ? "What type of practice setting do you work in?"
-            : prompt.includes(
-                  "Which B-cell malignancies do you personally treat",
-                )
-              ? "Which B-cell malignancies do you personally treat, manage, counsel, monitor, or support?"
-              : "Here are the concrete study highlights from the BRUKINSA source material, including design, endpoints, numeric results, and caveats. Which part of this evidence is most relevant to your view: CLL/SLL SEQUOIA first-line data, CLL/SLL ALPINE head-to-head data, MCL/MZL/FL response-focused data, safety/tolerability, or something else?";
+          : prompt.includes("Turn response mode: answer_only")
+            ? "Here are the concrete study highlights from the BRUKINSA source material, including design, endpoints, numeric results, and caveats. Which part of this evidence is most relevant to your view: CLL/SLL SEQUOIA first-line data, CLL/SLL ALPINE head-to-head data, MCL/MZL/FL response-focused data, safety/tolerability, or something else?"
+            : prompt.includes("What is your clinical role?")
+              ? "What is your clinical role?"
+              : prompt.includes("What type of practice setting do you work in?")
+                ? "What type of practice setting do you work in?"
+                : prompt.includes(
+                      "Which B-cell malignancies do you personally treat",
+                    )
+                  ? "Which B-cell malignancies do you personally treat, manage, counsel, monitor, or support?"
+                  : "Here are the concrete study highlights from the BRUKINSA source material, including design, endpoints, numeric results, and caveats. Which part of this evidence is most relevant to your view: CLL/SLL SEQUOIA first-line data, CLL/SLL ALPINE head-to-head data, MCL/MZL/FL response-focused data, safety/tolerability, or something else?";
 
         return new Response(
           JSON.stringify({
@@ -1502,16 +1486,14 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     const lastPrompt = prompts.at(-1) ?? "";
-    expect(dataTurn.currentQuestion).toContain(
-      "Which B-cell malignancies do you personally treat",
-    );
+    expect(dataTurn.currentQuestion).toContain("Which part of this evidence");
     expect(dataTurn.messages.at(-1)?.content).toContain(
       "concrete study highlights",
     );
     expect(dataTurn.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
-    expect(dataTurn.messages.at(-1)?.content).not.toContain(
+    expect(dataTurn.messages.at(-1)?.content).toContain(
       "Which part of this evidence",
     );
     expect(dataTurn.currentQuestion).not.toContain("current perception");
@@ -1520,12 +1502,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(lastPrompt).toContain("prioritize concrete study results");
     expect(lastPrompt).toContain("SEQUOIA and ALPINE highlights");
 
-    const resumed = await submitMvpCustomGptSurveyTurn({
-      sessionId: started.sessionId,
-      content: "That helps, continue.",
-    });
-
-    expect(resumed.currentQuestion).toContain("Which part of this evidence");
+    expect(dataTurn.nextAction).toBe("answer_then_ask");
   });
 
   it("passes recent source context so repeated PADCEV AE follow-ups do not restate the same safety dump", async () => {
@@ -1763,9 +1740,7 @@ describe("MVP CustomGPT survey service", () => {
         "It is all about the whole staff handling call-ins, triage, and unscheduled visits.",
     });
 
-    expect(burdenTurn.messages.at(-1)?.content).toContain(
-      "operational load",
-    );
+    expect(burdenTurn.messages.at(-1)?.content).toContain("operational load");
     expect(burdenTurn.messages.at(-1)?.content).toContain("call");
     expect(burdenTurn.currentQuestion).toContain(
       "Where does that burden hit hardest",
@@ -1898,9 +1873,7 @@ describe("MVP CustomGPT survey service", () => {
         "The efficacy sounds reasonable, but I am concerned about peripheral neuropathy making patients want to stop treatment.",
     });
 
-    expect(safetyTurn.currentQuestion).toContain(
-      "hardest management decision",
-    );
+    expect(safetyTurn.currentQuestion).toContain("hardest management decision");
     expect(safetyTurn.currentQuestion).not.toContain(
       "locally advanced or metastatic urothelial cancer patient types seem like better fits",
     );
@@ -2164,9 +2137,7 @@ describe("MVP CustomGPT survey service", () => {
         "Peripheral neuropathy and rash management are what I need help with.",
     });
 
-    expect(nextTurn.currentQuestion).toContain(
-      "hardest management decision",
-    );
+    expect(nextTurn.currentQuestion).toContain("hardest management decision");
     expect(nextTurn.askedQuestions).not.toContain(
       "Which type of resource would actually change the workflow for that safety concern: a monitoring checklist, dose-modification table, patient handout, symptom tracker, staff-facing guide, or something else?",
     );
@@ -2238,7 +2209,7 @@ describe("MVP CustomGPT survey service", () => {
         "Before we go further, which patient populations are appropriate and where would you be cautious?",
     });
 
-    expect(excursionTurn.nextAction).toBe("ask");
+    expect(excursionTurn.nextAction).toBe("answer_then_ask");
     expect(excursionTurn.currentQuestion).toContain(
       "one PADCEV safety or tolerability issue",
     );
@@ -2249,7 +2220,7 @@ describe("MVP CustomGPT survey service", () => {
       "which locally advanced or metastatic urothelial cancer patient types",
     );
     expect(prompts.at(-1) ?? "").toContain(
-      "explicit respondent-requested off-lane excursion",
+      "explicitly asked about PADCEV patient fit",
     );
     expect(prompts.at(-1) ?? "").not.toContain(
       "Do not use or cite efficacy/PFS/OS pages",
@@ -2352,14 +2323,14 @@ describe("MVP CustomGPT survey service", () => {
     expect(latestPrompt).not.toContain(
       "Do not use or cite efficacy/PFS/OS pages",
     );
-    expect(next.nextAction).toBe("ask");
+    expect(next.nextAction).toBe("answer_then_ask");
     expect(next.currentQuestion).toContain(
       "one PADCEV safety or tolerability issue",
     );
     expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
-    expect(next.messages.at(-1)?.content).not.toContain(
+    expect(next.messages.at(-1)?.content).toContain(
       "What is the one PADCEV safety or tolerability issue",
     );
     expect(next.messages.at(-1)?.references[0]?.title).toContain("Efficacy");

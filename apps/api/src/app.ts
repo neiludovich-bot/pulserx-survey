@@ -317,9 +317,20 @@ export function buildApp() {
 
   app.get<{
     Querystring: { limit?: string };
-  }>("/mvp/customgpt-survey/audit/sessions", async (request) => {
-    const limit = Number.parseInt(request.query.limit ?? "50", 10);
-    return listMvpSurveyAuditSessions(Number.isFinite(limit) ? limit : 50);
+  }>("/mvp/customgpt-survey/audit/sessions", async (request, reply) => {
+    try {
+      const limit = Number.parseInt(request.query.limit ?? "50", 10);
+      return await listMvpSurveyAuditSessions(
+        Number.isFinite(limit) ? limit : 50,
+      );
+    } catch (error) {
+      request.log.error(error);
+      return reply.status(500).send({
+        message: "Unable to load MVP survey audit sessions.",
+        detail:
+          error instanceof Error ? error.message : "Unknown audit route error.",
+      });
+    }
   });
 
   app.get<{
@@ -327,14 +338,25 @@ export function buildApp() {
   }>(
     "/mvp/customgpt-survey/audit/sessions/:sessionId",
     async (request, reply) => {
-      const audit = await getMvpSurveyAuditSession(request.params.sessionId);
-      if (!audit) {
-        return reply.status(404).send({
-          message: "MVP survey audit session was not found.",
+      try {
+        const audit = await getMvpSurveyAuditSession(request.params.sessionId);
+        if (!audit) {
+          return reply.status(404).send({
+            message: "MVP survey audit session was not found.",
+          });
+        }
+
+        return audit;
+      } catch (error) {
+        request.log.error(error);
+        return reply.status(500).send({
+          message: "Unable to load MVP survey audit session.",
+          detail:
+            error instanceof Error
+              ? error.message
+              : "Unknown audit route error.",
         });
       }
-
-      return audit;
     },
   );
 
