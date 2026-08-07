@@ -345,6 +345,24 @@ describe("controlled RAG source provider", () => {
     expect(result.answer).not.toMatch(
       /The NUBEQA mCSPC HCP efficacy page presents ARASENS.*The NUBEQA HCP dosing page describes.*The NUBEQA mCSPC HCP efficacy page presents ARANOTE/s,
     );
+    expect(result.answer?.match(/\?/g) ?? []).toHaveLength(1);
+  });
+
+  it("strips composer-invented follow-up questions before appending the selected survey question", () => {
+    const selectedQuestion =
+      "Before we get into NUBEQA-specific information, what are the top factors that matter most when you evaluate androgen receptor pathway therapy or systemic intensification for an appropriate prostate cancer patient?";
+    const cleaned =
+      controlledRagTestInternals.stripComposerFollowUpQuestions(
+        "For nmCRPC, ARAMIS frames NUBEQA plus ADT versus ADT/placebo. In mCSPC without docetaxel, ARANOTE frames NUBEQA plus ADT versus placebo plus ADT. How does that disease-state split fit with your own treatment framework?",
+        selectedQuestion,
+        "answer_then_ask",
+      );
+
+    expect(cleaned).toContain("ARAMIS");
+    expect(cleaned).toContain("ARANOTE");
+    expect(cleaned).not.toContain("How does that disease-state split");
+    expect(cleaned).not.toContain(selectedQuestion);
+    expect(cleaned).not.toContain("?");
   });
 
   it("keeps generic ad-hoc evidence-card facts compact enough for composer schema", () => {
