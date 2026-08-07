@@ -912,7 +912,10 @@ function prioritizeRouteSuggestedQuestions(
       continue;
     }
 
-    const allowedByIntent = intentAllowsQuestion(session.surveyIntent, question);
+    const allowedByIntent = intentAllowsQuestion(
+      session.surveyIntent,
+      question,
+    );
     if (!allowedByIntent && !allowOffIntent) {
       continue;
     }
@@ -1581,9 +1584,7 @@ function adaptivePadcevSafetyProbe(
       sourceContextRequirement:
         "If source context is needed, focus on PADCEV monitoring checklists, patient symptom prompts, adverse-reaction management guides, and practical resources that could reduce clinic workflow burden.",
       routeKeywords: ["staff", "triage", "call-ins", "workflow", "burden"],
-      completionSignals: [
-        "respondent identifies the operational burden point",
-      ],
+      completionSignals: ["respondent identifies the operational burden point"],
       adaptiveProbes: [],
       analyzableOutputs: ["side_effect_workflow_burden"],
     });
@@ -1817,7 +1818,11 @@ function responsiveTopicForContent(
     return "dosing";
   }
 
-  if (/\b(safety|tolerability|side effect|side effects|adverse|toxicity)\b/.test(normalized)) {
+  if (
+    /\b(safety|tolerability|side effect|side effects|adverse|toxicity)\b/.test(
+      normalized,
+    )
+  ) {
     return "safety";
   }
 
@@ -1930,9 +1935,12 @@ function selectResponsiveQuestionForContent(
     if (
       session.surveySlug === "padcev" &&
       topic !== "efficacy" &&
-      ["ev302", "monotherapy_evidence", "indication_positioning", "overall"].includes(
-        question.id,
-      )
+      [
+        "ev302",
+        "monotherapy_evidence",
+        "indication_positioning",
+        "overall",
+      ].includes(question.id)
     ) {
       score -= 40;
     }
@@ -1991,7 +1999,10 @@ function selectNextQuestion(
     session.surveySlug === "padcev" &&
     padcevSideEffectMapApplies(session.surveyIntent?.slug)
   ) {
-    const adaptiveProbe = adaptivePadcevSafetyProbe(session, participantContent);
+    const adaptiveProbe = adaptivePadcevSafetyProbe(
+      session,
+      participantContent,
+    );
     if (
       adaptiveProbe &&
       questionAllowedByDiseaseLane(session, adaptiveProbe, participantContent)
@@ -2089,6 +2100,14 @@ function contentLooksLikeSourceProbe(content: string) {
   );
 }
 
+function contentLooksLikeSourceUtilityRequest(content: string) {
+  const normalized = normalizeText(content);
+
+  return /\b(download link|downloadable link|can i download|do you have (?:a )?download|pdf link|source link|citation link|open (?:the )?(?:source|citation|pdf|guide|checklist|link)|pull up (?:the )?(?:source|citation|pdf|guide|checklist|graph|chart|image)|show me (?:the )?(?:source|citation|pdf|guide|checklist|graph|chart|image)|display (?:the )?(?:source|citation|pdf|guide|checklist|graph|chart|image)|where (?:is|are).{0,40}\blink)\b/.test(
+    normalized,
+  );
+}
+
 function contentLooksLikePatientPopulationQuestion(content: string) {
   const normalized = normalizeText(content);
 
@@ -2097,6 +2116,17 @@ function contentLooksLikePatientPopulationQuestion(content: string) {
       normalized,
     ) &&
     /\b(who|which|what|patient|population|appropriate|exclusion|inclusion|mutation|risk|caution|avoid)\b/.test(
+      normalized,
+    )
+  );
+}
+
+function contentLooksLikeBroadPatientFitQuestion(content: string) {
+  const normalized = normalizeText(content);
+
+  return (
+    contentLooksLikePatientPopulationQuestion(content) &&
+    /\b(appropriate patient|patient population|patient populations|patient type|patient types|patient fit|better fit|best fit|eligible|candidate|inclusion|exclusion|where would you be cautious|where should i be cautious)\b/.test(
       normalized,
     )
   );
@@ -2486,6 +2516,14 @@ function currentAnswerQuality(
     };
   }
 
+  if (
+    current &&
+    !REQUIRED_INTAKE_QUESTION_IDS.has(current.id) &&
+    contentLooksLikeReturnToSurveyCue(content)
+  ) {
+    return { accepted: true };
+  }
+
   if (!current || contentLooksLikeReactiveQuestion(content)) {
     return { accepted: true };
   }
@@ -2501,6 +2539,34 @@ function currentAnswerQuality(
       `Could you answer this directly: ${current.canonicalQuestion}`,
     ].join("\n\n"),
   };
+}
+
+function contentAppearsToAnswerCurrentQuestion(
+  question: MvpGuideQuestion | null,
+  content: string,
+) {
+  if (!question) {
+    return false;
+  }
+
+  switch (question.id) {
+    case "intro_consent":
+      return hasAgreement(content) && normalizedTokens(content).length <= 8;
+    case "role":
+      return hasClinicalRole(content);
+    case "practice_setting":
+      return hasPracticeSetting(content);
+    case "disease_involvement":
+    case "uc_involvement":
+    case "primary_disease_focus":
+      return extractDiseaseAreas(content).length > 0;
+    case "patient_volume":
+      return hasPatientVolume(content);
+    case "familiarity":
+      return hasFamiliaritySignal(content);
+    default:
+      return answerMatchesQuestionRouteKeyword(question, content);
+  }
 }
 
 function sourceContextForQuestion(question: MvpGuideQuestion | null) {
@@ -2548,6 +2614,10 @@ function sourceContextForReactiveQuestion(
   }
 
   if (session.surveySlug === "padcev") {
+    if (contentLooksLikeBroadPatientFitQuestion(participantContent)) {
+      return "The participant explicitly asked about PADCEV patient fit, appropriate populations, or caution segments. Answer the specific population or caution angle they raised using source-supported facts only, including labeled setting, treatment-line context, relevant efficacy context, and safety-caution considerations such as neuropathy, rash/skin reactions, hyperglycemia/diabetes, ocular issues, renal/cisplatin context, and dose-modification feasibility only where supported. If the participant's wording is broad, distinguish efficacy-based patient fit from safety-management caution profiles. The controller will resume the parked survey question after this source-answer turn when appropriate.";
+    }
+
     if (padcevSideEffectMapApplies(session.surveyIntent?.slug)) {
       const mappedDirective = padcevSideEffectSourceDirective(
         participantContent,
@@ -2680,18 +2750,47 @@ function answerProbablyContainsQuestion(answer: string, question: string) {
 }
 
 function ensureReturnToSurvey(answer: string, selectedQuestion: string | null) {
+  const sourceAnswer = selectedQuestion
+    ? stripTrailingUnselectedQuestion(answer, selectedQuestion)
+    : answer.trim();
+
   if (
     !selectedQuestion ||
-    answerProbablyContainsQuestion(answer, selectedQuestion)
+    answerProbablyContainsQuestion(sourceAnswer, selectedQuestion)
   ) {
-    return answer.trim();
+    return sourceAnswer;
   }
 
-  return `${answer.trim()}\n\n${selectedQuestion}`;
+  return `${sourceAnswer}\n\n${selectedQuestion}`;
 }
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripTrailingUnselectedQuestion(
+  answer: string,
+  selectedQuestion: string,
+) {
+  const trimmed = answer.trim();
+  const trailingQuestionMatch = trimmed.match(
+    /^(.*?)(?:\s+|\n+)((?:What|Which|How|For which|Clinically|Given|Based on|Would|Does|Do|Should|Can|Could|Is|Are)\b[^?]{18,}\?)\s*$/is,
+  );
+
+  if (!trailingQuestionMatch?.[1] || !trailingQuestionMatch[2]) {
+    return trimmed;
+  }
+
+  const beforeQuestion = trailingQuestionMatch[1].trim();
+  const trailingQuestion = trailingQuestionMatch[2].trim();
+  if (
+    beforeQuestion.length >= 40 &&
+    !answerProbablyContainsQuestion(trailingQuestion, selectedQuestion)
+  ) {
+    return beforeQuestion;
+  }
+
+  return trimmed;
 }
 
 function answerOnlySourceTurn(answer: string, selectedQuestion: string | null) {
@@ -2712,14 +2811,11 @@ function answerOnlySourceTurn(answer: string, selectedQuestion: string | null) {
         .trim() || sourceAnswer;
   }
 
-  const trailingQuestionMatch = sourceAnswer.match(
-    /^(.*?)(?:\s+|\n+)((?:What|Which|How|For which|Clinically|Given|Based on|Would|Does|Do)\b[^?]{18,}\?)\s*$/is,
-  );
-  if (trailingQuestionMatch?.[1]) {
-    const beforeQuestion = trailingQuestionMatch[1].trim();
-    if (beforeQuestion.length >= 40) {
-      sourceAnswer = beforeQuestion;
-    }
+  if (selectedQuestion) {
+    sourceAnswer = stripTrailingUnselectedQuestion(
+      sourceAnswer,
+      selectedQuestion,
+    );
   }
 
   return sourceAnswer;
@@ -2916,7 +3012,9 @@ function responseForSession(
     (completed ? "wrap_up" : sourceProviderEnabled ? "ask" : "setup_required");
   const reason =
     session.completedReason ??
-    (sourceProviderEnabled || isFixedFlowSurvey(session) ? null : missingReason);
+    (sourceProviderEnabled || isFixedFlowSurvey(session)
+      ? null
+      : missingReason);
 
   return mvpCustomGptSurveyResponseSchema.parse({
     sessionId: session.sessionId,
@@ -3065,8 +3163,11 @@ export async function submitMvpCustomGptSurveyTurn(
       questionAllowedByDiseaseLane(session, pendingQuestion, input.content)
     ) {
       const assistantContent =
-        participantFacingQuestionText(session, pendingQuestion, input.content) ??
-        pendingQuestion.canonicalQuestion;
+        participantFacingQuestionText(
+          session,
+          pendingQuestion,
+          input.content,
+        ) ?? pendingQuestion.canonicalQuestion;
       const references = surfacedReferencesForQuestion(pendingQuestion);
 
       session.messages.push(
@@ -3200,7 +3301,9 @@ export async function submitMvpCustomGptSurveyTurn(
       session.currentQuestionId = selectedQuestion.id;
     }
 
-    session.messages.push(createMessage("interviewer", assistantContent, references));
+    session.messages.push(
+      createMessage("interviewer", assistantContent, references),
+    );
     void appendMvpAuditEvent(session, {
       eventType: "turn_completed",
       participantMessage: input.content,
@@ -3356,10 +3459,25 @@ export async function submitMvpCustomGptSurveyTurn(
   ) {
     session.pendingReturnQuestionId = null;
   }
-  const selectedQuestion =
-    parkedQuestion &&
-    !questionWasAsked(session, parkedQuestion) &&
-    questionAllowedByDiseaseLane(session, parkedQuestion, input.content)
+  const participantSourceDetour =
+    !preSelectionRouteAnalysis.decision.isOutOfScope &&
+    (contentLooksLikeSourceProbe(input.content) ||
+      preSelectionRouteAnalysis.decision.kind === "source_question" ||
+      preSelectionRouteAnalysis.decision.kind === "unknown_in_domain" ||
+      preSelectionRouteAnalysis.decision.kind === "off_lane_excursion");
+  const shouldReturnToCurrentQuestion =
+    Boolean(currentQuestionBefore) &&
+    participantSourceDetour &&
+    !contentAppearsToAnswerCurrentQuestion(
+      currentQuestionBefore,
+      input.content,
+    ) &&
+    !contentLooksLikeReturnToSurveyCue(input.content);
+  const selectedQuestion = shouldReturnToCurrentQuestion
+    ? currentQuestionBefore
+    : parkedQuestion &&
+        !questionWasAsked(session, parkedQuestion) &&
+        questionAllowedByDiseaseLane(session, parkedQuestion, input.content)
       ? parkedQuestion
       : selectNextQuestion(session, input.content);
   const questionSourceContextRequirement =
@@ -3373,21 +3491,18 @@ export async function submitMvpCustomGptSurveyTurn(
     selectedQuestionText: questionText(selectedQuestion),
     selectedQuestionSourceContext: questionSourceContextRequirement,
   });
-  const turnRouteDecision =
-    preSelectionRouteAnalysis.provider === "openai_hybrid"
-      ? {
-          ...preSelectionRouteAnalysis.decision,
-          needsSource:
-            preSelectionRouteAnalysis.decision.needsSource ||
-            selectedQuestionRouteDecision.needsSource,
-          topic:
-            preSelectionRouteAnalysis.decision.topic ??
-            selectedQuestionRouteDecision.topic,
-          sourceDirective:
-            preSelectionRouteAnalysis.decision.sourceDirective ??
-            selectedQuestionRouteDecision.sourceDirective,
-        }
-      : selectedQuestionRouteDecision;
+  const turnRouteDecision = {
+    ...preSelectionRouteAnalysis.decision,
+    needsSource:
+      preSelectionRouteAnalysis.decision.needsSource ||
+      selectedQuestionRouteDecision.needsSource,
+    topic:
+      preSelectionRouteAnalysis.decision.topic ??
+      selectedQuestionRouteDecision.topic,
+    sourceDirective:
+      preSelectionRouteAnalysis.decision.sourceDirective ??
+      selectedQuestionRouteDecision.sourceDirective,
+  };
   const reactiveQuestionSourceDirective = turnRouteDecision.isOutOfScope
     ? null
     : sourceContextForReactiveQuestion(
@@ -3429,12 +3544,14 @@ export async function submitMvpCustomGptSurveyTurn(
     (contentLooksLikeSourceProbe(input.content) ||
       preSelectionRouteAnalysis.decision.kind === "source_question" ||
       preSelectionRouteAnalysis.decision.kind === "unknown_in_domain");
-  const sourceResponseMode =
+  const shouldPauseAfterSourceAnswer =
     needsCustomGpt &&
     participantAskedSourceProbe &&
-    !hardTimeboxExpired(session)
-      ? ("answer_only" as const)
-      : ("answer_then_ask" as const);
+    contentLooksLikeSourceUtilityRequest(input.content) &&
+    !hardTimeboxExpired(session);
+  const sourceResponseMode = shouldPauseAfterSourceAnswer
+    ? ("answer_only" as const)
+    : ("answer_then_ask" as const);
 
   let assistantContent: string;
   let references: GroundedReference[] = [];
@@ -3559,7 +3676,9 @@ export async function submitMvpCustomGptSurveyTurn(
     session.queuedQuestionIds = session.queuedQuestionIds.filter(
       (questionId) => questionId !== actualAskedQuestion.id,
     );
-    session.askedQuestionIds.push(actualAskedQuestion.id);
+    if (!session.askedQuestionIds.includes(actualAskedQuestion.id)) {
+      session.askedQuestionIds.push(actualAskedQuestion.id);
+    }
     session.currentQuestionId = actualAskedQuestion.id;
   } else if (session.completedReason) {
     session.currentQuestionId = null;
