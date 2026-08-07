@@ -9,6 +9,7 @@ import {
 
 const originalCustomGptApiKey = env.CUSTOMGPT_API_KEY;
 const originalCustomGptProjectId = env.CUSTOMGPT_PROJECT_ID;
+const originalCustomGptNubeqaProjectId = env.CUSTOMGPT_NUBEQA_PROJECT_ID;
 const originalOpenAiApiKey = env.OPENAI_API_KEY;
 const originalMvpSourceProvider = env.MVP_SOURCE_PROVIDER;
 
@@ -16,6 +17,7 @@ afterEach(() => {
   vi.useRealTimers();
   env.CUSTOMGPT_API_KEY = originalCustomGptApiKey;
   env.CUSTOMGPT_PROJECT_ID = originalCustomGptProjectId;
+  env.CUSTOMGPT_NUBEQA_PROJECT_ID = originalCustomGptNubeqaProjectId;
   env.OPENAI_API_KEY = originalOpenAiApiKey;
   env.MVP_SOURCE_PROVIDER = originalMvpSourceProvider;
   resetMvpCustomGptSurveySessions();
@@ -148,7 +150,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.currentQuestion).toContain("Is it okay to begin");
     expect(next.messages.at(-1)?.content).toContain("SEQUOIA");
     expect(next.messages.at(-1)?.content).toContain("[1]");
-    expect(next.messages.at(-1)?.content).toContain(
+    expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
     expect(next.messages.at(-1)?.content).not.toContain(
@@ -485,7 +487,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.nextAction).toBe("ask");
     expect(next.currentQuestion).toContain("BRUKINSA");
     expect(next.messages.at(-1)?.content).toContain("[1]");
-    expect(next.messages.at(-1)?.content).toContain(
+    expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
     expect(next.messages.at(-1)?.content).not.toContain(
@@ -510,6 +512,99 @@ describe("MVP CustomGPT survey service", () => {
     expect(messageBody.prompt).toContain("Turn response mode: answer_only");
     expect(messageBody.prompt).toContain(
       "Selected next survey question reserved for the survey controller",
+    );
+  });
+
+  it("routes plain-language NUBEQA DDI asks through CustomGPT retrieval", async () => {
+    env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+    env.CUSTOMGPT_NUBEQA_PROJECT_ID = "nubeqa-project";
+    env.MVP_SOURCE_PROVIDER = "customgpt";
+
+    const prompts: string[] = [];
+    const fetchMock = vi.fn(async (url: string | URL, init?: RequestInit) => {
+      const href = String(url);
+      const method = init?.method ?? "GET";
+
+      if (
+        href.endsWith("/projects/nubeqa-project/conversations") &&
+        method === "POST"
+      ) {
+        return new Response(
+          JSON.stringify({
+            data: {
+              session_id: "customgpt-nubeqa-ddi",
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/messages") && method === "POST") {
+        const body = JSON.parse(String(init?.body ?? "{}")) as {
+          prompt?: string;
+        };
+        prompts.push(body.prompt ?? "");
+
+        return new Response(
+          JSON.stringify({
+            data: {
+              openai_response:
+                "NUBEQA drug-drug interaction information includes source-supported CYP3A4/P-gp, BCRP, and OATP transporter considerations. [1]",
+              citations: [
+                {
+                  id: "nubeqa-ddi",
+                  title: "NUBEQA Safety, Dosing, and DDI Profile",
+                  url: "https://www.nubeqahcp.com/dosing",
+                },
+              ],
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      if (href.includes("/citations/nubeqa-ddi") && method === "GET") {
+        return new Response(
+          JSON.stringify({
+            data: {
+              id: "nubeqa-ddi",
+              title: "NUBEQA Safety, Dosing, and DDI Profile",
+              url: "https://www.nubeqahcp.com/dosing",
+            },
+          }),
+          { status: 200 },
+        );
+      }
+
+      return new Response("Unexpected CustomGPT request", { status: 404 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "nubeqa",
+      surveyIntentSlug: "safety-dosing-practicality",
+      targetDurationSeconds: 600,
+    });
+
+    const next = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "well what are the known drug drug interactions",
+    });
+
+    expect(next.nextAction).toBe("ask");
+    expect(next.messages.at(-1)?.content).toContain("CYP3A4/P-gp");
+    expect(next.messages.at(-1)?.content).not.toContain(
+      "Should we stay with that",
+    );
+    expect(next.messages.at(-1)?.references[0]?.title).toContain("DDI");
+    expect(prompts.at(-1) ?? "").toContain(
+      "The participant asked a NUBEQA safety, dosing, drug-drug interaction",
+    );
+    expect(prompts.at(-1) ?? "").toContain(
+      "For drug-drug interaction or DDI questions",
+    );
+    expect(prompts.at(-1) ?? "").toContain(
+      "Participant message: well what are the known drug drug interactions",
     );
   });
 
@@ -709,7 +804,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.content).toContain("[1]");
     expect(next.messages.at(-1)?.content).not.toContain("[2]");
     expect(next.messages.at(-1)?.content).not.toContain("[3]");
-    expect(next.messages.at(-1)?.content).toContain(
+    expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
     expect(next.messages.at(-1)?.content).not.toContain(
@@ -1413,7 +1508,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(dataTurn.messages.at(-1)?.content).toContain(
       "concrete study highlights",
     );
-    expect(dataTurn.messages.at(-1)?.content).toContain(
+    expect(dataTurn.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
     expect(dataTurn.messages.at(-1)?.content).not.toContain(
@@ -2147,7 +2242,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(excursionTurn.currentQuestion).toContain(
       "one PADCEV safety or tolerability issue",
     );
-    expect(excursionTurn.messages.at(-1)?.content).toContain(
+    expect(excursionTurn.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
     expect(excursionTurn.messages.at(-1)?.content).not.toContain(
@@ -2261,7 +2356,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.currentQuestion).toContain(
       "one PADCEV safety or tolerability issue",
     );
-    expect(next.messages.at(-1)?.content).toContain(
+    expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
     expect(next.messages.at(-1)?.content).not.toContain(

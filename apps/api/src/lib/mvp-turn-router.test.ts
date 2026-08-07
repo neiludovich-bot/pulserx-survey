@@ -113,4 +113,20 @@ describe("MVP turn router", () => {
     expect(decision.needsSource).toBe(true);
     expect(decision.sourceDirective).toContain("NUBEQA");
   });
+
+  it("routes plain-language NUBEQA DDI questions to source retrieval", () => {
+    const decision = classifyMvpTurnRoute({
+      surveySlug: "nubeqa",
+      activeIntentSlug: "safety-dosing-practicality",
+      participantContent:
+        "Well what are the known drug drug interactions?",
+      selectedQuestionText:
+        "What safety, drug-interaction, or dosing issue would most affect comfort?",
+    });
+
+    expect(decision.kind).toBe("in_lane_topic");
+    expect(decision.topic).toBe("nubeqa_safety_dosing");
+    expect(decision.needsSource).toBe(true);
+    expect(decision.sourceDirective).toContain("DDI");
+  });
 });
