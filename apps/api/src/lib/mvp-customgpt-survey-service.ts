@@ -363,6 +363,37 @@ function normalizeClinicalMarkup(content: string) {
     .replace(/\$\$?\s*([^$]+?)\s*\$\$?/g, "$1");
 }
 
+function normalizeGroundedReferenceForResponse(
+  reference: Partial<GroundedReference>,
+  index: number,
+): GroundedReference {
+  return {
+    citationId: reference.citationId || `source:${index + 1}`,
+    title: reference.title ?? null,
+    url: reference.url ?? null,
+    description: reference.description ?? null,
+    assets: (reference.assets ?? []).map((asset) => ({
+      title: asset.title,
+      url: asset.url,
+      description: asset.description ?? null,
+      assetKind: asset.assetKind,
+      tags: asset.tags ?? [],
+      priority: asset.priority ?? 0,
+    })),
+  };
+}
+
+function normalizeMessageForResponse(
+  message: MvpCustomGptSurveyMessage,
+): MvpCustomGptSurveyMessage {
+  return {
+    ...message,
+    references: (message.references ?? []).map((reference, index) =>
+      normalizeGroundedReferenceForResponse(reference, index),
+    ),
+  };
+}
+
 function createMessage(
   role: MvpCustomGptSurveyMessage["role"],
   content: string,
@@ -373,7 +404,9 @@ function createMessage(
     role,
     content: normalizeClinicalMarkup(content),
     createdAt: new Date().toISOString(),
-    references,
+    references: references.map((reference, index) =>
+      normalizeGroundedReferenceForResponse(reference, index),
+    ),
   };
 }
 
@@ -2885,7 +2918,7 @@ function responseForSession(
     nextAction,
     customGptEnabled: !isFixedFlowSurvey(session) && sourceProviderEnabled,
     reason,
-    messages: session.messages,
+    messages: session.messages.map(normalizeMessageForResponse),
   });
 }
 
