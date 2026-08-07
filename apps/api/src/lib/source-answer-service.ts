@@ -1,6 +1,8 @@
 import { env } from "../env";
+import type { GroundedReference } from "@interview/schemas";
 import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
 import { askCustomGptForSurveyInterviewerTurn } from "./customgpt-service";
+import type { CustomGptReference } from "./customgpt-service";
 
 export type SourceAnswerProviderInput = {
   surveySlug: "brukinsa" | "padcev" | "nubeqa";
@@ -14,12 +16,17 @@ export type SourceAnswerProviderInput = {
   recentInterviewerContext?: string | null;
   remainingSeconds: number;
   askedQuestions: string[];
+  responseMode?: "answer_only" | "answer_then_ask";
 };
 
-export type SourceAnswerProviderResult = Awaited<
-  ReturnType<typeof askCustomGptForSurveyInterviewerTurn>
-> & {
+export type SourceAnswerProviderResult = {
   provider: "customgpt" | "controlled_rag";
+  enabled: boolean;
+  answer: string | null;
+  references: GroundedReference[];
+  citationIds: string[];
+  conversationId: string | null;
+  reason: string | null;
   shadow?: {
     enabled: boolean;
     provider: "controlled_rag";
@@ -29,6 +36,15 @@ export type SourceAnswerProviderResult = Awaited<
     latencyMs: number;
   };
 };
+
+function groundedReferences(
+  references: Array<CustomGptReference | GroundedReference>,
+): GroundedReference[] {
+  return references.map((reference) => ({
+    ...reference,
+    assets: "assets" in reference ? (reference.assets ?? []) : [],
+  }));
+}
 
 function preview(value: string | null) {
   if (!value) {
@@ -48,6 +64,7 @@ async function timedControlledRag(input: SourceAnswerProviderInput) {
     selectedNextQuestion: input.selectedNextQuestion,
     selectedQuestionSourceContext: input.selectedQuestionSourceContext,
     recentInterviewerContext: input.recentInterviewerContext,
+    responseMode: input.responseMode,
   });
 
   return {
@@ -64,6 +81,7 @@ export async function askSourceProviderForSurveyInterviewerTurn(
     return {
       ...result,
       provider: "controlled_rag",
+      references: groundedReferences(result.references),
     };
   }
 
@@ -78,12 +96,14 @@ export async function askSourceProviderForSurveyInterviewerTurn(
     recentInterviewerContext: input.recentInterviewerContext,
     remainingSeconds: input.remainingSeconds,
     askedQuestions: input.askedQuestions,
+    responseMode: input.responseMode,
   });
 
   if (env.MVP_SOURCE_PROVIDER !== "shadow") {
     return {
       ...customGptResult,
       provider: "customgpt",
+      references: groundedReferences(customGptResult.references),
     };
   }
 
@@ -92,6 +112,7 @@ export async function askSourceProviderForSurveyInterviewerTurn(
   return {
     ...customGptResult,
     provider: "customgpt",
+    references: groundedReferences(customGptResult.references),
     shadow: {
       enabled: shadowResult.enabled,
       provider: "controlled_rag",

@@ -114,6 +114,9 @@ export const controlledRagCompositionInputSchema = z.object({
   selectedNextQuestion: z.string().min(1).nullable(),
   selectedQuestionSourceContext: z.string().min(1).nullable(),
   recentInterviewerContext: z.string().min(1).nullable().default(null),
+  responseMode: z
+    .enum(["answer_only", "answer_then_ask"])
+    .default("answer_then_ask"),
   sources: z.array(controlledRagCompositionSourceSchema).min(1).max(8),
 });
 

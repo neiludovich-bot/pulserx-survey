@@ -22,6 +22,7 @@ export type ControlledRagSurveyTurnInput = {
   selectedNextQuestion: string | null;
   selectedQuestionSourceContext: string | null;
   recentInterviewerContext?: string | null;
+  responseMode?: "answer_only" | "answer_then_ask";
 };
 
 export type ControlledRagSurveyTurnResult = {
@@ -834,7 +835,14 @@ function sourceSummary(chunks: ControlledRagChunk[]) {
     .join("\n\n");
 }
 
-function selectedQuestionLead(question: string | null) {
+function selectedQuestionLead(
+  question: string | null,
+  responseMode: "answer_only" | "answer_then_ask",
+) {
+  if (responseMode === "answer_only") {
+    return "\n\nShould we stay with that for one more pass, or should I keep moving?";
+  }
+
   return question
     ? `\n\n${question}`
     : "\n\nThank you for participating. Your feedback has been recorded, and we can close the interview here.";
@@ -844,14 +852,11 @@ function fallbackSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
 ) {
-  const contextNote = input.selectedQuestionSourceContext
-    ? `Relevant source need: ${compact(input.selectedQuestionSourceContext, 260)}\n\n`
-    : "";
   const alreadyCovered = input.recentInterviewerContext
-    ? `Previously covered context was considered, so this answer focuses on the current angle.\n\n`
+    ? `Building on what we already covered, here is the narrower source detail.\n\n`
     : "";
 
-  return [contextNote, alreadyCovered, sourceSummary(chunks)].join("").trim();
+  return [alreadyCovered, sourceSummary(chunks)].join("").trim();
 }
 
 function ensureCitationMarker(answer: string, chunks: ControlledRagChunk[]) {
@@ -879,10 +884,12 @@ function removeParticipantVoiceMirror(answer: string) {
 
   const rest = answer.slice(match[0].length).trimStart();
   if (!rest) {
-    return "For orientation, the source materials provide the following context.";
+    return "The source materials provide the following context.";
   }
 
-  return `For orientation, ${lowerFirstPlainWord(rest)}`;
+  return lowerFirstPlainWord(
+    rest.replace(/^from the source material,?\s*/i, ""),
+  );
 }
 
 async function composeSourceAnswer(
@@ -904,6 +911,7 @@ async function composeSourceAnswer(
       selectedNextQuestion: input.selectedNextQuestion,
       selectedQuestionSourceContext: input.selectedQuestionSourceContext,
       recentInterviewerContext: input.recentInterviewerContext ?? null,
+      responseMode: input.responseMode ?? "answer_then_ask",
       sources: chunks.map((chunk, index) => ({
         index: index + 1,
         title: chunk.title,
@@ -951,9 +959,10 @@ export async function askControlledRagForSurveyInterviewerTurn(
   const turnAssets = await retrieveTurnAssets(input, chunks);
   const references = referencesForChunks(chunks, turnAssets, queryTokens);
   const composedAnswer = await composeSourceAnswer(input, chunks);
+  const responseMode = input.responseMode ?? "answer_then_ask";
   const answer = [
     composedAnswer,
-    selectedQuestionLead(input.selectedNextQuestion),
+    selectedQuestionLead(input.selectedNextQuestion, responseMode),
   ]
     .join("")
     .trim();

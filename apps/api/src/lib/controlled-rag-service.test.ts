@@ -25,6 +25,27 @@ describe("controlled RAG source provider", () => {
     expect(result.references[0]?.url).toContain("brukinsahcp.com");
   });
 
+  it("can answer a source probe without appending the parked survey question", async () => {
+    const parkedQuestion =
+      "How does the SEQUOIA evidence affect your view of BRUKINSA in first-line CLL/SLL?";
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      surveySlug: "brukinsa",
+      participantMessage: "What does the SEQUOIA PFS evidence show?",
+      surveyContext: "The respondent is discussing CLL/SLL evidence.",
+      currentQuestion: "How familiar are you with BRUKINSA today?",
+      selectedNextQuestion: parkedQuestion,
+      selectedQuestionSourceContext:
+        "Retrieve and summarize BRUKINSA CLL/SLL SEQUOIA efficacy information.",
+      responseMode: "answer_only",
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.answer).toContain("SEQUOIA");
+    expect(result.answer).toContain("[1]");
+    expect(result.answer).not.toContain(parkedQuestion);
+    expect(result.answer).toContain("Should we stay with that");
+  });
+
   it("fails safely when no curated source chunk matches", async () => {
     const result = await askControlledRagForSurveyInterviewerTurn({
       surveySlug: "padcev",
@@ -250,7 +271,7 @@ describe("controlled RAG source provider", () => {
       );
 
     expect(cleaned).toBe(
-      "For orientation, from the source material, PADCEV is described in two roles [1].",
+      "PADCEV is described in two roles [1].",
     );
   });
 

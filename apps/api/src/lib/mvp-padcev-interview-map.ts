@@ -51,7 +51,7 @@ export const PADCEV_SIDE_EFFECT_BRANCH_RULES = [
       /\bdata show\b/,
     ],
     sourceDirective:
-      "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data while the interview remains in the side-effect-management intent. Treat this as a source-answer excursion, not a permanent lane switch. Answer the specific efficacy endpoint or trial-design detail they raised using source-supported facts only, including OS, PFS, ORR, CR/PR, comparator, population, follow-up, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. Then return to the selected side-effect-management survey question.",
+      "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data while the interview remains in the side-effect-management intent. Treat this as a source-answer excursion, not a permanent lane switch. Answer the specific efficacy endpoint or trial-design detail they raised using source-supported facts only, including OS, PFS, ORR, CR/PR, comparator, population, follow-up, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. The controller will resume the selected side-effect-management survey question after this source-answer turn when appropriate.",
   },
   {
     key: "safety_resources",

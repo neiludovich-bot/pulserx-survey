@@ -114,6 +114,7 @@ describe("interviewer fallback copy", () => {
             title: "BRUKINSA HCP Site",
             url: "https://example.test/brukinsa",
             description: null,
+            assets: [],
           },
         ],
         answerQuality: "off_topic",

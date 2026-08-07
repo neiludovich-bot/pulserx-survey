@@ -69,7 +69,7 @@ export const NUBEQA_SURVEY_INTENTS = [
       "remaining nmCRPC evidence questions",
     ],
     steeringRule:
-      "Prioritize nmCRPC and ARAMIS. Answer mCSPC questions as brief source excursions and then return unless the respondent clearly pivots.",
+      "Prioritize nmCRPC and ARAMIS. Answer mCSPC questions as brief source excursions; the controller will resume the nmCRPC lane unless the respondent clearly pivots.",
     questionOrder: [
       "intro_consent",
       "familiarity",

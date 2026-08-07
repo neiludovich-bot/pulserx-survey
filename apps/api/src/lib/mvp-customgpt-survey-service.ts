@@ -101,6 +101,7 @@ type MvpSurveySession = {
   adaptiveProbeQuestions: MvpGuideQuestion[];
   askedQuestionIds: string[];
   currentQuestionId: string | null;
+  pendingReturnQuestionId: string | null;
   activeDiseaseAreas: DiseaseArea[];
   primaryDiseaseArea: DiseaseArea | null;
   queuedQuestionIds: string[];
@@ -220,6 +221,7 @@ function persistenceSnapshot(session: MvpSurveySession) {
     startedAt: session.startedAt,
     currentQuestionId: session.currentQuestionId,
     currentQuestion: questionText(currentQuestion(session)),
+    pendingReturnQuestionId: session.pendingReturnQuestionId,
     activeDiseaseAreas: [...session.activeDiseaseAreas],
     primaryDiseaseArea: session.primaryDiseaseArea,
     queuedQuestionIds: [...session.queuedQuestionIds],
@@ -273,6 +275,11 @@ function restoreMvpSurveySession(input: {
     knownQuestionIds.has(input.session.currentQuestionId)
       ? input.session.currentQuestionId
       : null;
+  const pendingReturnQuestionId =
+    input.session.pendingReturnQuestionId &&
+    knownQuestionIds.has(input.session.pendingReturnQuestionId)
+      ? input.session.pendingReturnQuestionId
+      : null;
 
   return {
     sessionId: input.session.sessionId,
@@ -293,6 +300,7 @@ function restoreMvpSurveySession(input: {
       knownQuestionIds.has(questionId),
     ),
     currentQuestionId,
+    pendingReturnQuestionId,
     activeDiseaseAreas: input.session.activeDiseaseAreas.filter(
       (area): area is DiseaseArea =>
         area === "cll" ||
@@ -1799,7 +1807,9 @@ function responsiveQuestionTopicScore(
     return 0;
   }
 
-  const scoreByTopic: Partial<Record<ResponsiveTopic, Record<string, number>>> = {
+  const scoreByTopic: Partial<
+    Record<Exclude<ResponsiveTopic, null>, Record<string, number>>
+  > = {
     efficacy: {
       ev302: 55,
       monotherapy_evidence: 35,
@@ -2035,6 +2045,17 @@ function contentLooksLikeReactiveQuestion(content: string) {
   );
 }
 
+function contentLooksLikeSourceProbe(content: string) {
+  const normalized = normalizeText(content);
+
+  return (
+    content.includes("?") ||
+    /\b(can you|could you|would you|please|explain|what is|what are|what did|what does|tell me|show me|want to know|source|reference|references|citation|citations|data show|study show|trial show|how should i|how do i|do you have|is there|are there|download link|open the|pull up|walk me through)\b/.test(
+      normalized,
+    )
+  );
+}
+
 function contentLooksLikePatientPopulationQuestion(content: string) {
   const normalized = normalizeText(content);
 
@@ -2053,6 +2074,28 @@ function contentLooksLikeSurveyStop(content: string) {
 
   return /\b(no other questions|no more questions|nothing else|that is all|that s all|done|end survey|stop survey|finish)\b/.test(
     normalized,
+  );
+}
+
+function contentLooksLikeReturnToSurveyCue(content: string) {
+  const normalized = normalizeText(content);
+
+  if (
+    !normalized ||
+    normalized.length > 120 ||
+    contentLooksLikeSurveyStop(content) ||
+    contentLooksLikeReactiveQuestion(content)
+  ) {
+    return false;
+  }
+
+  return (
+    /^(yes|yeah|yep|ok|okay|sure|continue|go on|move on|next|next question|keep going|that helps|that s helpful|that is helpful|makes sense|got it|understood|thanks|thank you|no|no thanks|all set|i m good|i am good)\.?$/.test(
+      normalized,
+    ) ||
+    /\b(continue|go on|move on|next question|keep going|that helps|that s helpful|that is helpful|makes sense|got it|understood|thanks|thank you)\b/.test(
+      normalized,
+    )
   );
 }
 
@@ -2476,7 +2519,7 @@ function sourceContextForReactiveQuestion(
     }
 
     if (contentLooksLikePadcevEfficacyQuestion(participantContent)) {
-      return "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data. Prioritize the approved PADCEV HCP EV-302/KEYNOTE-A39 efficacy sources over the selected survey lane for this turn. Answer the specific efficacy endpoint or trial-design detail they raised using source-supported facts only, including OS, PFS, ORR, CR/PR, comparator, population, follow-up, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. Then return to the selected survey question.";
+      return "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data. Prioritize the approved PADCEV HCP EV-302/KEYNOTE-A39 efficacy sources over the selected survey lane for this turn. Answer the specific efficacy endpoint or trial-design detail they raised using source-supported facts only, including OS, PFS, ORR, CR/PR, comparator, population, follow-up, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. The controller will resume the parked survey question after this source-answer turn when appropriate.";
     }
 
     const sideEffectIntent =
@@ -2500,7 +2543,7 @@ function sourceContextForReactiveQuestion(
       return "The participant is in a PADCEV safety-management lane or asked a PADCEV safety-management/resource question. Answer the specific adverse-event, monitoring, management, safety-caution patient-profile, or resource angle they raised; do not provide a full label-style safety inventory. Use 2-4 focused bullets or one short paragraph. If patient profiles are discussed in this lane, frame them as safety-management caution profiles and monitoring/mitigation needs, not broad efficacy-based patient selection. Prioritize approved PADCEV HCP Important Safety Information, Prescribing Information, the PADCEV dose-modifications page, dosing/administration guide, Adverse Reactions Monitoring Checklist, adverse-reaction management guides, and the PADCEV Peripheral Neuropathy Informational Resource if available in the indexed sources. If the participant asks for a guide, checklist, continuum, operational aid, or how to handle adverse events, cite the source page most likely to expose that guide/checklist/PDF rather than a generic efficacy page. For neuropathy, rash/skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, include only source-supported monitoring, dose interruption, dose reduction, discontinuation, counseling, or supportive-care guidance for the relevant topic. For peripheral neuropathy specifically, look for source-supported grade-based dose modification guidance before saying the source lacks intervention detail. If the source does not provide a detailed stepwise intervention algorithm, say that plainly while still summarizing the source-supported management steps. Do not use or cite efficacy/PFS/OS pages or display efficacy graphs unless the participant also asks about efficacy or risk-benefit.";
     }
 
-    return "The participant asked a source/detail question during the PADCEV urothelial cancer survey. Answer using only approved PADCEV HCP source material, including indication/positioning, EV-302/KEYNOTE-A39, EV-301/EV-201, safety, dosing/administration, patient fit, and access/support only where relevant to the participant's question. Then return to the selected survey question. Do not provide patient-specific treatment advice.";
+    return "The participant asked a source/detail question during the PADCEV urothelial cancer survey. Answer using only approved PADCEV HCP source material, including indication/positioning, EV-302/KEYNOTE-A39, EV-301/EV-201, safety, dosing/administration, patient fit, and access/support only where relevant to the participant's question. The controller will resume the parked survey question after this source-answer turn when appropriate. Do not provide patient-specific treatment advice.";
   }
 
   if (session.surveySlug === "brukinsa") {
@@ -2544,7 +2587,7 @@ function sourceContextForReactiveQuestion(
   }
 
   if (explicitlyRequestedAreas.length > 0) {
-    return `The participant explicitly asked for source detail in ${lane}. Answer using approved BRUKINSA HCP source material for ${lane}, then return to the selected survey question.`;
+    return `The participant explicitly asked for source detail in ${lane}. Answer using approved BRUKINSA HCP source material for ${lane}. The controller will resume the parked survey question after this source-answer turn when appropriate.`;
   }
 
   return `The participant asked a broad source/detail question without naming a new disease area. Treat it as scoped to the active disease lane (${lane}). For broad prompts such as "what's new," answer only with approved BRUKINSA HCP source material relevant to ${lane}; do not answer from or cite other disease pages unless the selected survey question explicitly requires cross-disease breadth.`;
@@ -2592,7 +2635,44 @@ function ensureReturnToSurvey(answer: string, selectedQuestion: string | null) {
     return answer.trim();
   }
 
-  return `${answer.trim()}\n\nReturning to the survey: ${selectedQuestion}`;
+  return `${answer.trim()}\n\n${selectedQuestion}`;
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function answerOnlySourceTurn(answer: string, selectedQuestion: string | null) {
+  const trimmed = answer.trim();
+  let sourceAnswer = trimmed;
+
+  if (selectedQuestion) {
+    const selectedQuestionPattern = escapeRegExp(selectedQuestion.trim());
+    sourceAnswer =
+      sourceAnswer
+        .replace(
+          new RegExp(
+            `(?:\\s*\\n\\s*)?(?:Returning to the survey:\\s*)?${selectedQuestionPattern}\\s*$`,
+            "i",
+          ),
+          "",
+        )
+        .trim() || sourceAnswer;
+  }
+
+  const trailingQuestionMatch = sourceAnswer.match(
+    /^(.*?)(?:\s+|\n+)((?:What|Which|How|For which|Clinically|Given|Based on|Would|Does|Do)\b[^?]{18,}\?)\s*$/is,
+  );
+  if (trailingQuestionMatch?.[1]) {
+    const beforeQuestion = trailingQuestionMatch[1].trim();
+    if (beforeQuestion.length >= 40) {
+      sourceAnswer = beforeQuestion;
+    }
+  }
+
+  return /Should we stay with that/i.test(sourceAnswer)
+    ? sourceAnswer
+    : `${sourceAnswer}\n\nShould we stay with that for one more pass, or should I keep moving?`;
 }
 
 function clipControllerText(
@@ -2698,7 +2778,7 @@ function surveyContext(
     "Mode: CustomGPT-first adaptive medical market research MVP.",
     `Approved source brand: ${session.sourceBrand}.`,
     selectedQuestionIsExcursion
-      ? "Selected next question is an explicit respondent-requested off-lane excursion. Answer that requested module for this turn, then the controller will return to the selected home intention."
+      ? "Selected next question is an explicit respondent-requested off-lane excursion. Answer that requested module for this turn; the controller will resume the selected home intention afterward."
       : null,
     activeDiseaseLane
       ? `Active disease lane: ${activeDiseaseLane}.`
@@ -2712,7 +2792,7 @@ function surveyContext(
       ? `Queued respondent-priority modules after this turn: ${queuedModules}`
       : "Queued respondent-priority modules after this turn: none.",
     ...compactSurveyIntentContextLines(session.surveyIntent),
-    "Controller guardrails: answer reactive source questions once, return to the survey, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
+    "Controller guardrails: answer reactive source questions as real answer turns, resume parked survey questions on follow-up turns, do not repeat asked questions, respect the timebox, and do not pivot into disease modules outside the active lane unless the participant explicitly asks.",
     sourceContextRequirement
       ? `Source-context requirement for this turn: ${clipControllerText(
           sourceContextRequirement,
@@ -2722,6 +2802,12 @@ function surveyContext(
     current
       ? `Current question: ${current.canonicalQuestion}`
       : "Current question: none.",
+    session.pendingReturnQuestionId
+      ? `Parked survey question to resume after a source-answer pause: ${
+          questionById(session, session.pendingReturnQuestionId)
+            ?.canonicalQuestion ?? session.pendingReturnQuestionId
+        }`
+      : "Parked survey question to resume after a source-answer pause: none.",
     selectedQuestionText
       ? `Selected next question: ${selectedQuestionText}`
       : "Selected next question: none; close.",
@@ -2845,6 +2931,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     adaptiveProbeQuestions: [],
     askedQuestionIds: [firstQuestion.id],
     currentQuestionId: firstQuestion.id,
+    pendingReturnQuestionId: null,
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
@@ -2911,6 +2998,101 @@ export async function submitMvpCustomGptSurveyTurn(
   const sequenceBase = turnSequenceBase(session);
 
   const fixedFlow = isFixedFlowSurvey(session);
+  if (
+    !fixedFlow &&
+    session.pendingReturnQuestionId &&
+    contentLooksLikeReturnToSurveyCue(input.content)
+  ) {
+    const pendingQuestion = questionById(
+      session,
+      session.pendingReturnQuestionId,
+    );
+    session.pendingReturnQuestionId = null;
+
+    if (
+      pendingQuestion &&
+      !questionWasAsked(session, pendingQuestion) &&
+      questionAllowedByDiseaseLane(session, pendingQuestion, input.content)
+    ) {
+      const assistantContent =
+        participantFacingQuestionText(session, pendingQuestion, input.content) ??
+        pendingQuestion.canonicalQuestion;
+      const references = surfacedReferencesForQuestion(pendingQuestion);
+
+      session.messages.push(
+        createMessage("interviewer", assistantContent, references),
+      );
+      session.queuedQuestionIds = session.queuedQuestionIds.filter(
+        (questionId) => questionId !== pendingQuestion.id,
+      );
+      session.excursionQuestionIds = session.excursionQuestionIds.filter(
+        (questionId) => questionId !== pendingQuestion.id,
+      );
+      session.askedQuestionIds.push(pendingQuestion.id);
+      session.currentQuestionId = pendingQuestion.id;
+
+      void appendMvpAuditEvent(session, {
+        eventType: "turn_completed",
+        participantMessage: input.content,
+        currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
+        surveyIntentSlug: session.surveyIntent?.slug ?? null,
+        selectedQuestionId: pendingQuestion.id,
+        selectedQuestion: pendingQuestion.canonicalQuestion,
+        actualAskedQuestionId: pendingQuestion.id,
+        actualAskedQuestion: pendingQuestion.canonicalQuestion,
+        currentQuestionAfter: questionText(currentQuestion(session)),
+        sourceContextRequirement: null,
+        activeDiseaseAreas: [...session.activeDiseaseAreas],
+        primaryDiseaseArea: session.primaryDiseaseArea,
+        queuedQuestionIds: [...session.queuedQuestionIds],
+        needsCustomGpt: false,
+        customGptStatus: "not_needed",
+        customGptReason: null,
+        droppedReferences: [],
+        assistantMessage: assistantContent,
+        references: references.map((reference) => ({
+          citationId: reference.citationId,
+          title: reference.title,
+          url: reference.url,
+        })),
+        nextAction: "ask",
+        remainingSeconds: remainingSeconds(session),
+        completedReason: session.completedReason,
+      });
+      void persistMvpSurveyTurnAudit({
+        session: persistenceSnapshot(session),
+        turn: {
+          eventType: "turn_completed",
+          participantMessage: input.content,
+          assistantMessage: assistantContent,
+          sequenceBase,
+          currentQuestionBefore:
+            currentQuestionBefore?.canonicalQuestion ?? null,
+          selectedQuestionId: pendingQuestion.id,
+          selectedQuestion: pendingQuestion.canonicalQuestion,
+          actualAskedQuestionId: pendingQuestion.id,
+          actualAskedQuestion: pendingQuestion.canonicalQuestion,
+          currentQuestionAfter: questionText(currentQuestion(session)),
+          sourceContextRequirement: null,
+          needsCustomGpt: false,
+          customGptStatus: "not_needed",
+          customGptReason: null,
+          droppedReferences: [],
+          references: references.map((reference) => ({
+            citationId: reference.citationId,
+            title: reference.title,
+            url: reference.url,
+          })),
+          nextAction: "ask",
+          remainingSeconds: remainingSeconds(session),
+          completedReason: session.completedReason,
+        },
+      });
+
+      return responseForSession(session, "ask");
+    }
+  }
+
   const answerQuality = fixedFlow
     ? { accepted: true as const }
     : currentAnswerQuality(session, input.content);
@@ -3115,7 +3297,21 @@ export async function submitMvpCustomGptSurveyTurn(
     input.content,
     preSelectionRouteAnalysis.decision.kind === "off_lane_excursion",
   );
-  const selectedQuestion = selectNextQuestion(session, input.content);
+  const parkedQuestion = session.pendingReturnQuestionId
+    ? questionById(session, session.pendingReturnQuestionId)
+    : null;
+  if (
+    session.pendingReturnQuestionId &&
+    (!parkedQuestion || questionWasAsked(session, parkedQuestion))
+  ) {
+    session.pendingReturnQuestionId = null;
+  }
+  const selectedQuestion =
+    parkedQuestion &&
+    !questionWasAsked(session, parkedQuestion) &&
+    questionAllowedByDiseaseLane(session, parkedQuestion, input.content)
+      ? parkedQuestion
+      : selectNextQuestion(session, input.content);
   const questionSourceContextRequirement =
     sourceContextForQuestion(selectedQuestion);
   const selectedQuestionRouteDecision = classifyMvpTurnRoute({
@@ -3142,14 +3338,16 @@ export async function submitMvpCustomGptSurveyTurn(
             selectedQuestionRouteDecision.sourceDirective,
         }
       : selectedQuestionRouteDecision;
-  const reactiveSourceContextRequirement = turnRouteDecision.isOutOfScope
+  const reactiveQuestionSourceDirective = turnRouteDecision.isOutOfScope
     ? null
-    : (turnRouteDecision.sourceDirective ??
-      sourceContextForReactiveQuestion(
+    : sourceContextForReactiveQuestion(
         session,
         input.content,
         selectedQuestion,
-      ));
+      );
+  const reactiveSourceContextRequirement = turnRouteDecision.isOutOfScope
+    ? null
+    : (turnRouteDecision.sourceDirective ?? reactiveQuestionSourceDirective);
   const sourceContextRequirement = combineSourceContextRequirements(
     questionSourceContextRequirement,
     reactiveSourceContextRequirement,
@@ -3167,9 +3365,23 @@ export async function submitMvpCustomGptSurveyTurn(
   const remaining = remainingSeconds(session);
   const needsCustomGpt =
     !turnRouteDecision.isOutOfScope &&
+    session.surveySlug !== "data" &&
     (Boolean(sourceContextRequirement) ||
       turnRouteDecision.needsSource ||
       contentLooksLikeReactiveQuestion(input.content));
+  const sourceSurveySlug =
+    session.surveySlug === "data" ? null : session.surveySlug;
+  const participantAskedSourceProbe =
+    !turnRouteDecision.isOutOfScope &&
+    (contentLooksLikeSourceProbe(input.content) ||
+      preSelectionRouteAnalysis.decision.kind === "source_question" ||
+      preSelectionRouteAnalysis.decision.kind === "unknown_in_domain");
+  const sourceResponseMode =
+    needsCustomGpt &&
+    participantAskedSourceProbe &&
+    !hardTimeboxExpired(session)
+      ? ("answer_only" as const)
+      : ("answer_then_ask" as const);
 
   let assistantContent: string;
   let references: GroundedReference[] = [];
@@ -3212,7 +3424,7 @@ export async function submitMvpCustomGptSurveyTurn(
   } else {
     try {
       const sourceTurn = await askSourceProviderForSurveyInterviewerTurn({
-        surveySlug: session.surveySlug,
+        surveySlug: sourceSurveySlug as "brukinsa" | "padcev" | "nubeqa",
         projectId: session.projectId,
         participantMessage: input.content,
         surveyContext: surveyContext(
@@ -3226,6 +3438,7 @@ export async function submitMvpCustomGptSurveyTurn(
         recentInterviewerContext: recentInterviewerSourceContext(session),
         remainingSeconds: remaining,
         askedQuestions: askedQuestions(session),
+        responseMode: sourceResponseMode,
       });
       sourceProvider = sourceTurn.provider;
       sourceProviderShadow = sourceTurn.shadow ?? null;
@@ -3243,15 +3456,25 @@ export async function submitMvpCustomGptSurveyTurn(
         nextAction = "setup_required";
       } else {
         customGptStatus = "success";
-        actualAskedQuestion = selectedQuestion;
-        assistantContent = ensureReturnToSurvey(
-          sourceTurn.answer,
-          selectedQuestionText,
-        );
+        nextAction =
+          sourceResponseMode === "answer_only" ? "ask" : "answer_then_ask";
+        actualAskedQuestion =
+          sourceResponseMode === "answer_only" ? null : selectedQuestion;
+        assistantContent =
+          sourceResponseMode === "answer_only"
+            ? answerOnlySourceTurn(sourceTurn.answer, selectedQuestionText)
+            : ensureReturnToSurvey(sourceTurn.answer, selectedQuestionText);
+        if (
+          sourceResponseMode === "answer_only" &&
+          selectedQuestion &&
+          !questionWasAsked(session, selectedQuestion)
+        ) {
+          session.pendingReturnQuestionId = selectedQuestion.id;
+        }
         references = sourceTurn.references;
         const filtered = filterReferencesForDiseaseLane({
           session,
-          selectedQuestion: actualAskedQuestion,
+          selectedQuestion,
           content: assistantContent,
           references,
         });
@@ -3315,6 +3538,7 @@ export async function submitMvpCustomGptSurveyTurn(
     customGptReason,
     sourceProvider,
     sourceProviderShadow,
+    sourceResponseMode: needsCustomGpt ? sourceResponseMode : null,
     droppedReferences: droppedReferences.map((reference) => ({
       citationId: reference.citationId,
       title: reference.title,
@@ -3356,6 +3580,7 @@ export async function submitMvpCustomGptSurveyTurn(
       customGptReason,
       sourceProvider,
       sourceProviderShadow,
+      sourceResponseMode: needsCustomGpt ? sourceResponseMode : null,
       droppedReferences: droppedReferences.map((reference) => ({
         citationId: reference.citationId,
         title: reference.title,

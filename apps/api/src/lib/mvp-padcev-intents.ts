@@ -50,7 +50,7 @@ export const PADCEV_SURVEY_INTENTS = [
       "remaining evidence questions",
     ],
     steeringRule:
-      "Prioritize concrete EV-302/KEYNOTE-A39 study details and first-line implications. Answer other source questions briefly, then return to first-line evidence.",
+      "Prioritize concrete EV-302/KEYNOTE-A39 study details and first-line implications. Answer other source questions briefly; the controller will resume first-line evidence afterward when appropriate.",
     questionOrder: [
       "intro_consent",
       "ev302",

@@ -40,10 +40,13 @@ const sessionSnapshot = {
   startedAt,
   currentQuestionId: "safety_management_workflow",
   currentQuestion: "How do you manage side effects?",
+  pendingReturnQuestionId: null,
   activeDiseaseAreas: ["la/mUC"],
   primaryDiseaseArea: "la/mUC",
   queuedQuestionIds: ["safety_patient_caution"],
+  excursionQuestionIds: [],
   askedQuestionIds: ["safety_management_workflow"],
+  adaptiveProbeQuestions: [],
   completedReason: null,
 };
 

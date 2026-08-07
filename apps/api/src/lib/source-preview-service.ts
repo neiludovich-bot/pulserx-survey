@@ -31,6 +31,9 @@ type DocumentCandidate = {
 type CuratedSourceAsset = NonNullable<
   MvpCustomGptSourcePreviewRequest["assets"]
 >[number];
+type SourcePreviewImage = MvpCustomGptSourcePreviewResponse["images"][number];
+type SourcePreviewDocument =
+  MvpCustomGptSourcePreviewResponse["documents"][number];
 
 function isPrivateIpv4(hostname: string) {
   const match = hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
@@ -572,7 +575,7 @@ function uniqueCuratedAssets(assets: CuratedSourceAsset[]) {
     .map(({ asset }) => asset);
 }
 
-function curatedImages(assets: CuratedSourceAsset[]) {
+function curatedImages(assets: CuratedSourceAsset[]): SourcePreviewImage[] {
   return uniqueCuratedAssets(assets)
     .filter(curatedAssetLooksLikeImage)
     .slice(0, 6)
@@ -585,7 +588,7 @@ function curatedImages(assets: CuratedSourceAsset[]) {
     }));
 }
 
-function curatedDocuments(assets: CuratedSourceAsset[]) {
+function curatedDocuments(assets: CuratedSourceAsset[]): SourcePreviewDocument[] {
   return uniqueCuratedAssets(assets)
     .filter(curatedAssetLooksLikeDocument)
     .slice(0, 8)
@@ -598,7 +601,10 @@ function curatedDocuments(assets: CuratedSourceAsset[]) {
     }));
 }
 
-function mergeByUrl<T extends { url: string }>(primary: T[], secondary: T[]) {
+function mergeByUrl<T extends { url: string }>(
+  primary: T[],
+  secondary: T[],
+) {
   const seen = new Set(primary.map((item) => item.url));
 
   return [

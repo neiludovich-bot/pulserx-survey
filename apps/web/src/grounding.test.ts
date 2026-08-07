@@ -31,6 +31,7 @@ const groundedTurn: TranscriptTurn = {
         title: "SEQUOIA Source",
         url: "https://example.test/sequoia",
         description: null,
+        assets: [],
       },
     ],
     contextQuestion:

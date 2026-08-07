@@ -914,6 +914,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
   recentInterviewerContext?: string | null;
   remainingSeconds: number;
   askedQuestions: string[];
+  responseMode?: "answer_only" | "answer_then_ask";
 }) {
   const projectId = getProjectId(input.projectId);
   const config = requireCustomGptConfig(projectId);
@@ -940,6 +941,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
   const surveyContext = clipText(input.surveyContext, 900);
   const participantMessage = clipText(input.participantMessage, 500);
   const recentInterviewerContext = clipText(input.recentInterviewerContext, 520);
+  const responseMode = input.responseMode ?? "answer_then_ask";
   const askedQuestions = input.askedQuestions
     .slice(-4)
     .map((question) => clipText(question, 120))
@@ -947,10 +949,13 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     .join(" | ");
   const prompt = [
     "You are the CustomGPT-first interviewer in a structured medical market research survey.",
-    "Write one natural interviewer message only. Ask one survey question only.",
+    "Write one natural interviewer message only. In answer_then_ask mode, ask one survey question only. In answer_only mode, do not ask a survey question.",
     "Use only the approved source material named in the survey controller context for factual/site/study detail and cite source-supported claims.",
     "Place inline citation markers like [1] immediately after the specific source-supported claim or sentence. Do not dump all citation markers only at the end of the answer.",
-    "If the participant asked a source/evidence/safety/detail question, answer it, then return to the selected survey question in the same message.",
+    `Turn response mode: ${responseMode}.`,
+    responseMode === "answer_only"
+      ? "If the participant asked a source/evidence/safety/detail question, answer that question as its own legitimate turn. Do not ask the selected survey question in this message. End, if useful, with one natural check-in such as whether they want to go one layer deeper before continuing."
+      : "If the participant asked a source/evidence/safety/detail question, answer it and then ask the selected survey question in the same message.",
     "Do not repeat source context already given in recent interviewer turns. If the participant returns to the same evidence, adverse-event, safety, dosing, or resource topic, acknowledge that it was already covered at a high level and answer only the new angle or delta. Do not restate the same adverse-event list, warning list, study summary, or resource inventory unless the participant explicitly asks you to repeat it.",
     "For safety or adverse-event turns, do not produce a full label-style safety inventory. Default to 2-4 focused bullets or one short paragraph about the specific adverse event, monitoring/management issue, resource, or operational concern raised. Group broad risks into categories instead of listing every common adverse reaction, serious adverse reaction, lab abnormality, and dose-modification cause.",
     "Respect the active disease lane in the survey controller context. For broad follow-ups such as 'what's new,' 'what else is new,' or 'what information is new,' scope the source answer to the active disease lane unless the participant explicitly names another disease area or the source-context requirement asks for cross-disease breadth. Do not cite off-lane disease pages for broad questions.",
@@ -962,13 +967,15 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     "If the participant asks what the data show, prioritize concrete study results over website-section summaries.",
     "Avoid repetitive acknowledgements. Do not start every turn with generic thanks.",
     selectedSourceContext
-      ? "A source-context requirement applies to this turn. Explain only the relevant source detail first, cite it, then ask the selected question. Do not ask the question naked, and do not turn a broad requirement into an exhaustive source recap."
+      ? responseMode === "answer_only"
+        ? "A source-context requirement applies to this turn. Answer only the relevant source detail for the participant's question, cite it, and do not ask the selected survey question yet."
+        : "A source-context requirement applies to this turn. Explain only the relevant source detail first, cite it, then ask the selected question. Do not ask the question naked, and do not turn a broad requirement into an exhaustive source recap."
       : "No mandatory source-context requirement was selected for this turn.",
     selectedSourceContext
       ? `Source-context requirement: ${selectedSourceContext}`
       : null,
     "Do not provide diagnosis, treatment advice, emergency triage, or patient-specific care instructions.",
-    "Do not repeat already asked questions. Do not stay on a reactive clarification topic for another turn.",
+    "Do not repeat already asked questions. Do not get stuck on the same reactive clarification across multiple turns; answer only the new angle or delta.",
     input.remainingSeconds <= 90
       ? "The timebox is nearly over. Be concise and move toward a final high-value wrap-up."
       : null,
@@ -976,7 +983,9 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
       ? `Current survey question being answered: ${currentQuestion}`
       : "Current survey question being answered: none.",
     selectedNextQuestion
-      ? `Selected next survey question to ask at the end of your message: ${selectedNextQuestion}`
+      ? responseMode === "answer_only"
+        ? `Selected next survey question parked for a later resume turn; do not ask it in this message: ${selectedNextQuestion}`
+        : `Selected next survey question to ask at the end of your message: ${selectedNextQuestion}`
       : "Selected next survey question to ask at the end of your message: none. Close the interview briefly.",
     askedQuestions
       ? `Recently asked survey questions: ${askedQuestions}`
