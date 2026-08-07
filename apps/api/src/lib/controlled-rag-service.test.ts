@@ -275,6 +275,20 @@ describe("controlled RAG source provider", () => {
     );
   });
 
+  it("removes internal retrieval narration from clinician-facing answers", () => {
+    const cleaned = controlledRagTestInternals.cleanClinicalAnswer(
+      "I can orient on the source areas available here: ARAMIS in nmCRPC, ARANOTE in mCSPC without docetaxel, and ARASENS in mCSPC with ADT plus docetaxel. The provided snippets do not give a full adverse-event table [1].",
+    );
+
+    expect(cleaned).toContain(
+      "The HCP materials frame the evidence around ARAMIS",
+    );
+    expect(cleaned).toContain(
+      "the cited HCP material does not give a full adverse-event table [1]",
+    );
+    expect(cleaned).not.toMatch(/I can orient|source areas|provided snippets/i);
+  });
+
   it("prioritizes NUBEQA ARANOTE rPFS visuals for mCSPC rPFS questions", () => {
     const topic = controlledRagTestInternals.displayTopicForTurn({
       surveySlug: "nubeqa",
