@@ -235,7 +235,7 @@ function nubeqaDisplayTopic(normalized: string): MvpDisplayTopic {
 
 function genericPadcevDirective(topic: MvpDisplayTopic) {
   if (topic === "padcev_ev302_response" || topic === "padcev_ev302_survival") {
-    return "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data. Treat this as a source-answer excursion if the active interview lane is not efficacy. Answer the specific endpoint or trial-design detail they raised using source-supported facts only, including comparator, population, follow-up, OS, PFS, ORR, CR/PR, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. Then return to the selected survey question.";
+    return "The participant explicitly asked about PADCEV efficacy or EV-302/KEYNOTE-A39 data. Treat this as a source-answer excursion if the active interview lane is not efficacy. Answer the specific endpoint or trial-design detail they raised using source-supported facts only, including comparator, population, follow-up, OS, PFS, ORR, CR/PR, and caveats when available. Cite the source most likely to expose EV-302 efficacy charts or tables. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (
@@ -245,54 +245,54 @@ function genericPadcevDirective(topic: MvpDisplayTopic) {
     topic === "padcev_safety_management" ||
     topic === "padcev_patient_selection"
   ) {
-    return "The participant asked a PADCEV safety-management, patient-caution, dose-modification, or resource question. Answer the specific angle they raised; do not provide a full label-style safety inventory. Prefer source-supported monitoring, counseling, dose hold/reduction/discontinuation, and operational resources. If patient profiles are discussed, frame them as safety-caution or monitoring/mitigation considerations unless the participant explicitly asks for broad efficacy-based patient selection. Then return to the selected survey question.";
+    return "The participant asked a PADCEV safety-management, patient-caution, dose-modification, or resource question. Answer the specific angle they raised; do not provide a full label-style safety inventory. Prefer source-supported monitoring, counseling, dose hold/reduction/discontinuation, and operational resources. If patient profiles are discussed, frame them as safety-caution or monitoring/mitigation considerations unless the participant explicitly asks for broad efficacy-based patient selection. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
-  return "The participant asked an in-domain PADCEV source question that does not match a predefined route. Answer only the specific question using approved PADCEV HCP source material, cite sources, avoid patient-specific treatment advice, and then return to the selected survey question.";
+  return "The participant asked an in-domain PADCEV source question that does not match a predefined route. Answer only the specific question using approved PADCEV HCP source material, cite sources, and avoid patient-specific treatment advice. The controller will resume the parked survey question after this source-answer turn when appropriate.";
 }
 
 function genericBrukinsaDirective(topic: MvpDisplayTopic) {
   if (topic === "brukinsa_cll_sequoia") {
-    return "The participant asked about BRUKINSA SEQUOIA or first-line CLL/SLL evidence. Answer using approved BRUKINSA HCP CLL/SLL source material only, including population, comparator/cohort, endpoints, results, and caveats where source-supported. Then return to the selected survey question.";
+    return "The participant asked about BRUKINSA SEQUOIA or first-line CLL/SLL evidence. Answer using approved BRUKINSA HCP CLL/SLL source material only, including population, comparator/cohort, endpoints, results, and caveats where source-supported. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "brukinsa_cll_alpine") {
-    return "The participant asked about BRUKINSA ALPINE, ibrutinib comparison, or relapsed/refractory CLL/SLL evidence. Answer using approved BRUKINSA HCP CLL/SLL source material only, including population, comparator, endpoints, results, and caveats where source-supported. Then return to the selected survey question.";
+    return "The participant asked about BRUKINSA ALPINE, ibrutinib comparison, or relapsed/refractory CLL/SLL evidence. Answer using approved BRUKINSA HCP CLL/SLL source material only, including population, comparator, endpoints, results, and caveats where source-supported. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "brukinsa_safety_management") {
-    return "The participant asked a BRUKINSA safety, monitoring, medication-management, dose-modification, or resource question. Answer the specific angle they raised using approved BRUKINSA HCP source material, without providing a full label-style safety inventory. Then return to the selected survey question.";
+    return "The participant asked a BRUKINSA safety, monitoring, medication-management, dose-modification, or resource question. Answer the specific angle they raised using approved BRUKINSA HCP source material, without providing a full label-style safety inventory. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
-  return "The participant asked an in-domain BRUKINSA source question that does not match a predefined route. Answer only the specific question using approved BRUKINSA HCP source material, cite sources, avoid patient-specific treatment advice, and then return to the selected survey question.";
+  return "The participant asked an in-domain BRUKINSA source question that does not match a predefined route. Answer only the specific question using approved BRUKINSA HCP source material, cite sources, and avoid patient-specific treatment advice. The controller will resume the parked survey question after this source-answer turn when appropriate.";
 }
 
 function genericNubeqaDirective(topic: MvpDisplayTopic) {
   if (topic === "nubeqa_mcspc_aranote") {
-    return "The participant asked about NUBEQA ARANOTE, mCSPC without docetaxel, ADT-only backbone, rPFS, or radiographic progression. Answer using NUBEQA HCP source material only, including population, comparator, endpoint, concrete results, and caveats where source-supported. Cite the source most likely to expose ARANOTE rPFS and study-design visuals. Then return to the selected survey question.";
+    return "The participant asked about NUBEQA ARANOTE, mCSPC without docetaxel, ADT-only backbone, rPFS, or radiographic progression. Answer using NUBEQA HCP source material only, including population, comparator, endpoint, concrete results, and caveats where source-supported. Cite the source most likely to expose ARANOTE rPFS and study-design visuals. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "nubeqa_mcspc_arasens") {
-    return "The participant asked about NUBEQA ARASENS, docetaxel-containing mCSPC treatment, overall survival, time to mCRPC, or triplet therapy. Answer using NUBEQA HCP source material only, including population, comparator, endpoint, concrete results, and caveats where source-supported. Cite the source most likely to expose ARASENS OS, secondary endpoint, or study-design visuals. Then return to the selected survey question.";
+    return "The participant asked about NUBEQA ARASENS, docetaxel-containing mCSPC treatment, overall survival, time to mCRPC, or triplet therapy. Answer using NUBEQA HCP source material only, including population, comparator, endpoint, concrete results, and caveats where source-supported. Cite the source most likely to expose ARASENS OS, secondary endpoint, or study-design visuals. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "nubeqa_nmcrpc_aramis") {
-    return "The participant asked about NUBEQA ARAMIS or nmCRPC evidence. Answer using NUBEQA HCP source material only, including MFS, OS, patient subgroup context, and caveats where source-supported. Cite the source most likely to expose ARAMIS MFS and OS visuals. Then return to the selected survey question.";
+    return "The participant asked about NUBEQA ARAMIS or nmCRPC evidence. Answer using NUBEQA HCP source material only, including MFS, OS, patient subgroup context, and caveats where source-supported. Cite the source most likely to expose ARAMIS MFS and OS visuals. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "nubeqa_safety_dosing") {
-    return "The participant asked about NUBEQA safety, tolerability, dosing, renal/hepatic modification, DDI, ischemic heart disease, seizure warning, or operational medication management. Answer the specific angle using NUBEQA HCP source material without providing a full label-style inventory. Then return to the selected survey question.";
+    return "The participant asked about NUBEQA safety, tolerability, dosing, renal/hepatic modification, DDI, ischemic heart disease, seizure warning, or operational medication management. Answer the specific angle using NUBEQA HCP source material without providing a full label-style inventory. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "nubeqa_guidelines_resources") {
-    return "The participant asked about NUBEQA guidelines, access, support, resources, coverage, or practice implementation. Answer using NUBEQA HCP source material, cite guideline or resource pages when relevant, and then return to the selected survey question.";
+    return "The participant asked about NUBEQA guidelines, access, support, resources, coverage, or practice implementation. Answer using NUBEQA HCP source material and cite guideline or resource pages when relevant. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "nubeqa_patient_selection") {
-    return "The participant asked about NUBEQA patient fit, caution segments, or appropriate populations. Answer with source-supported disease-state, docetaxel-fit, safety/DDI, dosing, and guideline context only; avoid patient-specific treatment advice. Then return to the selected survey question.";
+    return "The participant asked about NUBEQA patient fit, caution segments, or appropriate populations. Answer with source-supported disease-state, docetaxel-fit, safety/DDI, dosing, and guideline context only; avoid patient-specific treatment advice. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
-  return "The participant asked an in-domain NUBEQA source question that does not match a predefined route. Answer only the specific question using approved NUBEQA HCP source material, cite sources, avoid patient-specific treatment advice, and then return to the selected survey question.";
+  return "The participant asked an in-domain NUBEQA source question that does not match a predefined route. Answer only the specific question using approved NUBEQA HCP source material, cite sources, and avoid patient-specific treatment advice. The controller will resume the parked survey question after this source-answer turn when appropriate.";
 }
 
 export function classifyMvpTurnRoute(input: RouteInput): MvpTurnRouteDecision {

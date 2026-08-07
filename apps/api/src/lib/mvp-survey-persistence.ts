@@ -26,6 +26,7 @@ export type MvpPersistenceSessionSnapshot = {
   startedAt: Date;
   currentQuestionId: string | null;
   currentQuestion: string | null;
+  pendingReturnQuestionId: string | null;
   activeDiseaseAreas: string[];
   primaryDiseaseArea: string | null;
   queuedQuestionIds: string[];
@@ -54,6 +55,7 @@ type MvpTurnAuditInput = {
   customGptReason?: string | null;
   sourceProvider?: string | null;
   sourceProviderShadow?: Record<string, unknown> | null;
+  sourceResponseMode?: "answer_only" | "answer_then_ask" | null;
   droppedReferences?: Array<
     Pick<GroundedReference, "citationId" | "title" | "url">
   >;
@@ -63,6 +65,10 @@ type MvpTurnAuditInput = {
   rejectionReason?: string | null;
   completedReason?: string | null;
 };
+
+function inputJson(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value ?? null)) as Prisma.InputJsonValue;
+}
 
 function dbAuditEnabled() {
   return Boolean(process.env.DATABASE_URL);
@@ -87,12 +93,13 @@ function metadataForSession(
     targetDurationSeconds: session.targetDurationSeconds,
     currentQuestionId: session.currentQuestionId,
     currentQuestion: session.currentQuestion,
+    pendingReturnQuestionId: session.pendingReturnQuestionId,
     activeDiseaseAreas: session.activeDiseaseAreas,
     primaryDiseaseArea: session.primaryDiseaseArea,
     queuedQuestionIds: session.queuedQuestionIds,
     excursionQuestionIds: session.excursionQuestionIds,
     askedQuestionIds: session.askedQuestionIds,
-    adaptiveProbeQuestions: session.adaptiveProbeQuestions,
+    adaptiveProbeQuestions: inputJson(session.adaptiveProbeQuestions),
     completedReason: session.completedReason,
   };
 }
@@ -127,6 +134,7 @@ function referencesFromPayload(
         (reference): reference is GroundedReference =>
           Boolean(reference) &&
           typeof reference === "object" &&
+          reference !== null &&
           "citationId" in reference &&
           "title" in reference &&
           "url" in reference,
@@ -256,6 +264,37 @@ export async function persistMvpSurveyTurnAudit(input: {
       : SessionStatus.ACTIVE;
     const participantSequence = input.turn.sequenceBase + 1;
     const interviewerSequence = input.turn.sequenceBase + 2;
+    const participantPayload = {
+      runtime: "mvp-customgpt-survey",
+      eventType: input.turn.eventType,
+      currentQuestionBefore: input.turn.currentQuestionBefore,
+    } satisfies Prisma.InputJsonObject;
+    const interviewerPayload = {
+      runtime: "mvp-customgpt-survey",
+      ...input.turn,
+    } as Prisma.InputJsonObject;
+    const decisionInput = {
+      runtime: "mvp-customgpt-survey",
+      participantMessage: input.turn.participantMessage,
+      currentQuestionBefore: input.turn.currentQuestionBefore,
+      sourceContextRequirement: input.turn.sourceContextRequirement,
+      sourceResponseMode: input.turn.sourceResponseMode ?? null,
+      turnRouteDecision: inputJson(input.turn.turnRouteDecision ?? null),
+      turnRouteAnalysis: inputJson(input.turn.turnRouteAnalysis ?? null),
+    } as Prisma.InputJsonObject;
+    const decisionOutput = {
+      selectedQuestionId: input.turn.selectedQuestionId,
+      selectedQuestion: input.turn.selectedQuestion,
+      actualAskedQuestionId: input.turn.actualAskedQuestionId,
+      actualAskedQuestion: input.turn.actualAskedQuestion,
+      nextAction: input.turn.nextAction,
+      customGptStatus: input.turn.customGptStatus,
+      sourceProvider: input.turn.sourceProvider ?? null,
+      sourceProviderShadow: inputJson(input.turn.sourceProviderShadow ?? null),
+      sourceResponseMode: input.turn.sourceResponseMode ?? null,
+      references: inputJson(input.turn.references ?? []),
+      droppedReferences: inputJson(input.turn.droppedReferences ?? []),
+    } as Prisma.InputJsonObject;
 
     await prisma.$transaction([
       prisma.session.upsert({
@@ -287,19 +326,11 @@ export async function persistMvpSurveyTurnAudit(input: {
           sequence: participantSequence,
           role: TurnRole.PARTICIPANT,
           content: input.turn.participantMessage,
-          payload: {
-            runtime: "mvp-customgpt-survey",
-            eventType: input.turn.eventType,
-            currentQuestionBefore: input.turn.currentQuestionBefore,
-          },
+          payload: participantPayload,
         },
         update: {
           content: input.turn.participantMessage,
-          payload: {
-            runtime: "mvp-customgpt-survey",
-            eventType: input.turn.eventType,
-            currentQuestionBefore: input.turn.currentQuestionBefore,
-          },
+          payload: participantPayload,
         },
       }),
       prisma.turn.upsert({
@@ -315,17 +346,11 @@ export async function persistMvpSurveyTurnAudit(input: {
           sequence: interviewerSequence,
           role: TurnRole.INTERVIEWER,
           content: input.turn.assistantMessage,
-          payload: {
-            runtime: "mvp-customgpt-survey",
-            ...input.turn,
-          },
+          payload: interviewerPayload,
         },
         update: {
           content: input.turn.assistantMessage,
-          payload: {
-            runtime: "mvp-customgpt-survey",
-            ...input.turn,
-          },
+          payload: interviewerPayload,
         },
       }),
       prisma.decision.create({
@@ -340,26 +365,8 @@ export async function persistMvpSurveyTurnAudit(input: {
             input.turn.rejectionReason ??
             input.turn.customGptReason ??
             "MVP CustomGPT survey controller selected the next action.",
-          input: {
-            runtime: "mvp-customgpt-survey",
-            participantMessage: input.turn.participantMessage,
-            currentQuestionBefore: input.turn.currentQuestionBefore,
-            sourceContextRequirement: input.turn.sourceContextRequirement,
-            turnRouteDecision: input.turn.turnRouteDecision ?? null,
-            turnRouteAnalysis: input.turn.turnRouteAnalysis ?? null,
-          },
-          output: {
-            selectedQuestionId: input.turn.selectedQuestionId,
-            selectedQuestion: input.turn.selectedQuestion,
-            actualAskedQuestionId: input.turn.actualAskedQuestionId,
-            actualAskedQuestion: input.turn.actualAskedQuestion,
-            nextAction: input.turn.nextAction,
-            customGptStatus: input.turn.customGptStatus,
-            sourceProvider: input.turn.sourceProvider ?? null,
-            sourceProviderShadow: input.turn.sourceProviderShadow ?? null,
-            references: input.turn.references ?? [],
-            droppedReferences: input.turn.droppedReferences ?? [],
-          },
+          input: decisionInput,
+          output: decisionOutput,
         },
       }),
     ]);
@@ -444,9 +451,12 @@ export async function loadMvpSurveySessionSnapshot(sessionId: string) {
           metadata.targetDurationSeconds,
           600,
         ),
-        startedAt: persisted.startedAt,
+        startedAt: persisted.startedAt ?? persisted.createdAt,
         currentQuestionId: stringOrNull(metadata.currentQuestionId),
         currentQuestion: stringOrNull(metadata.currentQuestion),
+        pendingReturnQuestionId: stringOrNull(
+          metadata.pendingReturnQuestionId,
+        ),
         activeDiseaseAreas: stringArray(metadata.activeDiseaseAreas),
         primaryDiseaseArea: stringOrNull(metadata.primaryDiseaseArea),
         queuedQuestionIds: stringArray(metadata.queuedQuestionIds),
