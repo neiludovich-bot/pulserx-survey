@@ -289,6 +289,40 @@ describe("controlled RAG source provider", () => {
     expect(cleaned).not.toMatch(/I can orient|source areas|provided snippets/i);
   });
 
+  it("removes broad NUBEQA source-map language before it reaches clinicians", () => {
+    const cleaned = controlledRagTestInternals.cleanClinicalAnswer(
+      "I can orient to the main source areas for NUBEQA: in mCSPC, ARANOTE covers NUBEQA plus ADT versus placebo plus ADT with rPFS as the primary endpoint, and ARASENS covers NUBEQA plus ADT plus docetaxel.",
+    );
+
+    expect(cleaned).toContain("For NUBEQA, in mCSPC");
+    expect(cleaned).not.toMatch(/I can orient|source areas/i);
+  });
+
+  it("uses a NUBEQA evidence card for broad positioning instead of a source inventory", async () => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      surveySlug: "nubeqa",
+      participantMessage: "yes",
+      surveyContext: "The respondent just agreed to begin.",
+      currentQuestion: "Is it okay to begin?",
+      selectedNextQuestion:
+        "Clinically, how does NUBEQA's role across nmCRPC and mCSPC fit into your treatment framework?",
+      selectedQuestionSourceContext:
+        "Before asking the positioning question, summarize only the current NUBEQA HCP indication and high-level role: adult patients with nmCRPC and adult patients with mCSPC, including use with ADT and the mCSPC with/without docetaxel framing when source-supported. Keep it neutral, concise, and source-cited.",
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.answer).toContain("ARAMIS");
+    expect(result.answer).toContain("ARANOTE");
+    expect(result.answer).toContain("ARASENS");
+    expect(result.answer).toContain("Clinically, how does NUBEQA");
+    expect(result.answer).not.toMatch(
+      /I can orient|source areas|provided snippets|knowledge base/i,
+    );
+    expect(result.references[0]?.title).not.toContain(
+      "Safety, Dosing, and DDI",
+    );
+  });
+
   it("prioritizes NUBEQA ARANOTE rPFS visuals for mCSPC rPFS questions", () => {
     const topic = controlledRagTestInternals.displayTopicForTurn({
       surveySlug: "nubeqa",

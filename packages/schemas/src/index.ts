@@ -117,6 +117,20 @@ export const controlledRagCompositionInputSchema = z.object({
   responseMode: z
     .enum(["answer_only", "answer_then_ask"])
     .default("answer_then_ask"),
+  clinicalEvidenceCard: z
+    .object({
+      id: z.string().min(1),
+      title: z.string().min(1),
+      topic: z.string().min(1).nullable(),
+      clinicianBrief: z.string().min(1).max(1400),
+      keyFacts: z.array(z.string().min(1).max(420)).min(1).max(8),
+      caveats: z.array(z.string().min(1).max(360)).max(5).default([]),
+      answerDirective: z.string().min(1).max(700),
+      preferredSourceIds: z.array(z.string().min(1)).max(8).default([]),
+      preferredAssetTags: z.array(z.string().min(1)).max(16).default([]),
+    })
+    .nullable()
+    .default(null),
   sources: z.array(controlledRagCompositionSourceSchema).min(1).max(8),
 });
 

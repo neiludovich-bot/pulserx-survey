@@ -64,6 +64,41 @@ Use two cooperating layers:
 The controller decides **what** to ask. CustomGPT helps decide **how** to say it
 and supplies source-grounded context.
 
+## Evidence-Card Layer
+
+For HCP evidence turns, do not let a general RAG answer decide what matters.
+The controller should first select a compact evidence card, then pass that card
+to the answer composer and the side-panel asset selector.
+
+An evidence card contains:
+
+- `id` and `topic`: the stable clinical lane, such as EV-302 response,
+  neuropathy management, ARANOTE, ARASENS, ARAMIS, SEQUOIA, or ALPINE.
+- `clinician_brief`: the one-sentence clinical framing for this turn.
+- `key_facts`: source-supported facts the answer may use, with exact endpoint,
+  comparator, population, dosing, safety, resource, or caveat detail where
+  available.
+- `caveats`: limitations that must be stated when relevant, such as descriptive
+  analyses, separate cohorts, accelerated approval, or unavailable source
+  detail.
+- `answer_directive`: how to answer this specific turn, including what not to
+  drift into.
+- `preferred_source_ids` and `preferred_asset_tags`: the citations and visual
+  assets that should lead the side panel.
+
+The answer composer may phrase naturally, but it should not expose retrieval
+mechanics such as "source areas," "available snippets," "knowledge base," or
+page inventories. It should answer the participant's concern first, cite the
+facts, and then let the controller append the selected next question.
+
+Side-panel assets should be selected from the same evidence card. If the turn
+is about EV-302 response, show response/survival visuals before safety PDFs. If
+the turn is about neuropathy or adverse-event management, show checklists,
+patient prompts, dose-modification tables, or downloadable guides before
+efficacy charts. If no true visual exists for the evidence card, show the best
+downloadable resource and label it as a resource rather than pretending a chart
+exists.
+
 ## Modular Interview Maps
 
 For beta/prod builds, do not rely on one linear guide plus prompt instructions.
