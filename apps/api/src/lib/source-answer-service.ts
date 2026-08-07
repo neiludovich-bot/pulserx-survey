@@ -40,9 +40,22 @@ export type SourceAnswerProviderResult = {
 function groundedReferences(
   references: Array<CustomGptReference | GroundedReference>,
 ): GroundedReference[] {
-  return references.map((reference) => ({
-    ...reference,
-    assets: "assets" in reference ? (reference.assets ?? []) : [],
+  return references.map((reference, index) => ({
+    citationId: reference.citationId || `source:${index + 1}`,
+    title: reference.title ?? null,
+    url: reference.url ?? null,
+    description: reference.description ?? null,
+    assets:
+      "assets" in reference
+        ? (reference.assets ?? []).map((asset) => ({
+            title: asset.title,
+            url: asset.url,
+            description: asset.description ?? null,
+            assetKind: asset.assetKind,
+            tags: asset.tags ?? [],
+            priority: asset.priority ?? 0,
+          }))
+        : [],
   }));
 }
 

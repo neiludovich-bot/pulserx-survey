@@ -242,6 +242,7 @@ describe("CustomGPT clarification service", () => {
     expect(result.answer).not.toContain("Which EV-302 result");
     expect(result.answer).not.toContain("For which locally advanced");
     expect(result.references).toHaveLength(1);
+    expect(result.references[0]?.description).toBeNull();
 
     const promptText = JSON.stringify(messageBodies);
     expect(promptText).toContain("CustomGPT retrieval layer");
