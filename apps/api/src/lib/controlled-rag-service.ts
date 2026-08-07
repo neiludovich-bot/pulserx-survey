@@ -13,6 +13,17 @@ type WeightedTokenGroup = {
   weight: number;
 };
 type DisplayTopic = MvpDisplayTopic;
+type ClinicalEvidenceCard = {
+  id: string;
+  title: string;
+  topic: DisplayTopic;
+  clinicianBrief: string;
+  keyFacts: string[];
+  caveats: string[];
+  answerDirective: string;
+  preferredSourceIds: string[];
+  preferredAssetTags: string[];
+};
 
 export type ControlledRagSurveyTurnInput = {
   surveySlug: "brukinsa" | "padcev" | "nubeqa";
@@ -214,6 +225,380 @@ function displayTopicForTurn(
     selectedQuestionText: input.selectedNextQuestion,
     selectedQuestionSourceContext: input.selectedQuestionSourceContext,
   }).topic;
+}
+
+function citationMarkerForCard(
+  chunks: ControlledRagChunk[],
+  card: Pick<ClinicalEvidenceCard, "preferredSourceIds" | "preferredAssetTags">,
+  fallbackIndex = 0,
+) {
+  const sourceNeedles = card.preferredSourceIds.map(normalizeText);
+  const assetNeedles = card.preferredAssetTags.map(normalizeText);
+  const index = chunks.findIndex((chunk) => {
+    const haystack = chunkHaystack(chunk);
+
+    return (
+      sourceNeedles.some(
+        (needle) =>
+          needle.length > 0 &&
+          (normalizeText(chunk.id).includes(needle) ||
+            normalizeText(chunk.title).includes(needle) ||
+            haystack.includes(needle)),
+      ) ||
+      assetNeedles.some((needle) => needle.length > 0 && haystack.includes(needle))
+    );
+  });
+
+  return `[${(index >= 0 ? index : fallbackIndex) + 1}]`;
+}
+
+function buildClinicalEvidenceCard(
+  input: ControlledRagSurveyTurnInput,
+  chunks: ControlledRagChunk[],
+): ClinicalEvidenceCard | null {
+  const topic = displayTopicForTurn(input);
+  const sourceContext = normalizeText(input.selectedQuestionSourceContext ?? "");
+  const selectedQuestion = normalizeText(input.selectedNextQuestion ?? "");
+  const participant = normalizeText(input.participantMessage);
+  const asksBroadNubeqaPositioning =
+    input.surveySlug === "nubeqa" &&
+    (sourceContext.includes("indication") ||
+      sourceContext.includes("high level role") ||
+      selectedQuestion.includes("role across nmcrpc and mcspc") ||
+      selectedQuestion.includes("treatment framework"));
+
+  if (input.surveySlug === "nubeqa" && asksBroadNubeqaPositioning) {
+    return {
+      id: "nubeqa-positioning-overview",
+      title: "NUBEQA Disease-State Positioning",
+      topic: "nubeqa_patient_selection",
+      clinicianBrief:
+        "Frame NUBEQA by disease state and treatment backbone rather than as a generic prostate-cancer source tour.",
+      keyFacts: [
+        "In nmCRPC, the HCP materials use ARAMIS to discuss NUBEQA plus ADT versus ADT/placebo, with metastasis-free survival as the primary endpoint and overall survival also reported.",
+        "In mCSPC without docetaxel, ARANOTE is framed as NUBEQA plus ADT versus placebo plus ADT, with rPFS as the primary endpoint.",
+        "In mCSPC with docetaxel, ARASENS is framed as NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel, including OS and time-to-mCRPC context.",
+        "The dosing/safety material adds 600 mg twice daily with food plus dose-modification, renal/hepatic, DDI, ischemic-heart-disease, and seizure-warning context where relevant.",
+      ],
+      caveats: [
+        "Keep the answer descriptive and ask the respondent how this disease-state split fits their own treatment framework.",
+      ],
+      answerDirective:
+        "Give a concise clinical map across nmCRPC, mCSPC without docetaxel, and mCSPC with docetaxel. Do not say 'source areas' or imply a page inventory.",
+      preferredSourceIds: [
+        "nubeqa-nmcrpc-aramis",
+        "nubeqa-mcspc-aranote",
+        "nubeqa-mcspc-arasens",
+        "nubeqa-safety-dosing",
+      ],
+      preferredAssetTags: [
+        "aramis",
+        "aranote",
+        "arasens",
+        "mfs",
+        "rpfs",
+        "overall survival",
+        "dosing",
+      ],
+    };
+  }
+
+  if (topic === "nubeqa_mcspc_aranote") {
+    return {
+      id: "nubeqa-aranote",
+      title: "NUBEQA ARANOTE mCSPC Evidence",
+      topic,
+      clinicianBrief:
+        "Answer ARANOTE questions as an mCSPC without-docetaxel evidence discussion, focused on rPFS and the ADT-only backbone.",
+      keyFacts: [
+        "ARANOTE is presented as NUBEQA plus ADT versus placebo plus ADT in mCSPC.",
+        "rPFS is the primary endpoint in the HCP source material.",
+        "The source card reports median follow-up of 25.3 months for NUBEQA plus ADT and 25.0 months for placebo plus ADT.",
+        "At 24 months, 70.3% of patients receiving NUBEQA plus ADT versus 52.1% receiving placebo plus ADT remained free of radiological progression and were alive.",
+      ],
+      caveats: ["Use the source page for exact current curve details and caveats."],
+      answerDirective:
+        "If the participant asks what ARANOTE shows, answer with population, comparator, endpoint, result, and caveat. Avoid broad NUBEQA overview unless requested.",
+      preferredSourceIds: ["nubeqa-mcspc-aranote", "aranote"],
+      preferredAssetTags: ["aranote", "rpfs", "mcspc", "adt"],
+    };
+  }
+
+  if (topic === "nubeqa_mcspc_arasens") {
+    return {
+      id: "nubeqa-arasens",
+      title: "NUBEQA ARASENS mCSPC Evidence",
+      topic,
+      clinicianBrief:
+        "Answer ARASENS questions as a docetaxel-containing mCSPC triplet discussion, focused on OS and time-to-mCRPC where supported.",
+      keyFacts: [
+        "ARASENS is presented as NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel in mCSPC.",
+        "The HCP material describes overall survival and time-to-mCRPC context for this docetaxel-containing setting.",
+        "The source pack states that NUBEQA in combination with docetaxel significantly reduced the risk of death by nearly a third versus docetaxel and ADT alone.",
+      ],
+      caveats: ["Use source page detail for exact current Kaplan-Meier values, landmark analyses, and endpoint hierarchy."],
+      answerDirective:
+        "Keep the answer anchored to the docetaxel/planned-triplet use case and do not drift into ARANOTE unless asked to compare.",
+      preferredSourceIds: ["nubeqa-mcspc-arasens", "arasens"],
+      preferredAssetTags: ["arasens", "overall survival", "time to mcrpc", "docetaxel"],
+    };
+  }
+
+  if (topic === "nubeqa_nmcrpc_aramis") {
+    return {
+      id: "nubeqa-aramis",
+      title: "NUBEQA ARAMIS nmCRPC Evidence",
+      topic,
+      clinicianBrief:
+        "Answer ARAMIS questions as an nmCRPC evidence discussion, focused on MFS, OS, and subgroup context when supported.",
+      keyFacts: [
+        "ARAMIS is presented as NUBEQA plus ADT versus ADT/placebo alone in nmCRPC.",
+        "Metastasis-free survival is described as the primary endpoint.",
+        "The HCP material states that NUBEQA significantly improved metastasis-free survival and overall survival in nmCRPC.",
+        "The source pack notes consistent MFS results across subgroups such as PSADT and prior bone-targeting agent use.",
+      ],
+      caveats: ["Use the source page for exact current Kaplan-Meier values and secondary endpoint detail."],
+      answerDirective:
+        "Keep the response specific to nmCRPC and ARAMIS unless the participant asks to compare mCSPC data.",
+      preferredSourceIds: ["nubeqa-nmcrpc-aramis", "aramis"],
+      preferredAssetTags: ["aramis", "mfs", "metastasis-free survival", "overall survival"],
+    };
+  }
+
+  if (topic === "nubeqa_safety_dosing") {
+    return {
+      id: "nubeqa-safety-dosing",
+      title: "NUBEQA Safety, Dosing, and DDI",
+      topic,
+      clinicianBrief:
+        "Answer NUBEQA safety and dosing questions with specific dosing, modification, renal/hepatic, DDI, ischemic-heart-disease, and seizure-warning points only as relevant.",
+      keyFacts: [
+        "The HCP dosing page describes 600 mg twice daily with food and treatment until disease progression or unacceptable toxicity.",
+        "Dose modification to 300 mg twice daily is described for supported severe renal impairment, moderate hepatic impairment, Grade 3 or greater toxicity, or intolerable adverse reaction contexts.",
+        "The same source notes that in ARASENS, NUBEQA continues even if docetaxel is delayed, interrupted, or discontinued.",
+        "Important Safety Information includes ischemic heart disease and seizure warnings, plus adverse-reaction context across ARAMIS, ARANOTE, and ARASENS.",
+      ],
+      caveats: ["Do not turn this into a full label inventory unless the participant explicitly asks."],
+      answerDirective:
+        "Answer the named safety, DDI, dosing, or management issue first, then bridge to the survey question.",
+      preferredSourceIds: ["nubeqa-safety-dosing", "safety dosing ddi"],
+      preferredAssetTags: ["safety", "dosing", "dose modification", "ddi", "adverse reactions"],
+    };
+  }
+
+  if (topic === "nubeqa_guidelines_resources") {
+    return {
+      id: "nubeqa-guidelines-resources",
+      title: "NUBEQA Guidelines and Practice Resources",
+      topic,
+      clinicianBrief:
+        "Answer NUBEQA guideline and resource questions as practice-implementation context, not as efficacy or safety claims.",
+      keyFacts: [
+        "The HCP guidelines page presents treatment-guideline context for mCSPC and nmCRPC.",
+        "The HCP site includes access/support areas, formulary coverage, Access Services by Bayer, contact-a-representative pathways, Bayer Den, KOL videos, practice resources, patient resources, and patient profiles.",
+      ],
+      caveats: ["Use source pages for exact current guideline wording, categories, and resource names."],
+      answerDirective:
+        "Keep guideline/resource answers concrete and implementation-focused; avoid implying guideline endorsement beyond the source wording.",
+      preferredSourceIds: ["nubeqa-guidelines-resources", "guidelines"],
+      preferredAssetTags: ["guidelines", "nccn", "aua", "resources", "access"],
+    };
+  }
+
+  if (topic === "padcev_ev302_response" || topic === "padcev_ev302_survival") {
+    return {
+      id: "padcev-ev302",
+      title: "PADCEV EV-302/KEYNOTE-A39 Evidence",
+      topic,
+      clinicianBrief:
+        "Answer PADCEV EV-302 questions with the exact endpoint requested first, then trial context.",
+      keyFacts: [
+        "EV-302/KEYNOTE-A39 is presented as a pivotal phase 3 trial in previously untreated locally advanced or metastatic urothelial cancer.",
+        "The comparison is PADCEV plus pembrolizumab versus platinum-based chemotherapy.",
+        "Current imported source notes include OS, PFS, ORR, CR, PR, comparator, and follow-up details when present in the retrieved excerpts.",
+      ],
+      caveats: ["Updated analyses may be descriptive; report that caveat when it appears in the cited material."],
+      answerDirective:
+        "If the participant asks for response, lead with ORR/CR/PR. If they ask survival, lead with OS/PFS. Do not answer a safety lane question with efficacy unless they explicitly ask.",
+      preferredSourceIds: ["padcev-ev302", "ev-302", "keynote-a39", "pembrolizumab efficacy"],
+      preferredAssetTags: ["ev-302", "keynote", "overall survival", "pfs", "orr", "complete response"],
+    };
+  }
+
+  if (
+    topic === "padcev_neuropathy_management" ||
+    topic === "padcev_dose_modification" ||
+    topic === "padcev_safety_resources" ||
+    topic === "padcev_safety_management"
+  ) {
+    return {
+      id: "padcev-safety-management",
+      title: "PADCEV Safety and Adverse-Reaction Management",
+      topic,
+      clinicianBrief:
+        "Answer PADCEV safety-management turns with the specific adverse event, monitoring point, dose-modification action, or resource requested.",
+      keyFacts: [
+        "PADCEV safety-management materials include monitoring, dose interruption, dose reduction, discontinuation, counseling, and resource concepts.",
+        "For peripheral neuropathy, the source-supported management is grade-based: Grade 2 is withheld until Grade <=1 and then resumed according to first occurrence or recurrence; Grade >=3 is permanently discontinued when supported by the cited material.",
+        "Resources can include adverse-reaction monitoring checklists, dose-modification materials, patient education, counseling aids, and downloadable guides when surfaced by the cited source.",
+      ],
+      caveats: ["Do not provide a broad label-style safety inventory unless the participant asks for one."],
+      answerDirective:
+        "Start with the named adverse event or resource need. Keep efficacy out unless the participant asks for risk-benefit.",
+      preferredSourceIds: [
+        "padcev-safety-management",
+        "peripheral neuropathy",
+        "dose modifications",
+        "adverse reactions monitoring checklist",
+      ],
+      preferredAssetTags: [
+        "neuropathy",
+        "dose modification",
+        "monitoring",
+        "checklist",
+        "adverse reactions",
+        "patient education",
+      ],
+    };
+  }
+
+  if (topic === "brukinsa_cll_sequoia") {
+    return {
+      id: "brukinsa-sequoia",
+      title: "BRUKINSA SEQUOIA CLL/SLL Evidence",
+      topic,
+      clinicianBrief:
+        "Answer SEQUOIA questions as first-line CLL/SLL evidence, focused on treatment-naive population, cohort structure, comparator, PFS, and del(17p) caveats.",
+      keyFacts: [
+        "SEQUOIA is the BRUKINSA first-line CLL/SLL evidence anchor on the HCP site.",
+        "The source pack describes Cohort 1 as BRUKINSA versus bendamustine plus rituximab in patients without del(17p).",
+        "It also describes a separate del(17p) BRUKINSA-only cohort, which limits direct comparative conclusions for that subgroup.",
+        "The HCP source presents progression-free survival as a key efficacy focus and includes Kaplan-Meier visuals and patient-at-risk information.",
+      ],
+      caveats: ["Use the source page for exact current numeric results and publication details."],
+      answerDirective:
+        "Keep the answer scoped to CLL/SLL SEQUOIA unless the participant asks about ALPINE or another disease area.",
+      preferredSourceIds: ["brukinsa-cll-sequoia", "sequoia"],
+      preferredAssetTags: ["sequoia", "cll", "pfs", "kaplan"],
+    };
+  }
+
+  if (topic === "brukinsa_cll_alpine") {
+    return {
+      id: "brukinsa-alpine",
+      title: "BRUKINSA ALPINE CLL/SLL Evidence",
+      topic,
+      clinicianBrief:
+        "Answer ALPINE questions as relapsed/refractory CLL/SLL head-to-head evidence versus ibrutinib.",
+      keyFacts: [
+        "ALPINE is the BRUKINSA relapsed/refractory CLL/SLL head-to-head evidence anchor on the HCP site.",
+        "The HCP source frames ALPINE as BRUKINSA versus ibrutinib after prior systemic therapy.",
+        "ORR and PFS information are used to support HCP discussion of comparative evidence.",
+      ],
+      caveats: ["Use the source page for exact current numeric results and caveats."],
+      answerDirective:
+        "Keep the answer scoped to ALPINE and relapsed/refractory CLL/SLL unless the participant asks about first-line SEQUOIA.",
+      preferredSourceIds: ["brukinsa-cll-alpine", "alpine"],
+      preferredAssetTags: ["alpine", "ibrutinib", "cll", "orr", "pfs"],
+    };
+  }
+
+  if (topic === "brukinsa_safety_management") {
+    return {
+      id: "brukinsa-safety-management",
+      title: "BRUKINSA Safety, Dosing, and Medication Management",
+      topic,
+      clinicianBrief:
+        "Answer BRUKINSA safety and medication-management questions with the specific safety, dosing, drug-interaction, or resource angle raised.",
+      keyFacts: [
+        "BRUKINSA HCP resources cover tablet formulation, dosing schedule, dose reduction or modification, drug-interaction considerations, and hepatic impairment.",
+        "Important Safety Information topics include hemorrhage, infections, cytopenias, second primary malignancies, cardiac arrhythmias, hepatotoxicity, embryo-fetal toxicity, and common adverse reactions or lab abnormalities.",
+        "Resource materials can include patient education, patient-management materials, dosing and administration resources, brochures, and access-support references.",
+      ],
+      caveats: ["Do not provide patient-specific treatment advice."],
+      answerDirective:
+        "Answer the named safety or workflow issue first and keep disease-area scope stable unless the participant asks to compare.",
+      preferredSourceIds: ["brukinsa-safety-management", "brukinsa-resources"],
+      preferredAssetTags: ["safety", "dosing", "drug interaction", "resources", "patient management"],
+    };
+  }
+
+  if (chunks.length === 0) {
+    return null;
+  }
+
+  return {
+    id: `${input.surveySlug}-ad-hoc`,
+    title: "Source-Grounded Clinical Answer",
+    topic,
+    clinicianBrief:
+      "Answer the participant's specific in-domain question from the most relevant cited material without exposing retrieval mechanics.",
+    keyFacts: chunks.slice(0, 3).map((chunk) => chunk.text),
+    caveats: [
+      "If the cited material does not answer the exact question, state that limitation briefly and then give the closest supported information.",
+    ],
+    answerDirective:
+      "Lead with the direct answer. Use only the cited material. Do not say source areas, snippets, knowledge base, or available here.",
+    preferredSourceIds: chunks.slice(0, 3).map((chunk) => chunk.id),
+    preferredAssetTags: tokens(
+      [participant, sourceContext, selectedQuestion, chunks[0]?.tags.join(" ")].join(
+        " ",
+      ),
+    ).slice(0, 12),
+  };
+}
+
+function chunkEvidenceCardScore(
+  chunk: ControlledRagChunk,
+  evidenceCard: ClinicalEvidenceCard | null,
+) {
+  if (!evidenceCard) {
+    return 0;
+  }
+
+  const haystack = chunkHaystack(chunk);
+  const normalizedId = normalizeText(chunk.id);
+  const normalizedTitle = normalizeText(chunk.title);
+  let score = 0;
+
+  evidenceCard.preferredSourceIds.forEach((sourceId, index) => {
+    const needle = normalizeText(sourceId);
+    if (
+      needle.length > 0 &&
+      (normalizedId.includes(needle) ||
+        normalizedTitle.includes(needle) ||
+        haystack.includes(needle))
+    ) {
+      score += 1000 - index * 80;
+    }
+  });
+
+  evidenceCard.preferredAssetTags.forEach((tag) => {
+    const needle = normalizeText(tag);
+    if (needle.length > 0 && haystack.includes(needle)) {
+      score += 50;
+    }
+  });
+
+  return score;
+}
+
+function orderChunksForEvidenceCard(
+  chunks: ControlledRagChunk[],
+  evidenceCard: ClinicalEvidenceCard | null,
+) {
+  if (!evidenceCard) {
+    return chunks;
+  }
+
+  return chunks
+    .map((chunk, index) => ({
+      chunk,
+      score: chunkEvidenceCardScore(chunk, evidenceCard),
+      index,
+    }))
+    .sort((left, right) => right.score - left.score || left.index - right.index)
+    .map((match) => match.chunk);
 }
 
 function scoreNubeqaTopicText(text: string, topic: DisplayTopic) {
@@ -736,6 +1121,7 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
 async function retrieveTurnAssets(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
+  evidenceCard: ClinicalEvidenceCard | null,
 ) {
   if (!process.env.DATABASE_URL) {
     return [];
@@ -746,6 +1132,10 @@ async function retrieveTurnAssets(
     input.selectedNextQuestion,
     input.selectedQuestionSourceContext,
     input.currentQuestion,
+    evidenceCard?.title,
+    evidenceCard?.clinicianBrief,
+    evidenceCard?.keyFacts.join(" "),
+    evidenceCard?.preferredAssetTags.join(" "),
     chunks.map((chunk) => `${chunk.title} ${chunk.tags.join(" ")}`).join(" "),
   ].join(" ");
   const queryTokens = tokens(query);
@@ -851,7 +1241,22 @@ function selectedQuestionLead(
 function fallbackSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
+  evidenceCard: ClinicalEvidenceCard | null,
 ) {
+  if (evidenceCard) {
+    const marker = citationMarkerForCard(chunks, evidenceCard);
+    const factLimit = input.responseMode === "answer_only" ? 4 : 3;
+    const body = evidenceCard.keyFacts
+      .slice(0, factLimit)
+      .map((fact) => `${fact} ${marker}`)
+      .join(" ");
+    const caveat = evidenceCard.caveats[0]
+      ? ` ${evidenceCard.caveats[0]} ${marker}`
+      : "";
+
+    return `${body}${caveat}`.trim();
+  }
+
   const alreadyCovered = input.recentInterviewerContext
     ? `Building on what we already covered, here is the narrower source detail.\n\n`
     : "";
@@ -894,6 +1299,11 @@ function removeParticipantVoiceMirror(answer: string) {
 
 function removeInternalSourceNarration(answer: string) {
   return answer
+    .replace(
+      /^\s*I can orient(?: you)?\s+(?:on|to|around)\s+(?:the\s+)?(?:main\s+)?source\s+areas(?:\s+for\s+([a-z0-9+/-]+))?\s*:\s*/i,
+      (_match, brand: string | undefined) =>
+        brand ? `For ${brand.toUpperCase()}, ` : "The HCP materials frame the evidence around ",
+    )
     .replace(
       /^\s*I can orient(?: you)?\s+(?:on|to|around)\s+the\s+source\s+areas\s+available\s+here:\s*/i,
       "The HCP materials frame the evidence around ",
@@ -952,11 +1362,12 @@ function cleanClinicalAnswer(answer: string) {
 async function composeSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
+  evidenceCard: ClinicalEvidenceCard | null,
 ) {
   const gateway = getOptionalOpenAIGateway();
 
   if (!gateway || process.env.NODE_ENV === "test") {
-    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks));
+    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks, evidenceCard));
   }
 
   try {
@@ -969,6 +1380,19 @@ async function composeSourceAnswer(
       selectedQuestionSourceContext: input.selectedQuestionSourceContext,
       recentInterviewerContext: input.recentInterviewerContext ?? null,
       responseMode: input.responseMode ?? "answer_then_ask",
+      clinicalEvidenceCard: evidenceCard
+        ? {
+            id: evidenceCard.id,
+            title: evidenceCard.title,
+            topic: evidenceCard.topic,
+            clinicianBrief: evidenceCard.clinicianBrief,
+            keyFacts: evidenceCard.keyFacts,
+            caveats: evidenceCard.caveats,
+            answerDirective: evidenceCard.answerDirective,
+            preferredSourceIds: evidenceCard.preferredSourceIds,
+            preferredAssetTags: evidenceCard.preferredAssetTags,
+          }
+        : null,
       sources: chunks.map((chunk, index) => ({
         index: index + 1,
         title: chunk.title,
@@ -984,20 +1408,30 @@ async function composeSourceAnswer(
       chunks,
     );
   } catch {
-    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks));
+    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks, evidenceCard));
   }
 }
 
 export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
-  const chunks = await retrieveChunks(input);
+  const retrievedChunks = await retrieveChunks(input);
+  const initialEvidenceCard = buildClinicalEvidenceCard(input, retrievedChunks);
+  const chunks = orderChunksForEvidenceCard(
+    retrievedChunks,
+    initialEvidenceCard,
+  );
+  const evidenceCard = buildClinicalEvidenceCard(input, chunks);
   const queryTokens = tokens(
     [
       input.participantMessage,
       input.selectedNextQuestion,
       input.selectedQuestionSourceContext,
       input.currentQuestion,
+      evidenceCard?.title,
+      evidenceCard?.clinicianBrief,
+      evidenceCard?.keyFacts.join(" "),
+      evidenceCard?.preferredAssetTags.join(" "),
     ].join(" "),
   );
 
@@ -1013,9 +1447,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
     };
   }
 
-  const turnAssets = await retrieveTurnAssets(input, chunks);
+  const turnAssets = await retrieveTurnAssets(input, chunks, evidenceCard);
   const references = referencesForChunks(chunks, turnAssets, queryTokens);
-  const composedAnswer = await composeSourceAnswer(input, chunks);
+  const composedAnswer = await composeSourceAnswer(input, chunks, evidenceCard);
   const responseMode = input.responseMode ?? "answer_then_ask";
   const answer = [
     composedAnswer,
@@ -1036,7 +1470,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
 
 export const controlledRagTestInternals = {
   displayTopicForTurn,
+  buildClinicalEvidenceCard,
   cleanClinicalAnswer,
+  orderChunksForEvidenceCard,
   rankAssetsForDisplay,
   referencesForChunks,
   removeInternalSourceNarration,
