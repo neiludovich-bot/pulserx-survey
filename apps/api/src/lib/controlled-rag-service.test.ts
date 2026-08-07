@@ -43,7 +43,7 @@ describe("controlled RAG source provider", () => {
     expect(result.answer).toContain("SEQUOIA");
     expect(result.answer).toContain("[1]");
     expect(result.answer).not.toContain(parkedQuestion);
-    expect(result.answer).toContain("Should we stay with that");
+    expect(result.answer).not.toContain("Should we stay with that");
   });
 
   it("fails safely when no curated source chunk matches", async () => {
@@ -458,7 +458,7 @@ describe("controlled RAG source provider", () => {
     const result = await askControlledRagForSurveyInterviewerTurn({
       surveySlug: "nubeqa",
       participantMessage:
-        "What safety, drug-interaction, or dosing issue should I worry about?",
+        "What are the known drug-drug interactions with NUBEQA?",
       surveyContext: "The respondent is discussing NUBEQA clinical fit.",
       currentQuestion:
         "What, if anything, does the ARANOTE mCSPC evidence change about NUBEQA plus ADT without docetaxel?",
@@ -470,5 +470,7 @@ describe("controlled RAG source provider", () => {
 
     expect(result.enabled).toBe(true);
     expect(result.references[0]?.title).toContain("Safety, Dosing, and DDI");
+    expect(result.answer).toContain("CYP3A4");
+    expect(result.answer).toContain("BCRP");
   });
 });

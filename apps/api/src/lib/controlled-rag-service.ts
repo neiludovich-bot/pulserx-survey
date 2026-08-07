@@ -351,6 +351,18 @@ function chunksMentionMultipleNubeqaEvidenceAreas(chunks: ControlledRagChunk[]) 
   return hits >= 2;
 }
 
+function asksAboutNubeqaDrugInteractions(input: ControlledRagSurveyTurnInput) {
+  if (input.surveySlug !== "nubeqa") {
+    return false;
+  }
+
+  const participant = normalizeText(input.participantMessage);
+
+  return textMatchesAny(participant, [
+    /\b(?:drug-drug|drug drug|drug interaction|drug interactions|interactions|ddi|cyp3a|cyp3a4|p-gp|pgp|bcrp|oatp|oatp1b1|oatp1b3|inducer|inducers|inhibitor|inhibitors|substrate|substrates)\b/,
+  ]);
+}
+
 function buildClinicalEvidenceCard(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
@@ -359,6 +371,8 @@ function buildClinicalEvidenceCard(
   const sourceContext = normalizeText(input.selectedQuestionSourceContext ?? "");
   const selectedQuestion = normalizeText(input.selectedNextQuestion ?? "");
   const participant = normalizeText(input.participantMessage);
+  const asksSpecificNubeqaDrugInteractions =
+    asksAboutNubeqaDrugInteractions(input);
   const topicLooksBroad =
     topic === null ||
     topic === "unknown_in_domain" ||
@@ -371,7 +385,8 @@ function buildClinicalEvidenceCard(
       selectedQuestion.includes("treatment framework") ||
       selectedQuestion.includes("top factors") ||
       selectedQuestion.includes("nubeqa specific information") ||
-      (topicLooksBroad && chunksMentionMultipleNubeqaEvidenceAreas(chunks)));
+      (topicLooksBroad && chunksMentionMultipleNubeqaEvidenceAreas(chunks))) &&
+    !asksSpecificNubeqaDrugInteractions;
 
   if (input.surveySlug === "nubeqa" && asksBroadNubeqaPositioning) {
     return {
@@ -481,6 +496,8 @@ function buildClinicalEvidenceCard(
         "Dose modification to 300 mg twice daily is described for supported severe renal impairment, moderate hepatic impairment, Grade 3 or greater toxicity, or intolerable adverse reaction contexts.",
         "The same source notes that in ARASENS, NUBEQA continues even if docetaxel is delayed, interrupted, or discontinued.",
         "Important Safety Information includes ischemic heart disease and seizure warnings, plus adverse-reaction context across ARAMIS, ARANOTE, and ARASENS.",
+        "For drug interactions, combined P-gp plus strong or moderate CYP3A4 inducers can decrease darolutamide exposure and should be avoided; combined P-gp plus strong CYP3A4 inhibitors can increase darolutamide exposure, so patients should be monitored more frequently for adverse reactions and dose modified as needed.",
+        "NUBEQA is described as an inhibitor of BCRP, OATP1B1, and OATP1B3 transporters; concomitant use may increase substrate exposure, so BCRP substrates should be avoided when possible or monitored with possible substrate dose reduction, and OATP substrates should be monitored with possible dose reduction.",
       ],
       caveats: ["Do not turn this into a full label inventory unless the participant explicitly asks."],
       answerDirective:
@@ -1369,7 +1386,7 @@ function selectedQuestionLead(
   responseMode: "answer_only" | "answer_then_ask",
 ) {
   if (responseMode === "answer_only") {
-    return "\n\nShould we stay with that for one more pass, or should I keep moving?";
+    return "";
   }
 
   return question
@@ -1431,14 +1448,29 @@ function fallbackSourceAnswer(
       evidenceCard.id === "nubeqa-patient-selection" ||
       input.responseMode === "answer_only"
         ? 3
-        : 2;
+      : 2;
     const isAdHocCard = evidenceCard.id.endsWith("-ad-hoc");
-    const body = evidenceCard.keyFacts
-      .slice(0, factLimit)
-      .map((fact, index) => {
+    const factEntries = evidenceCard.keyFacts.map((fact, index) => ({
+      fact,
+      originalIndex: index,
+    }));
+    const selectedFactEntries =
+      evidenceCard.id === "nubeqa-safety-dosing" &&
+      asksAboutNubeqaDrugInteractions(input)
+        ? [factEntries[4], factEntries[5], factEntries[0]]
+            .filter(Boolean)
+            .slice(0, Math.max(factLimit, 2))
+        : factEntries.slice(0, factLimit);
+    const body = selectedFactEntries
+      .map(({ fact, originalIndex }, outputIndex) => {
         const factMarker = isAdHocCard
-          ? `[${Math.min(index + 1, chunks.length)}]`
-          : citationMarkerForCardFact(chunks, evidenceCard, index, index);
+          ? `[${Math.min(outputIndex + 1, chunks.length)}]`
+          : citationMarkerForCardFact(
+              chunks,
+              evidenceCard,
+              originalIndex,
+              outputIndex,
+            );
         return `${compactClinicalFact(fact)} ${factMarker}`;
       })
       .join(" ");

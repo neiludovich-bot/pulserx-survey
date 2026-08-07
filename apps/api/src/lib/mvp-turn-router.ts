@@ -67,7 +67,7 @@ function contentLooksLikeQuestion(raw: string, normalized: string) {
   return (
     raw.includes("?") ||
     anyMatch(normalized, [
-      /\b(?:what|why|how|which|who|when|where|explain|tell me|show me|source|reference|data|study|trial|guide|checklist|resource|download|pdf)\b/,
+      /\b(?:what|why|how|which|who|when|where|known|explain|tell me|show me|source|reference|data|study|trial|guide|checklist|resource|download|pdf|drug interaction|drug interactions|drug drug interaction|drug drug interactions|ddi)\b/,
     ])
   );
 }
@@ -172,7 +172,7 @@ function brukinsaDisplayTopic(normalized: string): MvpDisplayTopic {
 function nubeqaDisplayTopic(normalized: string): MvpDisplayTopic {
   if (
     anyMatch(normalized, [
-      /\b(?:safety|tolerability|adverse|side effect|side effects|dose|dosing|twice daily|food|drug interaction|ddi|cyp|bcrp|oatp|renal|hepatic|ischemic|seizure|cardiac)\b/,
+      /\b(?:safety|tolerability|adverse|side effect|side effects|dose|dosing|twice daily|food|drug interaction|drug interactions|drug drug interaction|drug drug interactions|ddi|cyp|cyp3a|bcrp|oatp|oatp1b1|oatp1b3|renal|hepatic|ischemic|seizure|cardiac)\b/,
     ])
   ) {
     return "nubeqa_safety_dosing";
@@ -281,7 +281,7 @@ function genericNubeqaDirective(topic: MvpDisplayTopic) {
   }
 
   if (topic === "nubeqa_safety_dosing") {
-    return "The participant asked about NUBEQA safety, tolerability, dosing, renal/hepatic modification, DDI, ischemic heart disease, seizure warning, or operational medication management. Answer the specific angle using NUBEQA HCP source material without providing a full label-style inventory. The controller will resume the parked survey question after this source-answer turn when appropriate.";
+    return "The participant asked about NUBEQA safety, tolerability, dosing, renal/hepatic modification, DDI/drug-drug interactions, ischemic heart disease, seizure warning, or operational medication management. Answer the specific angle using NUBEQA HCP source material without providing a full label-style inventory. For DDI questions, prioritize concrete source-supported interaction classes and labeled practical implications rather than generic dosing commentary. The controller will resume the parked survey question after this source-answer turn when appropriate.";
   }
 
   if (topic === "nubeqa_guidelines_resources") {

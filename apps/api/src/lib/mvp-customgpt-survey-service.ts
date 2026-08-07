@@ -2068,7 +2068,7 @@ function contentLooksLikeReactiveQuestion(content: string) {
   const normalized = normalizeText(content);
   return (
     content.includes("?") ||
-    /\b(explain|what is|what are|tell me|source|reference|data|study|trial|sequoia|alpine|ev302|ev 302|keynote a39|keynote-a39|ev301|ev 301|ev201|ev 201|safety)\b/.test(
+    /\b(explain|what is|what are|known|tell me|source|reference|data|study|trial|sequoia|alpine|ev302|ev 302|keynote a39|keynote-a39|ev301|ev 301|ev201|ev 201|safety|dosing|dose|drug interaction|drug interactions|drug drug interaction|drug drug interactions|ddi|cyp3a|bcrp|oatp|renal|hepatic|with food)\b/.test(
       normalized,
     ) ||
     /\b(guide|checklist|resource|resources|how to handle|how do i handle|manage|management|continuum|monitor|monitoring|intervene|intervention)\b/.test(
@@ -2083,7 +2083,7 @@ function contentLooksLikeSourceProbe(content: string) {
 
   return (
     content.includes("?") ||
-    /\b(can you|could you|would you|please|explain|what is|what are|what did|what does|tell me|show me|want to know|source|reference|references|citation|citations|data show|study show|trial show|how should i|how do i|do you have|is there|are there|download link|open the|pull up|walk me through)\b/.test(
+    /\b(can you|could you|would you|please|explain|what is|what are|what did|what does|known|tell me|show me|want to know|source|reference|references|citation|citations|data show|study show|trial show|how should i|how do i|do you have|is there|are there|download link|open the|pull up|walk me through|drug interaction|drug interactions|drug drug interaction|drug drug interactions|ddi)\b/.test(
       normalized,
     )
   );
@@ -2152,6 +2152,14 @@ function contentLooksLikeBrukinsaSafetyQuestion(content: string) {
   const normalized = normalizeText(content);
 
   return /\b(safety|tolerability|adverse|side effect|side effects|toxicity|bleeding|hemorrhage|infection|hbv|cytopenia|neutropenia|thrombocytopenia|anemia|cardiac|afib|atrial fibrillation|flutter|arrhythmia|hepatotoxicity|dili|drug interaction|cyp3a|anticoagulant|antiplatelet|dose reduction|dose modification|manage|management|monitor|monitoring)\b/.test(
+    normalized,
+  );
+}
+
+function contentLooksLikeNubeqaSafetyDosingQuestion(content: string) {
+  const normalized = normalizeText(content);
+
+  return /\b(safety|tolerability|adverse|side effect|side effects|toxicity|dose|dosing|twice daily|food|drug interaction|drug interactions|drug drug interaction|drug drug interactions|ddi|cyp3a|bcrp|oatp|renal|hepatic|ischemic|seizure|cardiac|manage|management|monitor|monitoring)\b/.test(
     normalized,
   );
 }
@@ -2602,6 +2610,17 @@ function sourceContextForReactiveQuestion(
     }
   }
 
+  if (session.surveySlug === "nubeqa") {
+    if (
+      contentLooksLikeNubeqaSafetyDosingQuestion(participantContent) ||
+      selectedQuestion?.id === "safety_dosing"
+    ) {
+      return "The participant asked a NUBEQA safety, dosing, drug-drug interaction, renal/hepatic dose-modification, ischemic-heart-disease, seizure, or medication-management question. Answer the specific angle they raised using approved NUBEQA HCP source material and do not collapse it into generic dosing commentary. For DDI questions, prioritize the NUBEQA HCP DDI profile and Prescribing Information sections on combined P-gp/CYP3A4 inducers or inhibitors, BCRP substrates, and OATP1B1/OATP1B3 substrates when available. Use concrete source-supported interaction classes and practical labeled implications, cite the source, and avoid patient-specific treatment advice. Do not ask the selected survey question in this source-answer turn; the controller will resume it later.";
+    }
+
+    return "The participant asked a NUBEQA source/detail question. Answer only the specific question using approved NUBEQA HCP source material, cite sources, and avoid patient-specific treatment advice. If the question is about ARANOTE, ARASENS, ARAMIS, safety, dosing, DDI, guidelines, or resources, prioritize the matching NUBEQA HCP source area rather than providing a broad website-section recap. Do not ask the selected survey question in this source-answer turn; the controller will resume it later.";
+  }
+
   const explicitlyRequestedAreas = extractDiseaseAreas(participantContent);
   const scopedAreas = explicitlyRequestedAreas.length
     ? explicitlyRequestedAreas
@@ -2703,9 +2722,7 @@ function answerOnlySourceTurn(answer: string, selectedQuestion: string | null) {
     }
   }
 
-  return /Should we stay with that/i.test(sourceAnswer)
-    ? sourceAnswer
-    : `${sourceAnswer}\n\nShould we stay with that for one more pass, or should I keep moving?`;
+  return sourceAnswer;
 }
 
 function clipControllerText(
@@ -3380,7 +3397,10 @@ export async function submitMvpCustomGptSurveyTurn(
       );
   const reactiveSourceContextRequirement = turnRouteDecision.isOutOfScope
     ? null
-    : (turnRouteDecision.sourceDirective ?? reactiveQuestionSourceDirective);
+    : combineSourceContextRequirements(
+        turnRouteDecision.sourceDirective,
+        reactiveQuestionSourceDirective,
+      );
   const sourceContextRequirement = combineSourceContextRequirements(
     questionSourceContextRequirement,
     reactiveSourceContextRequirement,
