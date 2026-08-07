@@ -509,7 +509,7 @@ describe("MVP CustomGPT survey service", () => {
     };
     expect(messageBody.prompt).toContain("Turn response mode: answer_only");
     expect(messageBody.prompt).toContain(
-      "Selected next survey question parked for a later resume turn",
+      "Selected next survey question reserved for the survey controller",
     );
   });
 
@@ -815,7 +815,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.nextAction).toBe("answer_then_ask");
     expect(next.currentQuestion).toContain("SEQUOIA");
     expect(messageBody.prompt).toContain("source-context requirement applies");
-    expect(messageBody.prompt).toContain("Do not ask the question naked");
+    expect(messageBody.prompt).toContain("stop before any survey question");
     expect(messageBody.custom_context).toContain(
       "Source-context requirement for this turn",
     );
@@ -988,13 +988,13 @@ describe("MVP CustomGPT survey service", () => {
         prompts.push(prompt);
         const selectedQuestion =
           prompt.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Thanks, that gives us enough.";
 
         return new Response(
           JSON.stringify({
             data: {
-              openai_response: selectedQuestion,
+              openai_response: `Source context from CustomGPT. ${selectedQuestion}`,
               citations: [],
             },
           }),
@@ -1112,7 +1112,8 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     const lastPrompt = prompts.at(-1) ?? "";
-    expect(turn.messages.at(-1)?.content).toContain("BTK inhibitor");
+    expect(turn.messages.at(-1)?.content).toContain("CLL/SLL source material");
+    expect(turn.messages.at(-1)?.content).not.toContain("BTK inhibitor");
     expect(lastPrompt).toContain("Active disease lane: CLL/SLL");
     expect(lastPrompt).toContain("broad source/detail question");
     expect(lastPrompt).toContain("scoped to the active disease lane (CLL/SLL)");
@@ -1151,13 +1152,13 @@ describe("MVP CustomGPT survey service", () => {
         prompts.push(prompt);
         const selectedQuestion =
           prompt.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Thanks, that gives us enough.";
 
         return new Response(
           JSON.stringify({
             data: {
-              openai_response: selectedQuestion,
+              openai_response: `Source context from CustomGPT. ${selectedQuestion}`,
               citations: [],
             },
           }),
@@ -1242,13 +1243,13 @@ describe("MVP CustomGPT survey service", () => {
         prompts.push(prompt);
         const selectedQuestion =
           prompt.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Thanks, that gives us enough.";
 
         return new Response(
           JSON.stringify({
             data: {
-              openai_response: selectedQuestion,
+              openai_response: `Source context from CustomGPT. ${selectedQuestion}`,
               citations: [],
             },
           }),
@@ -1557,13 +1558,13 @@ describe("MVP CustomGPT survey service", () => {
         prompts.push(prompt);
         const selectedQuestion =
           prompt.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Thanks, that gives us enough.";
 
         return new Response(
           JSON.stringify({
             data: {
-              openai_response: selectedQuestion,
+              openai_response: `Source context from CustomGPT. ${selectedQuestion}`,
               citations: [],
             },
           }),
@@ -1727,13 +1728,13 @@ describe("MVP CustomGPT survey service", () => {
         };
         const selectedQuestion =
           body.prompt?.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Thanks, that gives us enough.";
 
         return new Response(
           JSON.stringify({
             data: {
-              openai_response: selectedQuestion,
+              openai_response: `Source context from CustomGPT. ${selectedQuestion}`,
               citations: [],
             },
           }),
@@ -1953,13 +1954,13 @@ describe("MVP CustomGPT survey service", () => {
         };
         const selectedQuestion =
           body.prompt?.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Thanks, that gives us enough.";
 
         return new Response(
           JSON.stringify({
             data: {
-              openai_response: selectedQuestion,
+              openai_response: `Source context from CustomGPT. ${selectedQuestion}`,
               citations: [],
             },
           }),
@@ -2019,7 +2020,7 @@ describe("MVP CustomGPT survey service", () => {
         };
         const selectedQuestion =
           body.prompt?.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Which safety details matter?";
 
         return new Response(
@@ -2103,13 +2104,13 @@ describe("MVP CustomGPT survey service", () => {
         prompts.push(prompt);
         const selectedQuestion =
           prompt.match(
-            /Selected next survey question to ask at the end of your message: ([^\n]+)/,
+            /Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ([^\n]+)/,
           )?.[1] ?? "Thanks, that gives us enough.";
 
         return new Response(
           JSON.stringify({
             data: {
-              openai_response: selectedQuestion,
+              openai_response: `Source context from CustomGPT. ${selectedQuestion}`,
               citations: [],
             },
           }),

@@ -161,6 +161,100 @@ describe("CustomGPT clarification service", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("uses CustomGPT as retrieval only and strips accidental survey questions", async () => {
+    process.env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+    process.env.CUSTOMGPT_PROJECT_ID = "654";
+    const messageBodies: unknown[] = [];
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+        const href = String(url);
+
+        if (init?.body) {
+          messageBodies.push(JSON.parse(String(init.body)));
+        }
+
+        if (href.endsWith("/projects/654/conversations")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                session_id: "session_retrieval_only",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (
+          href.endsWith(
+            "/projects/654/conversations/session_retrieval_only/messages",
+          )
+        ) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                openai_response: [
+                  "EV-302 reported ORR of 68% with PADCEV plus pembrolizumab versus 44% with chemotherapy, and complete response of 29% versus 13%. [1]",
+                  "Which EV-302 result affects your view most?",
+                  "For which locally advanced or metastatic urothelial cancer patient types, if any, would the PADCEV evidence make treatment more attractive?",
+                ].join("\n\n"),
+                citations: [901],
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        if (href.endsWith("/projects/654/citations/901")) {
+          return new Response(
+            JSON.stringify({
+              data: {
+                title: "PADCEV EV-302 Efficacy",
+                page_url: "https://example.test/padcev/ev-302",
+              },
+            }),
+            { status: 200 },
+          );
+        }
+
+        return new Response("not found", { status: 404 });
+      }),
+    );
+
+    const { askCustomGptForSurveyInterviewerTurn } =
+      await import("./customgpt-service");
+    const result = await askCustomGptForSurveyInterviewerTurn({
+      participantMessage: "What did EV-302 show for response rate?",
+      surveyContext: "PADCEV source answer turn",
+      currentQuestion: "What stands out from the evidence?",
+      selectedNextQuestion:
+        "For which locally advanced or metastatic urothelial cancer patient types, if any, would the PADCEV evidence make treatment more attractive?",
+      selectedQuestionSourceContext:
+        "Use EV-302 response endpoints if available.",
+      remainingSeconds: 540,
+      askedQuestions: ["How familiar are you with PADCEV?"],
+      responseMode: "answer_then_ask",
+    });
+
+    expect(result.answer).toContain("ORR of 68%");
+    expect(result.answer).toContain("complete response of 29%");
+    expect(result.answer).not.toContain("Which EV-302 result");
+    expect(result.answer).not.toContain("For which locally advanced");
+    expect(result.references).toHaveLength(1);
+
+    const promptText = JSON.stringify(messageBodies);
+    expect(promptText).toContain("CustomGPT retrieval layer");
+    expect(promptText).toContain(
+      "survey application appends the selected next question separately",
+    );
+    expect(promptText).toContain(
+      "do not ask, restate, paraphrase, or answer it",
+    );
+    expect(promptText).not.toContain("ask one survey question");
+    expect(promptText).not.toContain("ask at the end");
+  });
+
   it("keeps inline CustomGPT citation objects as respondent-visible references", async () => {
     process.env.CUSTOMGPT_API_KEY = "test-customgpt-key";
     process.env.CUSTOMGPT_PROJECT_ID = "654";
