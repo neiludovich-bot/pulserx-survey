@@ -323,6 +323,59 @@ describe("controlled RAG source provider", () => {
     );
   });
 
+  it("does not dump NUBEQA source chunks when the broad composer falls back", async () => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      surveySlug: "nubeqa",
+      participantMessage: "What should I generally know about NUBEQA?",
+      surveyContext: "The respondent is starting the NUBEQA survey.",
+      currentQuestion: "Is it okay to begin?",
+      selectedNextQuestion:
+        "Before we get into NUBEQA-specific information, what are the top factors that matter most when you evaluate androgen receptor pathway therapy or systemic intensification for an appropriate prostate cancer patient?",
+      selectedQuestionSourceContext:
+        "Retrieve current NUBEQA HCP indication and high-level source context across nmCRPC, mCSPC with docetaxel, mCSPC without docetaxel, dosing, and safety.",
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.answer).toContain("ARAMIS");
+    expect(result.answer).toContain("ARANOTE");
+    expect(result.answer).toContain("ARASENS");
+    expect(result.answer).not.toMatch(
+      /Use the source page|If the cited material|exact current Kaplan-Meier|source page detail/i,
+    );
+    expect(result.answer).not.toMatch(
+      /The NUBEQA mCSPC HCP efficacy page presents ARASENS.*The NUBEQA HCP dosing page describes.*The NUBEQA mCSPC HCP efficacy page presents ARANOTE/s,
+    );
+  });
+
+  it("keeps generic ad-hoc evidence-card facts compact enough for composer schema", () => {
+    const card = controlledRagTestInternals.buildClinicalEvidenceCard(
+      {
+        surveySlug: "nubeqa",
+        participantMessage: "What is the source saying here?",
+        surveyContext: "",
+        currentQuestion: null,
+        selectedNextQuestion: null,
+        selectedQuestionSourceContext: null,
+      },
+      [
+        {
+          id: "test-long",
+          surveySlug: "nubeqa",
+          title: "Long source",
+          description: "",
+          url: "https://example.com/source",
+          tags: ["test"],
+          text: "The NUBEQA mCSPC HCP efficacy page presents ARASENS as NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel. The page states that NUBEQA in combination with docetaxel significantly reduced the risk of death by nearly a third versus docetaxel and ADT alone, and separately describes time to mCRPC and other secondary endpoints. Use the source page for exact current Kaplan-Meier visuals, landmark analysis caveats, and endpoint hierarchy. If the cited material does not answer the exact question, state that limitation briefly and then give the closest supported information.",
+        },
+      ],
+    );
+
+    expect(card?.keyFacts.every((fact) => fact.length <= 420)).toBe(true);
+    expect(card?.keyFacts.join(" ")).not.toMatch(
+      /Use the source page|If the cited material/i,
+    );
+  });
+
   it("prioritizes NUBEQA ARANOTE rPFS visuals for mCSPC rPFS questions", () => {
     const topic = controlledRagTestInternals.displayTopicForTurn({
       surveySlug: "nubeqa",

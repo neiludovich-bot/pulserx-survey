@@ -252,6 +252,105 @@ function citationMarkerForCard(
   return `[${(index >= 0 ? index : fallbackIndex) + 1}]`;
 }
 
+function citationMarkerForCardFact(
+  chunks: ControlledRagChunk[],
+  card: ClinicalEvidenceCard,
+  factIndex: number,
+  fallbackIndex = 0,
+) {
+  const sourceId = card.preferredSourceIds[factIndex];
+
+  if (sourceId) {
+    return citationMarkerForCard(
+      chunks,
+      {
+        preferredSourceIds: [sourceId],
+        preferredAssetTags: [],
+      },
+      fallbackIndex,
+    );
+  }
+
+  return citationMarkerForCard(chunks, card, fallbackIndex);
+}
+
+function sentenceFragments(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .split(/(?<=[.!?])\s+(?=[A-Z0-9])/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+}
+
+function removeInstructionalSourceLanguage(value: string) {
+  return value
+    .replace(/\s+/g, " ")
+    .replace(/\bUse the source page for exact current [^.]+\.?/gi, "")
+    .replace(/\bUse source page detail for exact current [^.]+\.?/gi, "")
+    .replace(/\bIf the cited material does not answer the exact question,?[^.]+\.?/gi, "")
+    .replace(/\bCurrent imported source notes include\b/gi, "The imported source notes include")
+    .replace(/\bThe source pack states that\b/gi, "The source states that")
+    .replace(/\bThe source card reports\b/gi, "The source reports")
+    .replace(/\bThe page states that\b/gi, "The page reports that")
+    .replace(/\bThe page frames\b/gi, "The page uses")
+    .replace(/\bThe HCP material describes\b/gi, "The HCP material reports")
+    .replace(/\bThe HCP source frames\b/gi, "The HCP source describes")
+    .replace(
+      /\bThe NUBEQA mCSPC HCP efficacy page presents\b/gi,
+      "The mCSPC HCP efficacy page presents",
+    )
+    .replace(
+      /\bThe NUBEQA HCP dosing page describes\b/gi,
+      "The HCP dosing page describes",
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function compactClinicalFact(value: string, maxChars = 390) {
+  const cleaned = removeInstructionalSourceLanguage(value);
+  const sentences = sentenceFragments(cleaned).filter(
+    (sentence) =>
+      !textMatchesAny(normalizeText(sentence), [
+        /\b(?:use the source page|exact current|if the cited material|does not answer the exact question)\b/,
+      ]),
+  );
+  const fact = (sentences.slice(0, 2).join(" ") || cleaned).trim();
+
+  if (fact.length <= maxChars) {
+    return fact;
+  }
+
+  return `${fact.slice(0, maxChars - 1).trimEnd()}.`;
+}
+
+function nonInstructionalCaveats(caveats: string[]) {
+  return caveats.filter(
+    (caveat) =>
+      !textMatchesAny(normalizeText(caveat), [
+        /\buse the source page\b/,
+        /\bif the cited material does not answer\b/,
+        /\bkeep the answer descriptive\b/,
+      ]),
+  );
+}
+
+function chunksMentionMultipleNubeqaEvidenceAreas(chunks: ControlledRagChunk[]) {
+  const text = normalizeText(
+    chunks
+      .map((chunk) => [chunk.id, chunk.title, chunk.tags.join(" ")].join(" "))
+      .join(" "),
+  );
+  const hits = [
+    /\baramis\b/.test(text),
+    /\baranote\b/.test(text),
+    /\barasens\b/.test(text),
+    /\b(?:safety|dosing|ddi|dose modification)\b/.test(text),
+  ].filter(Boolean).length;
+
+  return hits >= 2;
+}
+
 function buildClinicalEvidenceCard(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
@@ -260,12 +359,19 @@ function buildClinicalEvidenceCard(
   const sourceContext = normalizeText(input.selectedQuestionSourceContext ?? "");
   const selectedQuestion = normalizeText(input.selectedNextQuestion ?? "");
   const participant = normalizeText(input.participantMessage);
+  const topicLooksBroad =
+    topic === null ||
+    topic === "unknown_in_domain" ||
+    topic === "nubeqa_patient_selection";
   const asksBroadNubeqaPositioning =
     input.surveySlug === "nubeqa" &&
     (sourceContext.includes("indication") ||
       sourceContext.includes("high level role") ||
       selectedQuestion.includes("role across nmcrpc and mcspc") ||
-      selectedQuestion.includes("treatment framework"));
+      selectedQuestion.includes("treatment framework") ||
+      selectedQuestion.includes("top factors") ||
+      selectedQuestion.includes("nubeqa specific information") ||
+      (topicLooksBroad && chunksMentionMultipleNubeqaEvidenceAreas(chunks)));
 
   if (input.surveySlug === "nubeqa" && asksBroadNubeqaPositioning) {
     return {
@@ -275,9 +381,9 @@ function buildClinicalEvidenceCard(
       clinicianBrief:
         "Frame NUBEQA by disease state and treatment backbone rather than as a generic prostate-cancer source tour.",
       keyFacts: [
-        "In nmCRPC, the HCP materials use ARAMIS to discuss NUBEQA plus ADT versus ADT/placebo, with metastasis-free survival as the primary endpoint and overall survival also reported.",
-        "In mCSPC without docetaxel, ARANOTE is framed as NUBEQA plus ADT versus placebo plus ADT, with rPFS as the primary endpoint.",
-        "In mCSPC with docetaxel, ARASENS is framed as NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel, including OS and time-to-mCRPC context.",
+        "For nmCRPC, ARAMIS frames NUBEQA plus ADT versus ADT/placebo, with metastasis-free survival as the primary endpoint and overall survival also reported.",
+        "For mCSPC without docetaxel, ARANOTE frames NUBEQA plus ADT versus placebo plus ADT, with rPFS as the primary endpoint.",
+        "For mCSPC with docetaxel, ARASENS frames NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel, including OS and time-to-mCRPC context.",
         "The dosing/safety material adds 600 mg twice daily with food plus dose-modification, renal/hepatic, DDI, ischemic-heart-disease, and seizure-warning context where relevant.",
       ],
       caveats: [
@@ -402,6 +508,43 @@ function buildClinicalEvidenceCard(
         "Keep guideline/resource answers concrete and implementation-focused; avoid implying guideline endorsement beyond the source wording.",
       preferredSourceIds: ["nubeqa-guidelines-resources", "guidelines"],
       preferredAssetTags: ["guidelines", "nccn", "aua", "resources", "access"],
+    };
+  }
+
+  if (topic === "nubeqa_patient_selection") {
+    return {
+      id: "nubeqa-patient-selection",
+      title: "NUBEQA Patient Fit Across Disease States",
+      topic,
+      clinicianBrief:
+        "Answer patient-fit questions by separating disease state and treatment backbone, then add safety/dosing cautions only when relevant.",
+      keyFacts: [
+        "For nmCRPC, ARAMIS supports discussion of NUBEQA plus ADT versus ADT/placebo, with MFS as the primary endpoint and OS also reported.",
+        "For mCSPC without docetaxel, ARANOTE supports discussion of NUBEQA plus ADT versus placebo plus ADT, with rPFS as the primary endpoint.",
+        "For mCSPC with docetaxel, ARASENS supports discussion of NUBEQA plus ADT plus docetaxel versus placebo plus ADT plus docetaxel, including OS and time-to-mCRPC context.",
+        "Safety and dosing considerations include 600 mg twice daily with food, dose-modification contexts, and labeled ischemic-heart-disease and seizure warnings.",
+      ],
+      caveats: [
+        "Frame this as market-research reaction to source material, not patient-specific treatment advice.",
+      ],
+      answerDirective:
+        "If the respondent asks which patients fit, answer by disease state and treatment backbone. Do not recite the website structure.",
+      preferredSourceIds: [
+        "nubeqa-nmcrpc-aramis",
+        "nubeqa-mcspc-aranote",
+        "nubeqa-mcspc-arasens",
+        "nubeqa-safety-dosing",
+      ],
+      preferredAssetTags: [
+        "patient",
+        "aramis",
+        "aranote",
+        "arasens",
+        "mfs",
+        "rpfs",
+        "overall survival",
+        "dosing",
+      ],
     };
   }
 
@@ -533,10 +676,8 @@ function buildClinicalEvidenceCard(
     topic,
     clinicianBrief:
       "Answer the participant's specific in-domain question from the most relevant cited material without exposing retrieval mechanics.",
-    keyFacts: chunks.slice(0, 3).map((chunk) => chunk.text),
-    caveats: [
-      "If the cited material does not answer the exact question, state that limitation briefly and then give the closest supported information.",
-    ],
+    keyFacts: chunks.slice(0, 3).map((chunk) => compactClinicalFact(chunk.text)),
+    caveats: [],
     answerDirective:
       "Lead with the direct answer. Use only the cited material. Do not say source areas, snippets, knowledge base, or available here.",
     preferredSourceIds: chunks.slice(0, 3).map((chunk) => chunk.id),
@@ -576,7 +717,7 @@ function chunkEvidenceCardScore(
   evidenceCard.preferredAssetTags.forEach((tag) => {
     const needle = normalizeText(tag);
     if (needle.length > 0 && haystack.includes(needle)) {
-      score += 50;
+      score += 15;
     }
   });
 
@@ -1245,13 +1386,24 @@ function fallbackSourceAnswer(
 ) {
   if (evidenceCard) {
     const marker = citationMarkerForCard(chunks, evidenceCard);
-    const factLimit = input.responseMode === "answer_only" ? 4 : 3;
+    const factLimit =
+      evidenceCard.id === "nubeqa-positioning-overview" ||
+      evidenceCard.id === "nubeqa-patient-selection" ||
+      input.responseMode === "answer_only"
+        ? 3
+        : 2;
+    const isAdHocCard = evidenceCard.id.endsWith("-ad-hoc");
     const body = evidenceCard.keyFacts
       .slice(0, factLimit)
-      .map((fact) => `${fact} ${marker}`)
+      .map((fact, index) => {
+        const factMarker = isAdHocCard
+          ? `[${Math.min(index + 1, chunks.length)}]`
+          : citationMarkerForCardFact(chunks, evidenceCard, index, index);
+        return `${compactClinicalFact(fact)} ${factMarker}`;
+      })
       .join(" ");
-    const caveat = evidenceCard.caveats[0]
-      ? ` ${evidenceCard.caveats[0]} ${marker}`
+    const caveat = nonInstructionalCaveats(evidenceCard.caveats)[0]
+      ? ` ${nonInstructionalCaveats(evidenceCard.caveats)[0]} ${marker}`
       : "";
 
     return `${body}${caveat}`.trim();
@@ -1303,6 +1455,12 @@ function removeInternalSourceNarration(answer: string) {
       /^\s*I can orient(?: you)?\s+(?:on|to|around)\s+(?:the\s+)?(?:main\s+)?source\s+areas(?:\s+for\s+([a-z0-9+/-]+))?\s*:\s*/i,
       (_match, brand: string | undefined) =>
         brand ? `For ${brand.toUpperCase()}, ` : "The HCP materials frame the evidence around ",
+    )
+    .replace(/\bUse the source page for exact current [^.]+\.?/gi, "")
+    .replace(/\bUse source page detail for exact current [^.]+\.?/gi, "")
+    .replace(
+      /\bIf the cited material does not answer the exact question,?[^.]+\.?/gi,
+      "",
     )
     .replace(
       /^\s*I can orient(?: you)?\s+(?:on|to|around)\s+the\s+source\s+areas\s+available\s+here:\s*/i,
