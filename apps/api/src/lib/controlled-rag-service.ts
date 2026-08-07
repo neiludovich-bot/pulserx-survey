@@ -892,6 +892,63 @@ function removeParticipantVoiceMirror(answer: string) {
   );
 }
 
+function removeInternalSourceNarration(answer: string) {
+  return answer
+    .replace(
+      /^\s*I can orient(?: you)?\s+(?:on|to|around)\s+the\s+source\s+areas\s+available\s+here:\s*/i,
+      "The HCP materials frame the evidence around ",
+    )
+    .replace(
+      /^\s*I can orient(?: you)?\s+(?:on|to|around)\s+available\s+source\s+areas:\s*/i,
+      "The HCP materials frame the evidence around ",
+    )
+    .replace(/^\s*I can orient(?: you)?\s+briefly[:,]?\s*/i, "")
+    .replace(/^\s*For context[:,]?\s*/i, "")
+    .replace(/^\s*From the source material,?\s*/i, "")
+    .replace(
+      /\bsource\s+areas\s+available\s+here\b/gi,
+      "approved HCP evidence areas",
+    )
+    .replace(
+      /\bthe\s+provided\s+source\s+snippets\s+do\s+not\s+include\b/gi,
+      "the cited HCP material does not include",
+    )
+    .replace(
+      /\bthe\s+provided\s+snippets\s+do\s+not\s+include\b/gi,
+      "the cited HCP material does not include",
+    )
+    .replace(
+      /\bthe\s+provided\s+source\s+snippets\s+do\s+not\s+(give|provide)\b/gi,
+      (_match, verb: string) => `the cited HCP material does not ${verb}`,
+    )
+    .replace(
+      /\bthe\s+provided\s+snippets\s+do\s+not\s+(give|provide)\b/gi,
+      (_match, verb: string) => `the cited HCP material does not ${verb}`,
+    )
+    .replace(
+      /\bthe\s+source\s+snippets\s+are\s+thin\b/gi,
+      "the cited HCP material is limited",
+    )
+    .replace(
+      /\bsource\s+snippets\s+are\s+thin\b/gi,
+      "the cited HCP material is limited",
+    )
+    .replace(/\bprovided\s+source\s+snippets\b/gi, "cited HCP material")
+    .replace(/\bprovided\s+snippets\b/gi, "cited HCP material")
+    .replace(/\bsource\s+snippets\b/gi, "cited HCP material")
+    .replace(/\bthe\s+provided\s+sources\b/gi, "the cited HCP materials")
+    .replace(/\bprovided\s+sources\b/gi, "cited HCP materials")
+    .replace(/\bthe\s+source\s+set\b/gi, "the cited materials")
+    .replace(/\bsource\s+set\b/gi, "cited materials")
+    .replace(/\bknowledge\s+base\b/gi, "approved HCP material");
+}
+
+function cleanClinicalAnswer(answer: string) {
+  return removeInternalSourceNarration(
+    removeParticipantVoiceMirror(answer),
+  ).trim();
+}
+
 async function composeSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
@@ -899,7 +956,7 @@ async function composeSourceAnswer(
   const gateway = getOptionalOpenAIGateway();
 
   if (!gateway || process.env.NODE_ENV === "test") {
-    return fallbackSourceAnswer(input, chunks);
+    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks));
   }
 
   try {
@@ -923,11 +980,11 @@ async function composeSourceAnswer(
     });
 
     return ensureCitationMarker(
-      removeParticipantVoiceMirror(composition.result.answerBody),
+      cleanClinicalAnswer(composition.result.answerBody),
       chunks,
     );
   } catch {
-    return fallbackSourceAnswer(input, chunks);
+    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks));
   }
 }
 
@@ -979,7 +1036,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
 
 export const controlledRagTestInternals = {
   displayTopicForTurn,
+  cleanClinicalAnswer,
   rankAssetsForDisplay,
   referencesForChunks,
+  removeInternalSourceNarration,
   removeParticipantVoiceMirror,
 };
