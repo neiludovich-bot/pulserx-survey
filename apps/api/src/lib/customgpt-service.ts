@@ -634,6 +634,53 @@ function stripInlineCitationMarkers(answer: string) {
     .replace(/[ \t]{2,}/g, " ");
 }
 
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function stripQuestionSentences(answer: string) {
+  return answer
+    .split(/\n{2,}/)
+    .map((paragraph) => {
+      const sentences =
+        paragraph.match(/[^.!?\n]+[.!?]+(?:\s+|$)|[^.!?\n]+$/g) ?? [
+          paragraph,
+        ];
+
+      return sentences
+        .map((sentence) => sentence.trim())
+        .filter((sentence) => sentence.length > 0 && !sentence.endsWith("?"))
+        .join(" ")
+        .trim();
+    })
+    .filter(Boolean)
+    .join("\n\n")
+    .trim();
+}
+
+function stripControllerQuestionFromCustomGptAnswer(
+  answer: string,
+  selectedQuestion: string | null,
+  responseMode: "answer_only" | "answer_then_ask",
+) {
+  let cleaned = answer
+    .trim()
+    .replace(
+      /(?:^|\n)\s*(?:returning to the survey|back to the survey|for now, the guarded survey flow continues here|to continue)\s*:\s*/gi,
+      "\n",
+    );
+
+  if (selectedQuestion) {
+    cleaned = cleaned.replace(new RegExp(escapeRegExp(selectedQuestion), "gi"), "");
+  }
+
+  if (responseMode === "answer_only" || responseMode === "answer_then_ask") {
+    return stripQuestionSentences(cleaned) || cleaned.trim();
+  }
+
+  return cleaned.trim();
+}
+
 function markerText(startIndex: number, count: number) {
   return Array.from(
     { length: count },
@@ -948,14 +995,15 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     .filter((question): question is string => Boolean(question))
     .join(" | ");
   const prompt = [
-    "You are the CustomGPT-first interviewer in a structured medical market research survey.",
-    "Write one natural interviewer message only. In answer_then_ask mode, ask one survey question only. In answer_only mode, do not ask a survey question.",
+    "You are the CustomGPT retrieval layer for a structured medical market research survey.",
+    "Return only the source-grounded answer/context that helps the participant understand the approved material. Do not choose, ask, restate, or paraphrase the next survey question.",
+    "The survey application appends the selected next question separately after your answer. Your job is retrieval, source explanation, and citations only.",
     "Use only the approved source material named in the survey controller context for factual/site/study detail and cite source-supported claims.",
     "Place inline citation markers like [1] immediately after the specific source-supported claim or sentence. Do not dump all citation markers only at the end of the answer.",
     `Turn response mode: ${responseMode}.`,
     responseMode === "answer_only"
-      ? "If the participant asked a source/evidence/safety/detail question, answer that question as its own legitimate turn. Do not ask the selected survey question in this message. End, if useful, with one natural check-in such as whether they want to go one layer deeper before continuing."
-      : "If the participant asked a source/evidence/safety/detail question, answer it and then ask the selected survey question in the same message.",
+      ? "If the participant asked a source/evidence/safety/detail question, answer that question as its own legitimate turn and stop. Do not end with a check-in or question; the survey controller will handle continuation."
+      : "If the participant asked a source/evidence/safety/detail question, answer that question and stop. Do not ask a follow-up question or the selected survey question.",
     "Do not repeat source context already given in recent interviewer turns. If the participant returns to the same evidence, adverse-event, safety, dosing, or resource topic, acknowledge that it was already covered at a high level and answer only the new angle or delta. Do not restate the same adverse-event list, warning list, study summary, or resource inventory unless the participant explicitly asks you to repeat it.",
     "For safety or adverse-event turns, do not produce a full label-style safety inventory. Default to 2-4 focused bullets or one short paragraph about the specific adverse event, monitoring/management issue, resource, or operational concern raised. Group broad risks into categories instead of listing every common adverse reaction, serious adverse reaction, lab abnormality, and dose-modification cause.",
     "Respect the active disease lane in the survey controller context. For broad follow-ups such as 'what's new,' 'what else is new,' or 'what information is new,' scope the source answer to the active disease lane unless the participant explicitly names another disease area or the source-context requirement asks for cross-disease breadth. Do not cite off-lane disease pages for broad questions.",
@@ -969,7 +1017,7 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     selectedSourceContext
       ? responseMode === "answer_only"
         ? "A source-context requirement applies to this turn. Answer only the relevant source detail for the participant's question, cite it, and do not ask the selected survey question yet."
-        : "A source-context requirement applies to this turn. Explain only the relevant source detail first, cite it, then ask the selected question. Do not ask the question naked, and do not turn a broad requirement into an exhaustive source recap."
+        : "A source-context requirement applies to this turn. Explain only the relevant source detail, cite it, and stop before any survey question. Do not turn a broad requirement into an exhaustive source recap."
       : "No mandatory source-context requirement was selected for this turn.",
     selectedSourceContext
       ? `Source-context requirement: ${selectedSourceContext}`
@@ -983,10 +1031,8 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
       ? `Current survey question being answered: ${currentQuestion}`
       : "Current survey question being answered: none.",
     selectedNextQuestion
-      ? responseMode === "answer_only"
-        ? `Selected next survey question parked for a later resume turn; do not ask it in this message: ${selectedNextQuestion}`
-        : `Selected next survey question to ask at the end of your message: ${selectedNextQuestion}`
-      : "Selected next survey question to ask at the end of your message: none. Close the interview briefly.",
+      ? `Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ${selectedNextQuestion}`
+      : "Selected next survey question reserved for the survey controller: none. Do not close the interview; the application handles closure.",
     askedQuestions
       ? `Recently asked survey questions: ${askedQuestions}`
       : "Already asked survey questions: none.",
@@ -1023,10 +1069,15 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     config.projectId,
     message.references,
   );
+  const cleanedAnswer = stripControllerQuestionFromCustomGptAnswer(
+    message.answer,
+    selectedNextQuestion,
+    responseMode,
+  );
 
   return {
     enabled: true,
-    answer: normalizeCitationMarkers(message.answer, references),
+    answer: normalizeCitationMarkers(cleanedAnswer, references),
     references,
     citationIds: references.map((reference) => reference.citationId),
     conversationId: sessionId,
