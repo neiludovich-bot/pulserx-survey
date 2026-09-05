@@ -3226,7 +3226,9 @@ export async function submitMvpCustomGptSurveyTurn(
         currentQuestionObjective: currentQuestionBefore?.objective ?? null,
         currentQuestionKeywords: currentQuestionBefore?.routeKeywords ?? [],
         currentQuestionCompletionSignals: currentQuestionBefore?.completionSignals ?? [],
-        sourceConversationActive: Boolean(session.pendingReturnQuestionId),
+        sourceConversationActive: Boolean(session.pendingReturnQuestionId) ||
+          session.moderatorState.priorities.some((priority) =>
+            priority.id === session.moderatorState.activePriorityId && priority.status === "presented"),
         recentInterviewerContext: recentParticipantInterpretationContext(session),
         candidateQuestions: routeAnalysisCandidates(session, input.content),
       })

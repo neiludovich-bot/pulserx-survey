@@ -8,9 +8,9 @@ import {
   submitMvpCustomGptSurveyTurn,
 } from "./mvp-customgpt-survey-service";
 
-const mocks = vi.hoisted(() => ({ plan: vi.fn(), phrase: vi.fn(), source: vi.fn(), persist: vi.fn(), load: vi.fn() }));
+const mocks = vi.hoisted(() => ({ plan: vi.fn(), phrase: vi.fn(), source: vi.fn(), persist: vi.fn(), load: vi.fn(), analyze: vi.fn() }));
 vi.mock("./model-gateway", () => ({
-  getOptionalOpenAIGateway: () => ({ planModeratorTurn: mocks.plan, phraseModeratorTurn: mocks.phrase }),
+  getOptionalOpenAIGateway: () => ({ planModeratorTurn: mocks.plan, phraseModeratorTurn: mocks.phrase, analyzeMvpTurnRoute: mocks.analyze }),
 }));
 vi.mock("./source-answer-service", () => ({ askSourceProviderForSurveyInterviewerTurn: mocks.source }));
 vi.mock("./mvp-survey-persistence", () => ({
@@ -53,6 +53,7 @@ beforeEach(() => {
   env.CUSTOMGPT_API_KEY = undefined;
   env.MVP_SOURCE_PROVIDER = "controlled_rag";
   env.MVP_TURN_ROUTER_PROVIDER = "deterministic";
+  mocks.analyze.mockReset();
   mocks.plan.mockReset();
   mocks.plan.mockImplementation(async (input: ModeratorPlanInput) => ({ result: planResult(input) }));
   mocks.phrase.mockReset();
@@ -90,6 +91,32 @@ function auditFor(participantMessage: string) {
 }
 
 describe("moderator controller integration", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s moderator clarification requests active when the hybrid model incorrectly denies a source request", async (surveySlug) => {
+    const started = startMvpCustomGptSurvey({ surveySlug, targetDurationSeconds: 600, guide });
+    const first = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "PFS and DDI" });
+    const initialAudit = auditFor("PFS and DDI");
+    expect(initialAudit.session.pendingReturnQuestionId).toBeNull();
+    const activeId = initialAudit.session.moderatorState.activePriorityId;
+    expect(initialAudit.session.moderatorState.priorities[0].status).toBe("presented");
+
+    env.MVP_TURN_ROUTER_PROVIDER = "openai_hybrid";
+    mocks.analyze.mockResolvedValue({ result: {
+      schemaVersion: 3, answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: false,
+      kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false,
+      suggestedQuestionIds: [], sourceDirective: null, rationale: "Incorrectly treated clarification as navigation.",
+    } });
+    mocks.source.mockClear();
+    const participantMessage = "Can you explain that more simply?";
+    const clarified = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: participantMessage });
+
+    expect(mocks.analyze).toHaveBeenCalledWith(expect.objectContaining({ participantMessage, sourceConversationActive: true }));
+    expect(mocks.plan).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(mocks.source).toHaveBeenCalledWith(expect.objectContaining({ participantMessage, responseMode: "answer_only" }));
+    expect(clarified.currentQuestion).toBe(first.currentQuestion);
+    expect(auditFor(participantMessage).session.moderatorState.activePriorityId).toBe(activeId);
+    expect(auditFor(participantMessage).session.answeredQuestionIds).not.toContain(`moderator-reaction:${activeId}`);
+  });
+
   it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((surveySlug) => [
     { surveySlug, restart: false }, { surveySlug, restart: true },
   ]))(
