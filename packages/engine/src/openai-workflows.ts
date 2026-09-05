@@ -452,9 +452,17 @@ export class OpenAIResponsesGateway {
       store: true
     };
 
-    const response = (await this.client.parse(
-      requestPayload
-    )) as ResponsesParseResult<TOutput>;
+    let response: ResponsesParseResult<TOutput>;
+    try {
+      response = (await this.client.parse(requestPayload)) as ResponsesParseResult<TOutput>;
+    } catch (error) {
+      const failure = sanitizeSourceFailure(error, "composition");
+      if (failure.status !== null) {
+        try { console.warn(JSON.stringify({ event: "model_provider_failure", callType, status: failure.status, providerCode: failure.providerCode,
+          ...(failure.limitKind ? { limitKind: failure.limitKind } : {}), ...(failure.retryAfter !== null ? { retryAfter: failure.retryAfter } : {}) })); } catch { /* Logging must preserve the provider failure. */ }
+      }
+      throw error;
+    }
 
     if (response.output_parsed === undefined) {
       throw new Error(`OpenAI ${callType} call returned no parsed output.`);
