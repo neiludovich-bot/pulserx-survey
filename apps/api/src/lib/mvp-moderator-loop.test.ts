@@ -196,6 +196,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     mocks.source.mockClear();
     mocks.plan.mockResolvedValueOnce({ result: planned({
       action: "answer_source", selectedPriorityId: second!.state.activePriorityId,
+      reactionStatus: "answered", reactionEvidence: ["Can you explain that more simply?"],
     }) });
     const followup = await runModeratorTurn(inputFor(surveySlug, {
       state: restoredState, currentQuestion: second!.question,

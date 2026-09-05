@@ -22,8 +22,10 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
   const parsed = moderatorPlanInputSchema.parse(input);
   const model = moderatorPlanModelResultSchema.parse(output);
   const active = parsed.state.priorities.find((priority) => priority.id === parsed.state.activePriorityId && priority.status === "presented");
-  const reactionStatus = active && !parsed.isResumeCue ? model.reactionStatus : "not_answered";
-  const reactionEvidence = active && !parsed.isResumeCue ? model.reactionEvidence : [];
+  const sourceOnly = (parsed.asksSourceQuestion || model.action === "answer_source") && parsed.answerStatus === "not_answered";
+  const canCreditReaction = active && !parsed.isResumeCue && !sourceOnly;
+  const reactionStatus = canCreditReaction ? model.reactionStatus : "not_answered";
+  const reactionEvidence = canCreditReaction ? model.reactionEvidence : [];
   // Validate research evidence independently. A bad action/ID must not erase
   // a genuine reaction, but invented reaction evidence must still fail closed.
   validateModeratorPlan(parsed, {

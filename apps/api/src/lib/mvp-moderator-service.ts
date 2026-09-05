@@ -28,6 +28,7 @@ export async function runModeratorTurn(input: Input) {
     plan = { newPriorities: labels.map((label) => ({ label: label.slice(0, 200), participantEvidence: label, sourceQuestion: `What approved evidence about ${label} is available for ${input.brand}?` })), reactionStatus: "not_answered", reactionEvidence: [], action: "probe_reaction", selectedPriorityId: null, rationale: "Retain pending topics and ask for clarification while model planning is unavailable." };
   }
   const previousActive = state.priorities.find((p) => p.id === state.activePriorityId);
+  const sourceOnlyTurn = (input.asksSourceQuestion || plan.action === "answer_source") && input.answerStatus === "not_answered";
   if (!hadOpenPriorities && plan.newPriorities.length === 0) return null;
   for (const priority of plan.newPriorities) {
     if (state.priorities.length >= 64) break;
@@ -47,7 +48,7 @@ export async function runModeratorTurn(input: Input) {
   }
   if (previousActive?.status === "presented") {
     if (explicitSkip) previousActive.status = "skipped";
-    else if (!input.isResumeCue && plan.reactionStatus !== "not_answered") {
+    else if (!input.isResumeCue && !sourceOnlyTurn && plan.reactionStatus !== "not_answered") {
       previousActive.reactionEvidence = [...new Set([...previousActive.reactionEvidence, ...plan.reactionEvidence])].slice(-32);
       if (plan.reactionStatus === "answered") previousActive.status = "reacted";
     }

@@ -207,6 +207,28 @@ describe("moderator planning contract", () => {
     expect(result.reactionEvidence).toEqual([]);
   });
 
+  it.each([true, false])("cannot complete an active reaction from a source-only clarification (router source=%s)", (asksSourceQuestion) => {
+    const participantMessage = "Can you explain that more simply?";
+    const normalized = normalizeModeratorPlanModelResult({
+      ...presentedInput, participantMessage, asksSourceQuestion, answerStatus: "not_answered",
+    }, {
+      ...modelPlanBase, priorityMentions: [], action: "answer_source", selectedPriorityId: "pfs",
+      reactionStatus: "answered", reactionEvidence: [participantMessage],
+    });
+    expect(normalized).toMatchObject({ action: "answer_source", selectedPriorityId: "pfs", reactionStatus: "not_answered", reactionEvidence: [] });
+  });
+
+  it.each(["partial", "answered"] as const)("preserves %s reaction credit in a mixed answer and source question", (answerStatus) => {
+    const reaction = "That would affect my treatment choice";
+    const normalized = normalizeModeratorPlanModelResult({
+      ...presentedInput, participantMessage: `${reaction}. Can you explain the interaction detail?`, asksSourceQuestion: true, answerStatus,
+    }, {
+      ...modelPlanBase, priorityMentions: [], action: "answer_source", selectedPriorityId: "pfs",
+      reactionStatus: answerStatus, reactionEvidence: [reaction],
+    });
+    expect(normalized).toMatchObject({ action: "answer_source", reactionStatus: answerStatus, reactionEvidence: [reaction] });
+  });
+
   it.each(["pfs", "invented", null])("keeps a validated reaction when resume_guide has stale selected ID %s", (selectedPriorityId) => {
     const normalized = normalizeModeratorPlanModelResult(presentedInput, {
       ...modelPlanBase, priorityMentions: [], action: "resume_guide", selectedPriorityId,
