@@ -269,6 +269,13 @@ export class OpenAIResponsesGateway {
 
   async planModeratorTurn(input: ModeratorPlanInput) {
     const parsed = moderatorPlanInputSchema.parse(input);
+    const planningContext = {
+      ...parsed,
+      state: {
+        ...parsed.state,
+        priorities: parsed.state.priorities.map(({ evidencePacket: _evidencePacket, ...priority }) => priority),
+      },
+    };
     const call = await this.runStructuredCall<ModeratorPlanModelResult>({
       callType: "moderator_plan",
       model: this.config.decisionModel,
@@ -276,7 +283,7 @@ export class OpenAIResponsesGateway {
       schemaName: "moderator_plan_result_v2",
       schema: moderatorPlanModelResultSchema,
       instructions: moderatorPlannerSystemPrompt.instructions,
-      input: parsed,
+      input: planningContext,
       metadata: { brand: parsed.brand },
     });
     return { ...call, result: normalizeModeratorPlanModelResult(parsed, call.result) };

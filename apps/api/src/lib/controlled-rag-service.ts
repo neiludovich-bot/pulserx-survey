@@ -1,4 +1,4 @@
-import type { GroundedReference } from "@interview/schemas";
+import { moderatorEvidencePacketSchema, type GroundedReference, type ModeratorEvidencePacket } from "@interview/schemas";
 import {
   CONTROLLED_RAG_CHUNKS,
   NUBEQA_ARANOTE_UTI_FACTS,
@@ -39,6 +39,7 @@ export type ControlledRagSurveyTurnInput = {
   selectedQuestionSourceContext: string | null;
   recentInterviewerContext?: string | null;
   sourceTopicContext?: string | null;
+  evidencePacket?: ModeratorEvidencePacket | null;
   responseMode?: "answer_only" | "answer_then_ask";
 };
 
@@ -49,6 +50,7 @@ export type ControlledRagSurveyTurnResult = {
   citationIds: string[];
   conversationId: string | null;
   reason: string | null;
+  evidencePacket?: ModeratorEvidencePacket | null;
 };
 
 const STOP_WORDS = new Set([
@@ -1599,6 +1601,17 @@ export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
   const { retrievalQuery, retrievalInput, compositionInput } = sourceTurnInputs(input);
+  const retained = input.responseMode === "answer_only" && isReferentialClarification(input.participantMessage)
+    ? moderatorEvidencePacketSchema.safeParse(input.evidencePacket)
+    : null;
+  let chunks: ControlledRagChunk[];
+  let evidenceCard: ClinicalEvidenceCard | null;
+  if (retained?.success && retained.data.sources.every((source) => source.surveySlug === input.surveySlug)) {
+    // Rephrase exactly the evidence already presented. Never rerun retrieval
+    // or treat the generated interviewer answer as a new factual source.
+    chunks = retained.data.sources;
+    evidenceCard = null;
+  } else {
   const retrievedChunks = await retrieveChunks(retrievalInput);
   const initialEvidenceCard = buildClinicalEvidenceCard(retrievalInput, retrievedChunks);
   const orderedCandidates = orderChunksForEvidenceCard(
@@ -1615,12 +1628,13 @@ export async function askControlledRagForSurveyInterviewerTurn(
     candidates: orderedCandidates,
     fallbackSourceIds: preferredFallbackIds.length ? preferredFallbackIds : fallbackMatches.slice(0, 1).map((chunk) => chunk.id),
   });
-  const chunks = selection.chunks;
+  chunks = selection.chunks;
   // Semantic selection owns the evidence scope. Do not reintroduce a broad
   // topic card containing facts from sources that the selector did not choose.
-  const evidenceCard = selection.mode === "fallback"
+  evidenceCard = selection.mode === "fallback"
     ? buildClinicalEvidenceCard(retrievalInput, chunks)
     : null;
+  }
 
   if (chunks.length === 0) {
     return {
@@ -1653,6 +1667,12 @@ export async function askControlledRagForSurveyInterviewerTurn(
   ]
     .join("")
     .trim();
+  const packet = moderatorEvidencePacketSchema.safeParse({
+    sources: cited.references.flatMap((reference) => {
+      const source = chunks.find((chunk) => `rag:${chunk.id}` === reference.citationId);
+      return source ? [{ ...source, assets: source.assets ?? [] }] : [];
+    }),
+  });
 
   return {
     enabled: true,
@@ -1661,6 +1681,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     citationIds: cited.references.map((reference) => reference.citationId),
     conversationId: null,
     reason: null,
+    evidencePacket: packet.success ? packet.data : null,
   };
 }
 

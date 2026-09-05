@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type GroundedReference } from "@interview/schemas";
+import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference } from "@interview/schemas";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 
@@ -59,6 +59,7 @@ export async function runModeratorTurn(input: Input) {
   let content: string | null = null;
   let question: string | null = null;
   let sourceReason: string | null = null;
+  let sourceEvidencePacket: ModeratorEvidencePacket | undefined;
   const creditOriginalAnswer = !previousActive && input.answerStatus === "answered" && plan.newPriorities.length > 0;
   const phrase = async (kind: "reaction" | "transition", label: string) => {
     try {
@@ -70,18 +71,19 @@ export async function runModeratorTurn(input: Input) {
       return kind === "reaction" ? `How does this information about ${label} affect your assessment of ${input.brand}?` : `You also mentioned ${label}. Let's look at that next.`;
     }
   };
-  const source = async (query: string, sourceTopicContext: string | null = null) => {
+  const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket) => {
     sourceUsed = true;
     try {
-      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentInterviewerContext: input.recentTurns.slice(-2).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentInterviewerContext: input.recentTurns.slice(-2).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
       if (!answer.enabled || !answer.answer || !answer.references.length) { sourceReason = answer.reason ?? "No supporting evidence returned."; return null; }
       references = answer.references;
+      sourceEvidencePacket = answer.evidencePacket ?? undefined;
       return answer.answer;
     } catch (error) { sourceReason = error instanceof Error ? error.message : "Evidence unavailable."; return null; }
   };
   if ((input.asksSourceQuestion || plan.action === "answer_source") && !input.isResumeCue) {
     action = "answer_source";
-    const answer = await source(input.participantMessage, previousActive?.sourceQuestion ?? null);
+    const answer = await source(input.participantMessage, previousActive?.sourceQuestion ?? null, previousActive?.evidencePacket);
     content = answer ? `${answer}\n\nWhat else would you like to explore? Say "continue" when you're ready to return to the interview.` : 'I could not find supporting evidence for that question. You can clarify your question, or say "continue" to return to the interview.';
   } else {
     const active = state.priorities.find((p) => p.id === state.activePriorityId && p.status === "presented");
@@ -105,6 +107,7 @@ export async function runModeratorTurn(input: Input) {
         if (answer) {
           next.status = "presented";
           next.referenceIds = references.map((r) => r.citationId);
+          if (sourceEvidencePacket) next.evidencePacket = structuredClone(sourceEvidencePacket);
           state.activePriorityId = next.id;
           const acknowledgement = state.priorities.filter((p) => p.status === "pending" || p.id === next.id).map((p) => p.label).join(" and ");
           const transition = previousActive ? await phrase("transition", next.label) : `You mentioned ${acknowledgement}. Let's start with ${next.label}.`;

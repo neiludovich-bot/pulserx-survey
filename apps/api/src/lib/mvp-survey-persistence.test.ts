@@ -257,6 +257,45 @@ describe("MVP survey persistence", () => {
     });
   });
 
+  it("restores distinct per-session titles when the shared study name changes", async () => {
+    process.env.DATABASE_URL = "postgresql://example";
+    const sessions = [
+      { ...sessionSnapshot, sessionId: "title_session_1", studyName: "Original participant study" },
+      { ...sessionSnapshot, sessionId: "title_session_2", studyName: "Later synthetic study" },
+    ];
+    for (const session of sessions) {
+      await persistMvpSurveySessionStarted({
+        session,
+        initialMessage: { id: `start_${session.sessionId}`, role: "interviewer", content: "Is it okay to begin?", createdAt: startedAt.toISOString(), references: [] },
+        customGptEnabled: true, setupReason: null,
+      });
+    }
+    for (const [index, session] of sessions.entries()) {
+      const written = prismaMock.session.upsert.mock.calls[index][0];
+      expect(written.create.metadata.studyName).toBe(session.studyName);
+      expect(written.update.metadata.studyName).toBe(session.studyName);
+      prismaMock.session.findUnique.mockResolvedValue({
+        id: session.sessionId, startedAt, createdAt: startedAt,
+        metadata: written.create.metadata,
+        study: { name: sessions[1].studyName }, turns: [],
+      });
+      const restored = await loadMvpSurveySessionSnapshot(session.sessionId);
+      expect(restored?.session.studyName).toBe(session.studyName);
+    }
+  });
+
+  it("uses the shared study title for older sessions without a per-session title", async () => {
+    process.env.DATABASE_URL = "postgresql://example";
+    const { studyName: _oldTitle, ...legacyMetadata } = sessionSnapshot;
+    prismaMock.session.findUnique.mockResolvedValue({
+      id: sessionSnapshot.sessionId, startedAt, createdAt: startedAt,
+      metadata: { runtime: "mvp-customgpt-survey", ...legacyMetadata },
+      study: { name: "Legacy shared study title" }, turns: [],
+    });
+    const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
+    expect(restored?.session.studyName).toBe("Legacy shared study title");
+  });
+
   it("restores old sessions with no answered-question metadata without crediting asked questions", async () => {
     process.env.DATABASE_URL = "postgresql://example";
     prismaMock.session.findUnique.mockResolvedValue({
@@ -290,8 +329,16 @@ describe("MVP survey persistence", () => {
         priorityId: "ddi",
         reason: "The interaction evidence was presented and its reaction remains unanswered.",
       };
+      const persistedModeratorState = structuredClone(moderatorState);
+      const evidencePacket = { sources: [{
+        id: "ddi-source", surveySlug: surveySlug as "nubeqa" | "brukinsa" | "padcev",
+        title: "Original interaction source", url: `https://example.test/${surveySlug}/ddi`,
+        description: "Synthetic source fixture; no medical claim.", tags: ["DDI"],
+        text: "Original retrieved source excerpt, separate from the generated assistant answer.", assets: [],
+      }] };
+      persistedModeratorState.priorities[1].evidencePacket = evidencePacket;
       await persistMvpSurveyTurnAudit({
-        session: { ...sessionSnapshot, surveySlug, sourceBrand: surveySlug.toUpperCase(), moderatorState,
+        session: { ...sessionSnapshot, surveySlug, sourceBrand: surveySlug.toUpperCase(), moderatorState: persistedModeratorState,
           guide: importedGuide, fullGuide: importedGuide },
         turn: {
           eventType: "turn_completed",
@@ -305,8 +352,8 @@ describe("MVP survey persistence", () => {
         },
       });
       const written = prismaMock.session.upsert.mock.calls[0][0];
-      expect(written.create.metadata.moderatorState).toEqual(moderatorState);
-      expect(written.update.metadata.moderatorState).toEqual(moderatorState);
+      expect(written.create.metadata.moderatorState).toEqual(persistedModeratorState);
+      expect(written.update.metadata.moderatorState).toEqual(persistedModeratorState);
       expect(prismaMock.decision.create.mock.calls[0][0].data.output.moderatorDecision).toEqual(moderatorDecision);
       expect(prismaMock.turn.upsert.mock.calls[1][0].create.payload.moderatorDecision).toEqual(moderatorDecision);
 
@@ -319,7 +366,9 @@ describe("MVP survey persistence", () => {
         turns: [],
       });
       const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
-      expect(restored?.session.moderatorState).toEqual(moderatorState);
+      expect(restored?.session.moderatorState).toEqual(persistedModeratorState);
+      expect(restored?.session.moderatorState?.priorities[1].evidencePacket).toEqual(evidencePacket);
+      expect(restored?.session.moderatorState?.priorities[1].evidencePacket?.sources[0].text).not.toContain("What is your reaction");
       expect(restored?.session.guide).toEqual(importedGuide);
       expect(restored?.session.fullGuide).toEqual(importedGuide);
       expect(restored?.session.moderatorState?.priorities.find((priority) => priority.id === "ddi")?.reactionEvidence).toEqual([]);

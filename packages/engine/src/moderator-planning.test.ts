@@ -5,6 +5,8 @@ import {
   moderatorPlanModelResultSchema,
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionResultSchema,
+  moderatorEvidencePacketSchema,
+  type ModeratorEvidencePacket,
   type ModeratorPlanInput,
   type ModeratorPlanResult,
   type ModeratorEvidenceSelectionInput,
@@ -60,6 +62,38 @@ const presentedInput: ModeratorPlanInput = {
     }],
   },
 };
+
+const evidencePacket: ModeratorEvidencePacket = {
+  sources: [{
+    id: "source-1", surveySlug: "nubeqa", title: "Selected evidence", url: "https://example.com/source",
+    description: "Exact evidence retained for clarification", text: "The previously selected source excerpt.", tags: ["selected"],
+    assets: [{ title: "Selected visual", url: "https://example.com/visual", description: null, assetKind: "TABLE", tags: ["selected"], priority: 1 }],
+  }],
+};
+
+describe("moderator evidence packet persistence contract", () => {
+  it("retains an exact typed packet while accepting older priority state without one", () => {
+    const state = structuredClone(presentedInput.state);
+    expect(moderatorStateSchema.parse(state).priorities[0].evidencePacket).toBeUndefined();
+    state.priorities[0].evidencePacket = evidencePacket;
+    expect(moderatorStateSchema.parse(state).priorities[0].evidencePacket).toEqual(evidencePacket);
+    expect(moderatorEvidencePacketSchema.parse({ sources: [{ ...evidencePacket.sources[0], url: "", assets: [] }] }).sources[0].url).toBe("");
+  });
+
+  it("rejects unknown fields, duplicate sources, mixed brands, and oversized retained evidence", () => {
+    const source = evidencePacket.sources[0];
+    for (const invalid of [
+      { ...evidencePacket, untypedFacts: ["invented"] },
+      { sources: [{ ...source, untypedFacts: ["invented"] }] },
+      { sources: [source, source] },
+      { sources: [source, { ...source, id: "other", surveySlug: "padcev" }] },
+      { sources: [{ ...source, text: "x".repeat(12001) }] },
+      { sources: [{ ...source, assets: Array.from({ length: 7 }, () => source.assets[0]) }] },
+      { sources: [{ ...source, assets: [{ ...source.assets[0], unsupportedFact: "invented" }] }] },
+      { sources: Array.from({ length: 4 }, (_, index) => ({ ...source, id: String(index) })) },
+    ]) expect(moderatorEvidencePacketSchema.safeParse(invalid).success).toBe(false);
+  });
+});
 
 describe("moderator planning contract", () => {
   it("preserves all separately extracted participant priorities", () => {
@@ -289,6 +323,17 @@ describe("moderator evidence ID validation", () => {
 });
 
 describe("moderator structured gateway", () => {
+  it("omits retained evidence from model planning context without mutating canonical state", async () => {
+    const withEvidence = structuredClone(presentedInput);
+    withEvidence.state.priorities[0].evidencePacket = evidencePacket;
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { ...modelPlanBase, priorityMentions: [], reactionStatus: "answered", reactionEvidence: ["I would use it"], action: "resume_guide" } });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    const planned = await gateway.planModeratorTurn(withEvidence);
+    const requestInput = JSON.parse(parse.mock.calls[0][0].input[0].content[0].text);
+    expect(requestInput.state.priorities[0]).not.toHaveProperty("evidencePacket");
+    expect(withEvidence.state.priorities[0].evidencePacket).toEqual(evidencePacket);
+    expect(planned.result.reactionStatus).toBe("answered");
+  });
   it("uses separate strict schemas, models, and trace metadata for planning and wording", async () => {
     const parse = vi.fn()
       .mockResolvedValueOnce({ output_parsed: modelPlan, model: "decision-model", status: "completed" })

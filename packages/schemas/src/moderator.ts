@@ -3,6 +3,33 @@ import { z } from "zod";
 const evidenceExcerptSchema = z.string().min(1).max(4000);
 const answerStatusSchema = z.enum(["answered", "partial", "not_answered"]);
 
+export const moderatorEvidencePacketSchema = z.object({
+  sources: z.array(z.object({
+    id: z.string().min(1),
+    surveySlug: z.enum(["brukinsa", "padcev", "nubeqa"]),
+    title: z.string().min(1),
+    url: z.union([z.string().url(), z.literal("")]),
+    description: z.string(),
+    text: z.string().min(1).max(12000),
+    tags: z.array(z.string()),
+    assets: z.array(z.object({
+      title: z.string().min(1),
+      url: z.string().url(),
+      description: z.string().nullable(),
+      assetKind: z.string().min(1),
+      tags: z.array(z.string()),
+      priority: z.number().finite(),
+    }).strict()).max(6),
+  }).strict()).min(1).max(3),
+}).strict().superRefine((packet, context) => {
+  if (new Set(packet.sources.map((source) => source.id)).size !== packet.sources.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["sources"], message: "Evidence packet source IDs must be unique." });
+  }
+  if (new Set(packet.sources.map((source) => source.surveySlug)).size !== 1) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["sources"], message: "Evidence packets cannot mix source brands." });
+  }
+});
+
 export const moderatorPrioritySchema = z.object({
   id: z.string().min(1),
   label: z.string().min(1).max(200),
@@ -12,6 +39,7 @@ export const moderatorPrioritySchema = z.object({
   sourceQuestion: z.string().min(1).max(2000),
   reactionEvidence: z.array(evidenceExcerptSchema).max(32),
   referenceIds: z.array(z.string().min(1)).max(32),
+  evidencePacket: moderatorEvidencePacketSchema.optional(),
 }).strict();
 
 export const moderatorStateSchema = z.object({
@@ -119,6 +147,7 @@ export const moderatorEvidenceSelectionResultSchema = z.object({
 }).strict();
 
 export type ModeratorPriority = z.infer<typeof moderatorPrioritySchema>;
+export type ModeratorEvidencePacket = z.infer<typeof moderatorEvidencePacketSchema>;
 export type ModeratorState = z.infer<typeof moderatorStateSchema>;
 export type ModeratorPlanInput = z.infer<typeof moderatorPlanInputSchema>;
 export type ModeratorPlanResult = z.infer<typeof moderatorPlanResultSchema>;

@@ -104,6 +104,7 @@ function metadataForSession(
     runtime: "mvp-customgpt-survey",
     surveySlug: session.surveySlug,
     sourceBrand: session.sourceBrand,
+    studyName: session.studyName,
     surveyIntentSlug: session.surveyIntentSlug,
     surveyIntentLabel: session.surveyIntentLabel,
     surveyIntentCoverage: session.surveyIntentCoverage,
@@ -520,8 +521,8 @@ export async function loadMvpSurveySessionSnapshot(sessionId: string) {
         surveySlug,
         sourceBrand,
         studyName:
-          persisted.study?.name ??
           stringOrNull(metadata.studyName) ??
+          persisted.study?.name ??
           `${sourceBrand} HCP MVP`,
         surveyIntentSlug: stringOrNull(metadata.surveyIntentSlug),
         surveyIntentLabel: stringOrNull(metadata.surveyIntentLabel),

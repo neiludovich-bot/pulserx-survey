@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { ModeratorPlanResult, ModeratorPhrasingInput } from "@interview/schemas";
+import type { ModeratorPlanResult, ModeratorPhrasingInput, ModeratorEvidencePacket } from "@interview/schemas";
 import type { SourceAnswerProviderInput } from "./source-answer-service";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
 
@@ -20,6 +20,16 @@ vi.mock("./source-answer-service", () => ({
 
 type ModeratorInput = Parameters<typeof runModeratorTurn>[0];
 type SurveySlug = ModeratorInput["surveySlug"];
+
+function evidenceFor(surveySlug: SurveySlug, topic: string): ModeratorEvidencePacket {
+  return { sources: [{
+    id: `${surveySlug}-${topic}-source`, surveySlug,
+    title: `${surveySlug.toUpperCase()} ${topic} source`,
+    url: `https://example.test/${surveySlug}/${topic}`,
+    description: "Synthetic source fixture; no medical claim.",
+    tags: [topic], text: `Original retrieved ${topic} source excerpt for ${surveySlug}.`, assets: [],
+  }] };
+}
 
 function planned(overrides: Partial<ModeratorPlanResult> = {}): ModeratorPlanResult {
   return {
@@ -90,6 +100,7 @@ beforeEach(() => {
       citationIds: [`${input.surveySlug}-${topic}-source`],
       conversationId: null,
       reason: null,
+      evidencePacket: evidenceFor(input.surveySlug, topic),
     };
   });
 });
@@ -101,6 +112,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(first.state.priorities.map((priority) => priority.participantEvidence)).toEqual(["PFS", "DDI"]);
     expect(first.state.activePriorityId).toBe(first.state.priorities[0].id);
     expect(first.state.priorities[0].referenceIds).toEqual([`${surveySlug}-PFS-source`]);
+    expect(first.state.priorities[0].evidencePacket).toEqual(evidenceFor(surveySlug, "PFS"));
     expect(first.state.priorities[0].reactionEvidence).toEqual([]);
     expect(first.creditOriginalAnswer).toBe(true);
     expect(first.content).toContain("PFS and DDI");
@@ -176,13 +188,17 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       isPriorityQuestion: false,
     }));
     expect(second?.state.priorities[1].status).toBe("presented");
+    const restoredState = JSON.parse(JSON.stringify(second!.state));
+    const expectedPacket = evidenceFor(surveySlug, "DDI");
+    expect(restoredState.priorities[1].evidencePacket).toEqual(expectedPacket);
+    expect(JSON.stringify(expectedPacket)).not.toContain("approved source summary");
     const activeSourceQuestion = second!.state.priorities[1].sourceQuestion;
     mocks.source.mockClear();
     mocks.plan.mockResolvedValueOnce({ result: planned({
       action: "answer_source", selectedPriorityId: second!.state.activePriorityId,
     }) });
     const followup = await runModeratorTurn(inputFor(surveySlug, {
-      state: second!.state, currentQuestion: second!.question,
+      state: restoredState, currentQuestion: second!.question,
       participantMessage: "Can you explain that more simply?",
       isPriorityQuestion: false, asksSourceQuestion, answerStatus: "not_answered",
       recentTurns: [{ role: "participant", content: reaction }, { role: "interviewer", content: second!.content! }],
@@ -195,6 +211,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.source).toHaveBeenCalledWith(expect.objectContaining({
       participantMessage: "Can you explain that more simply?",
       sourceTopicContext: activeSourceQuestion,
+      evidencePacket: expectedPacket,
       responseMode: "answer_only",
     }));
     expect(activeSourceQuestion).toMatch(/drug interactions/);
