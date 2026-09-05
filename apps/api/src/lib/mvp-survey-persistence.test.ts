@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  loadMvpSurveySessionSnapshot,
   persistMvpSurveySessionStarted,
   persistMvpSurveyTurnAudit,
 } from "./mvp-survey-persistence";
@@ -11,6 +12,7 @@ const prismaMock = vi.hoisted(() => ({
   },
   session: {
     upsert: vi.fn(),
+    findUnique: vi.fn(),
   },
   study: {
     upsert: vi.fn(),
@@ -57,6 +59,7 @@ describe("MVP survey persistence", () => {
     vi.clearAllMocks();
     prismaMock.study.upsert.mockResolvedValue({ id: "study_1" });
     prismaMock.session.upsert.mockReturnValue({ op: "session.upsert" });
+    prismaMock.session.findUnique.mockReset();
     prismaMock.turn.upsert.mockReturnValue({ op: "turn.upsert" });
     prismaMock.decision.create.mockReturnValue({ op: "decision.create" });
     prismaMock.$transaction.mockResolvedValue([]);
@@ -107,7 +110,13 @@ describe("MVP survey persistence", () => {
     });
 
     await persistMvpSurveyTurnAudit({
-      session: sessionSnapshot,
+      session: {
+        ...sessionSnapshot,
+        answeredQuestionIds: ["safety_management_workflow"],
+        answerEvidenceByQuestionId: {
+          safety_management_workflow: ["Neuropathy management matters most."],
+        },
+      },
       turn: {
         eventType: "turn_completed",
         participantMessage: "Neuropathy management matters most.",
@@ -164,5 +173,106 @@ describe("MVP survey persistence", () => {
         }),
       }),
     );
+
+    const startedMetadata =
+      prismaMock.session.upsert.mock.calls[0][0].create.metadata;
+    expect(startedMetadata).toMatchObject({
+      answeredQuestionIds: [],
+      answerEvidenceByQuestionId: {},
+    });
+    const persistedMetadata =
+      prismaMock.session.upsert.mock.calls[1][0].update.metadata;
+    prismaMock.session.findUnique.mockResolvedValue({
+      id: sessionSnapshot.sessionId,
+      startedAt,
+      createdAt: startedAt,
+      metadata: persistedMetadata,
+      study: { name: sessionSnapshot.studyName },
+      turns: [],
+    });
+    const restored = await loadMvpSurveySessionSnapshot(
+      sessionSnapshot.sessionId,
+    );
+    expect(restored?.session).toMatchObject({
+      answeredQuestionIds: ["safety_management_workflow"],
+      answerEvidenceByQuestionId: {
+        safety_management_workflow: ["Neuropathy management matters most."],
+      },
+    });
   });
+
+  it("restores old sessions with no answered-question metadata without crediting asked questions", async () => {
+    process.env.DATABASE_URL = "postgresql://example";
+    prismaMock.session.findUnique.mockResolvedValue({
+      id: sessionSnapshot.sessionId,
+      startedAt,
+      createdAt: startedAt,
+      metadata: { runtime: "mvp-customgpt-survey", ...sessionSnapshot },
+      study: { name: sessionSnapshot.studyName },
+      turns: [],
+    });
+
+    const restored = await loadMvpSurveySessionSnapshot(
+      sessionSnapshot.sessionId,
+    );
+    expect(restored?.session.askedQuestionIds).toEqual([
+      "safety_management_workflow",
+    ]);
+    expect(restored?.session.answeredQuestionIds).toEqual([]);
+    expect(restored?.session.answerEvidenceByQuestionId).toEqual({});
+  });
+
+  it.each([
+    {
+      answeredQuestionIds: "safety_management_workflow",
+      answerEvidenceByQuestionId: ["This is not a question-to-evidence map."],
+      expectedIds: [],
+      expectedEvidence: {},
+    },
+    {
+      answeredQuestionIds: [
+        null,
+        7,
+        "",
+        " ",
+        "safety_management_workflow",
+        "safety_management_workflow",
+      ],
+      answerEvidenceByQuestionId: JSON.parse(
+        '{"safety_management_workflow":["  Exact participant text.  ","  Exact participant text.  "],"bad_type":"not an array","mixed":["valid",5],"blank":[" "],"empty":[]," ":["text"],"__proto__":["text"]}',
+      ),
+      expectedIds: ["safety_management_workflow"],
+      expectedEvidence: {
+        safety_management_workflow: ["  Exact participant text.  "],
+      },
+    },
+  ])(
+    "discards malformed answered-question metadata conservatively",
+    async (fixture) => {
+      process.env.DATABASE_URL = "postgresql://example";
+      prismaMock.session.findUnique.mockResolvedValue({
+        id: sessionSnapshot.sessionId,
+        startedAt,
+        createdAt: startedAt,
+        metadata: {
+          runtime: "mvp-customgpt-survey",
+          ...sessionSnapshot,
+          answeredQuestionIds: fixture.answeredQuestionIds,
+          answerEvidenceByQuestionId: fixture.answerEvidenceByQuestionId,
+        },
+        study: { name: sessionSnapshot.studyName },
+        turns: [],
+      });
+
+      const restored = await loadMvpSurveySessionSnapshot(
+        sessionSnapshot.sessionId,
+      );
+      expect(restored?.session.answeredQuestionIds).toEqual(
+        fixture.expectedIds,
+      );
+      expect(restored?.session.answerEvidenceByQuestionId).toEqual(
+        fixture.expectedEvidence,
+      );
+    },
+  );
 });

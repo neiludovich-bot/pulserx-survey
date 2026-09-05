@@ -50,7 +50,6 @@ import {
   classifyMvpTurnRouteHybrid,
   type MvpRouteAnalysisCandidate,
 } from "./mvp-openai-turn-router";
-import { classifyMvpTurnRoute } from "./mvp-turn-router";
 import {
   type MvpSurveyDefinition,
   type MvpSurveyIntent,
@@ -100,6 +99,8 @@ type MvpSurveySession = {
   fullGuide: MvpGuideQuestion[];
   adaptiveProbeQuestions: MvpGuideQuestion[];
   askedQuestionIds: string[];
+  answeredQuestionIds: string[];
+  answerEvidenceByQuestionId: Record<string, string[]>;
   currentQuestionId: string | null;
   pendingReturnQuestionId: string | null;
   activeDiseaseAreas: DiseaseArea[];
@@ -227,6 +228,8 @@ function persistenceSnapshot(session: MvpSurveySession) {
     queuedQuestionIds: [...session.queuedQuestionIds],
     excursionQuestionIds: [...session.excursionQuestionIds],
     askedQuestionIds: [...session.askedQuestionIds],
+    answeredQuestionIds: [...session.answeredQuestionIds],
+    answerEvidenceByQuestionId: structuredClone(session.answerEvidenceByQuestionId),
     adaptiveProbeQuestions: [...session.adaptiveProbeQuestions],
     completedReason: session.completedReason,
   };
@@ -298,6 +301,14 @@ function restoreMvpSurveySession(input: {
       input.session.adaptiveProbeQuestions.filter(isMvpGuideQuestion),
     askedQuestionIds: input.session.askedQuestionIds.filter((questionId) =>
       knownQuestionIds.has(questionId),
+    ),
+    answeredQuestionIds: (input.session.answeredQuestionIds ?? []).filter((questionId) =>
+      knownQuestionIds.has(questionId),
+    ),
+    answerEvidenceByQuestionId: Object.fromEntries(
+      Object.entries(input.session.answerEvidenceByQuestionId ?? {}).filter(([questionId]) =>
+        knownQuestionIds.has(questionId),
+      ),
     ),
     currentQuestionId,
     pendingReturnQuestionId,
@@ -469,6 +480,12 @@ function recentInterviewerSourceContext(session: MvpSurveySession) {
   return previousInterviewerMessages
     .map((message, index) => `${index + 1}. ${message}`)
     .join(" ");
+}
+
+function recentParticipantInterpretationContext(session: MvpSurveySession) {
+  return session.messages.slice(0, -1).slice(-8)
+    .map((message) => `${message.role}: ${compactHistoryText(message.content, 800)}`)
+    .join("\n") || null;
 }
 
 function configuredProjectId(
@@ -791,17 +808,18 @@ function askedQuestions(session: MvpSurveySession) {
 }
 
 function allQuestions(session: MvpSurveySession) {
-  const baseQuestions = session.fullGuide.length
-    ? session.fullGuide
-    : session.guide;
-  return [...baseQuestions, ...session.adaptiveProbeQuestions];
+  const questions = [...session.guide, ...session.fullGuide, ...session.adaptiveProbeQuestions];
+  return questions.filter((question, index) =>
+    questions.findIndex((candidate) => candidate.id === question.id) === index,
+  );
 }
 
 function questionWasAsked(
   session: MvpSurveySession,
   question: MvpGuideQuestion,
 ) {
-  return session.askedQuestionIds.includes(question.id);
+  return session.askedQuestionIds.includes(question.id) ||
+    session.answeredQuestionIds.includes(question.id);
 }
 
 function unaskedQuestions(session: MvpSurveySession) {
@@ -2089,25 +2107,6 @@ function contentLooksLikeReactiveQuestion(content: string) {
   );
 }
 
-function contentLooksLikeSourceProbe(content: string) {
-  const normalized = normalizeText(content);
-
-  return (
-    content.includes("?") ||
-    /\b(can you|could you|would you|please|explain|what is|what are|what did|what does|known|tell me|show me|want to know|source|reference|references|citation|citations|data show|study show|trial show|how should i|how do i|do you have|is there|are there|download link|open the|pull up|walk me through|drug interaction|drug interactions|drug drug interaction|drug drug interactions|ddi)\b/.test(
-      normalized,
-    )
-  );
-}
-
-function contentLooksLikeSourceUtilityRequest(content: string) {
-  const normalized = normalizeText(content);
-
-  return /\b(download link|downloadable link|can i download|do you have (?:a )?download|pdf link|source link|citation link|open (?:the )?(?:source|citation|pdf|guide|checklist|link)|pull up (?:the )?(?:source|citation|pdf|guide|checklist|graph|chart|image)|show me (?:the )?(?:source|citation|pdf|guide|checklist|graph|chart|image)|display (?:the )?(?:source|citation|pdf|guide|checklist|graph|chart|image)|where (?:is|are).{0,40}\blink)\b/.test(
-    normalized,
-  );
-}
-
 function contentLooksLikePatientPopulationQuestion(content: string) {
   const normalized = normalizeText(content);
 
@@ -2177,7 +2176,7 @@ function contentLooksLikeReturnToSurveyCue(content: string) {
     /^(yes|yeah|yep|ok|okay|sure|continue|go on|move on|next|next question|keep going|that helps|that s helpful|that is helpful|makes sense|got it|understood|thanks|thank you|no|no thanks|all set|i m good|i am good)\.?$/.test(
       normalized,
     ) ||
-    /\b(continue|go on|move on|next question|keep going|that helps|that s helpful|that is helpful|makes sense|got it|understood|thanks|thank you)\b/.test(
+    /^(?:(?:thanks|thank you|okay|ok|that helps|got it)\s+)?(?:please\s+)?(?:continue|go on|move on|next question|keep going)(?:\s+please)?$/.test(
       normalized,
     )
   );
@@ -2571,34 +2570,6 @@ function currentAnswerQuality(
       `Could you answer this directly: ${current.canonicalQuestion}`,
     ].join("\n\n"),
   };
-}
-
-function contentAppearsToAnswerCurrentQuestion(
-  question: MvpGuideQuestion | null,
-  content: string,
-) {
-  if (!question) {
-    return false;
-  }
-
-  switch (question.id) {
-    case "intro_consent":
-      return hasAgreement(content) && normalizedTokens(content).length <= 8;
-    case "role":
-      return hasClinicalRole(content);
-    case "practice_setting":
-      return hasPracticeSetting(content);
-    case "disease_involvement":
-    case "uc_involvement":
-    case "primary_disease_focus":
-      return extractDiseaseAreas(content).length > 0;
-    case "patient_volume":
-      return hasPatientVolume(content);
-    case "familiarity":
-      return hasFamiliaritySignal(content);
-    default:
-      return answerMatchesQuestionRouteKeyword(question, content);
-  }
 }
 
 function sourceContextForQuestion(question: MvpGuideQuestion | null) {
@@ -3107,9 +3078,11 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     targetDurationSeconds: input.targetDurationSeconds ?? 600,
     startedAt: new Date(),
     guide,
-    fullGuide: definition.guide,
+    fullGuide: input.guide?.length ? guide : definition.guide,
     adaptiveProbeQuestions: [],
     askedQuestionIds: [firstQuestion.id],
+    answeredQuestionIds: [],
+    answerEvidenceByQuestionId: {},
     currentQuestionId: firstQuestion.id,
     pendingReturnQuestionId: null,
     activeDiseaseAreas: [],
@@ -3191,7 +3164,7 @@ export async function submitMvpCustomGptSurveyTurn(
 
     if (
       pendingQuestion &&
-      !questionWasAsked(session, pendingQuestion) &&
+      !session.answeredQuestionIds.includes(pendingQuestion.id) &&
       questionAllowedByDiseaseLane(session, pendingQuestion, input.content)
     ) {
       const assistantContent =
@@ -3242,7 +3215,7 @@ export async function submitMvpCustomGptSurveyTurn(
         remainingSeconds: remainingSeconds(session),
         completedReason: session.completedReason,
       });
-      void persistMvpSurveyTurnAudit({
+      await persistMvpSurveyTurnAudit({
         session: persistenceSnapshot(session),
         turn: {
           eventType: "turn_completed",
@@ -3278,7 +3251,29 @@ export async function submitMvpCustomGptSurveyTurn(
 
   const participantRequestedStop =
     !fixedFlow && contentLooksLikeSurveyStop(input.content);
-  const answerQuality = fixedFlow || participantRequestedStop
+  // Interpret answers and participant questions independently, before answer
+  // rejection or research selection. Medical terms alone are not requests.
+  const participantAnalysis = !fixedFlow && !participantRequestedStop
+    ? await classifyMvpTurnRouteHybrid({
+        surveySlug: session.surveySlug,
+        sourceBrand: session.sourceBrand,
+        activeIntentSlug: session.surveyIntent?.slug ?? null,
+        activeIntentLabel: session.surveyIntent?.label ?? null,
+        activeIntentSteeringRule: session.surveyIntent?.steeringRule ?? null,
+        participantContent: input.content,
+        currentQuestionId: currentQuestionBefore?.id ?? null,
+        currentQuestion: questionText(currentQuestionBefore),
+        currentQuestionObjective: currentQuestionBefore?.objective ?? null,
+        currentQuestionKeywords: currentQuestionBefore?.routeKeywords ?? [],
+        currentQuestionCompletionSignals: currentQuestionBefore?.completionSignals ?? [],
+        recentInterviewerContext: recentParticipantInterpretationContext(session),
+        candidateQuestions: routeAnalysisCandidates(session, input.content),
+      })
+    : null;
+  const interpretedTurnIsValid = participantAnalysis &&
+    !transcriptLooksNonEnglishOrGarbled(input.content) &&
+    (participantAnalysis.answerStatus !== "not_answered" || participantAnalysis.asksSourceQuestion);
+  const answerQuality = fixedFlow || participantRequestedStop || interpretedTurnIsValid
     ? { accepted: true as const }
     : currentAnswerQuality(session, input.content);
   if (!answerQuality.accepted) {
@@ -3294,7 +3289,7 @@ export async function submitMvpCustomGptSurveyTurn(
       assistantMessage: answerQuality.message,
       nextAction: "ask",
     });
-    void persistMvpSurveyTurnAudit({
+    await persistMvpSurveyTurnAudit({
       session: persistenceSnapshot(session),
       turn: {
         eventType: "turn_rejected",
@@ -3312,6 +3307,22 @@ export async function submitMvpCustomGptSurveyTurn(
   }
 
   updateDiseaseStateFromParticipant(session, input.content);
+
+  if (currentQuestionBefore && participantAnalysis?.answerStatus !== undefined &&
+      participantAnalysis.answerStatus !== "not_answered") {
+    session.answerEvidenceByQuestionId[currentQuestionBefore.id] = [...new Set([
+      ...(session.answerEvidenceByQuestionId[currentQuestionBefore.id] ?? []),
+      ...participantAnalysis.answerEvidence,
+    ])];
+    if (participantAnalysis.answerStatus === "answered" &&
+        !session.answeredQuestionIds.includes(currentQuestionBefore.id)) {
+      session.answeredQuestionIds.push(currentQuestionBefore.id);
+    }
+    if (session.pendingReturnQuestionId === currentQuestionBefore.id &&
+        participantAnalysis.answerStatus === "answered") {
+      session.pendingReturnQuestionId = null;
+    }
+  }
 
   if (fixedFlow) {
     const selectedQuestion = selectNextFixedQuestion(session);
@@ -3366,7 +3377,7 @@ export async function submitMvpCustomGptSurveyTurn(
       remainingSeconds: remainingSeconds(session),
       completedReason: session.completedReason,
     });
-    void persistMvpSurveyTurnAudit({
+    await persistMvpSurveyTurnAudit({
       session: persistenceSnapshot(session),
       turn: {
         eventType: "turn_completed",
@@ -3407,7 +3418,7 @@ export async function submitMvpCustomGptSurveyTurn(
     (currentQuestionBefore?.close &&
       !participantRequestsContinuation &&
       !hasQueuedFollowUp &&
-      !contentLooksLikeReactiveQuestion(input.content));
+      !participantAnalysis?.asksSourceQuestion);
 
   if (shouldCloseNow) {
     session.completedReason = currentQuestionBefore?.close
@@ -3441,7 +3452,7 @@ export async function submitMvpCustomGptSurveyTurn(
       remainingSeconds: remainingSeconds(session),
       completedReason: session.completedReason,
     });
-    void persistMvpSurveyTurnAudit({
+    await persistMvpSurveyTurnAudit({
       session: persistenceSnapshot(session),
       turn: {
         eventType: "turn_completed",
@@ -3468,18 +3479,9 @@ export async function submitMvpCustomGptSurveyTurn(
     return responseForSession(session, "wrap_up");
   }
 
-  const preSelectionRouteAnalysis = await classifyMvpTurnRouteHybrid({
-    surveySlug: session.surveySlug,
-    sourceBrand: session.sourceBrand,
-    activeIntentSlug: session.surveyIntent?.slug ?? null,
-    activeIntentLabel: session.surveyIntent?.label ?? null,
-    activeIntentSteeringRule: session.surveyIntent?.steeringRule ?? null,
-    participantContent: input.content,
-    currentQuestionId: currentQuestionBefore?.id ?? null,
-    currentQuestion: questionText(currentQuestionBefore),
-    recentInterviewerContext: recentInterviewerSourceContext(session),
-    candidateQuestions: routeAnalysisCandidates(session, input.content),
-  });
+  // Fixed-flow and explicit-stop paths have already returned above.
+  if (!participantAnalysis) throw new Error("Participant interpretation is required.");
+  const preSelectionRouteAnalysis = participantAnalysis;
   prioritizeRouteSuggestedQuestions(
     session,
     preSelectionRouteAnalysis.suggestedQuestionIds,
@@ -3491,63 +3493,39 @@ export async function submitMvpCustomGptSurveyTurn(
     : null;
   if (
     session.pendingReturnQuestionId &&
-    (!parkedQuestion || questionWasAsked(session, parkedQuestion))
+    (!parkedQuestion || session.answeredQuestionIds.includes(parkedQuestion.id))
   ) {
     session.pendingReturnQuestionId = null;
   }
   const participantSourceDetour =
     !preSelectionRouteAnalysis.decision.isOutOfScope &&
-    (contentLooksLikeSourceProbe(input.content) ||
-      preSelectionRouteAnalysis.decision.kind === "source_question" ||
-      preSelectionRouteAnalysis.decision.kind === "unknown_in_domain" ||
-      preSelectionRouteAnalysis.decision.kind === "off_lane_excursion");
+    preSelectionRouteAnalysis.asksSourceQuestion;
   const shouldReturnToCurrentQuestion =
     Boolean(currentQuestionBefore) &&
     participantSourceDetour &&
-    !contentAppearsToAnswerCurrentQuestion(
-      currentQuestionBefore,
-      input.content,
-    ) &&
+    preSelectionRouteAnalysis.answerStatus !== "answered" &&
+    !session.answeredQuestionIds.includes(currentQuestionBefore!.id) &&
     !contentLooksLikeReturnToSurveyCue(input.content);
   const selectedQuestion = shouldReturnToCurrentQuestion ||
     (currentQuestionBefore?.close && participantRequestsContinuation)
     ? currentQuestionBefore
     : parkedQuestion &&
-        !questionWasAsked(session, parkedQuestion) &&
+        !session.answeredQuestionIds.includes(parkedQuestion.id) &&
         questionAllowedByDiseaseLane(session, parkedQuestion, input.content)
       ? parkedQuestion
       : selectNextQuestion(session, input.content);
-  const questionSourceContextRequirement =
-    sourceContextForQuestion(selectedQuestion);
-  const selectedQuestionRouteDecision = classifyMvpTurnRoute({
-    surveySlug: session.surveySlug,
-    activeIntentSlug: session.surveyIntent?.slug ?? null,
-    participantContent: input.content,
-    currentQuestion: questionText(currentQuestion(session)),
-    selectedQuestionId: selectedQuestion?.id ?? null,
-    selectedQuestionText: questionText(selectedQuestion),
-    selectedQuestionSourceContext: questionSourceContextRequirement,
-  });
-  const turnRouteDecision = {
-    ...preSelectionRouteAnalysis.decision,
-    needsSource:
-      preSelectionRouteAnalysis.decision.needsSource ||
-      selectedQuestionRouteDecision.needsSource,
-    topic:
-      preSelectionRouteAnalysis.decision.topic ??
-      selectedQuestionRouteDecision.topic,
-    sourceDirective:
-      preSelectionRouteAnalysis.decision.sourceDirective ??
-      selectedQuestionRouteDecision.sourceDirective,
-  };
-  const reactiveQuestionSourceDirective = turnRouteDecision.isOutOfScope
+  const questionSourceContextRequirement = participantSourceDetour
+    ? null
+    : sourceContextForQuestion(selectedQuestion);
+  const turnRouteDecision = preSelectionRouteAnalysis.decision;
+  const reactiveQuestionSourceDirective = !participantSourceDetour
     ? null
     : sourceContextForReactiveQuestion(
         session,
         input.content,
         selectedQuestion,
       );
-  const reactiveSourceContextRequirement = turnRouteDecision.isOutOfScope
+  const reactiveSourceContextRequirement = !participantSourceDetour
     ? null
     : combineSourceContextRequirements(
         turnRouteDecision.sourceDirective,
@@ -3572,19 +3550,14 @@ export async function submitMvpCustomGptSurveyTurn(
     !turnRouteDecision.isOutOfScope &&
     session.surveySlug !== "data" &&
     (Boolean(sourceContextRequirement) ||
-      turnRouteDecision.needsSource ||
-      contentLooksLikeReactiveQuestion(input.content));
+      (participantSourceDetour && turnRouteDecision.needsSource));
   const sourceSurveySlug =
     session.surveySlug === "data" ? null : session.surveySlug;
   const participantAskedSourceProbe =
-    !turnRouteDecision.isOutOfScope &&
-    (contentLooksLikeSourceProbe(input.content) ||
-      preSelectionRouteAnalysis.decision.kind === "source_question" ||
-      preSelectionRouteAnalysis.decision.kind === "unknown_in_domain");
+    participantSourceDetour;
   const shouldPauseAfterSourceAnswer =
     needsCustomGpt &&
     participantAskedSourceProbe &&
-    contentLooksLikeSourceUtilityRequest(input.content) &&
     !hardTimeboxExpired(session);
   const sourceResponseMode = shouldPauseAfterSourceAnswer
     ? ("answer_only" as const)
@@ -3603,7 +3576,7 @@ export async function submitMvpCustomGptSurveyTurn(
     ? "answer_then_ask"
     : "ask";
 
-  if (hardTimeboxExpired(session) || !selectedQuestion) {
+  if (hardTimeboxExpired(session) || (!selectedQuestion && !participantSourceDetour)) {
     session.completedReason = hardTimeboxExpired(session)
       ? "Timebox plus grace period reached."
       : "Guide questions completed.";
@@ -3674,7 +3647,7 @@ export async function submitMvpCustomGptSurveyTurn(
         if (
           sourceResponseMode === "answer_only" &&
           selectedQuestion &&
-          !questionWasAsked(session, selectedQuestion)
+          !session.answeredQuestionIds.includes(selectedQuestion.id)
         ) {
           session.pendingReturnQuestionId = selectedQuestion.id;
         }
@@ -3736,6 +3709,9 @@ export async function submitMvpCustomGptSurveyTurn(
     turnRouteAnalysis: {
       provider: preSelectionRouteAnalysis.provider,
       suggestedQuestionIds: preSelectionRouteAnalysis.suggestedQuestionIds,
+      answerStatus: preSelectionRouteAnalysis.answerStatus,
+      asksSourceQuestion: preSelectionRouteAnalysis.asksSourceQuestion,
+      answerEvidence: preSelectionRouteAnalysis.answerEvidence,
       modelResult: preSelectionRouteAnalysis.modelResult,
       error: preSelectionRouteAnalysis.error,
     },
@@ -3763,7 +3739,7 @@ export async function submitMvpCustomGptSurveyTurn(
     remainingSeconds: remainingSeconds(session),
     completedReason: session.completedReason,
   });
-  void persistMvpSurveyTurnAudit({
+  await persistMvpSurveyTurnAudit({
     session: persistenceSnapshot(session),
     turn: {
       eventType: "turn_completed",
@@ -3781,6 +3757,9 @@ export async function submitMvpCustomGptSurveyTurn(
       turnRouteAnalysis: {
         provider: preSelectionRouteAnalysis.provider,
         suggestedQuestionIds: preSelectionRouteAnalysis.suggestedQuestionIds,
+        answerStatus: preSelectionRouteAnalysis.answerStatus,
+        asksSourceQuestion: preSelectionRouteAnalysis.asksSourceQuestion,
+        answerEvidence: preSelectionRouteAnalysis.answerEvidence,
         modelResult: preSelectionRouteAnalysis.modelResult,
         error: preSelectionRouteAnalysis.error,
       },

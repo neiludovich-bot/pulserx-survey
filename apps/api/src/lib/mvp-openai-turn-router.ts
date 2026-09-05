@@ -1,7 +1,8 @@
-import type {
-  MvpDisplayTopic as SchemaMvpDisplayTopic,
-  MvpTurnRouteAnalysisResult,
-  MvpTurnRouteCandidate,
+import {
+  mvpTurnRouteAnalysisResultSchema,
+  type MvpTurnRouteAnalysisResult,
+  type MvpTurnRouteCandidate,
+  type MvpDisplayTopic as SchemaMvpDisplayTopic,
 } from "@interview/schemas";
 import { env } from "../env";
 import { getOptionalOpenAIGateway } from "./model-gateway";
@@ -11,10 +12,11 @@ import {
   type MvpTurnRouteDecision,
 } from "./mvp-turn-router";
 import type { MvpSurveySlug } from "./mvp-survey-definition";
+import { interpretMvpParticipantIntent, type MvpParticipantIntent, type MvpParticipantIntentInput } from "./mvp-participant-intent";
 
 export type MvpRouteAnalysisCandidate = MvpTurnRouteCandidate;
 
-export type MvpHybridTurnRouteInput = {
+export type MvpHybridTurnRouteInput = MvpParticipantIntentInput & {
   surveySlug: MvpSurveySlug;
   sourceBrand: string;
   activeIntentSlug?: string | null;
@@ -30,7 +32,7 @@ export type MvpHybridTurnRouteInput = {
   candidateQuestions: MvpRouteAnalysisCandidate[];
 };
 
-export type MvpHybridTurnRouteDecision = {
+export type MvpHybridTurnRouteDecision = MvpParticipantIntent & {
   decision: MvpTurnRouteDecision;
   provider: "deterministic" | "openai_hybrid";
   suggestedQuestionIds: string[];
@@ -38,41 +40,11 @@ export type MvpHybridTurnRouteDecision = {
   error: string | null;
 };
 
-function normalizeText(value: string) {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9/+-]+/g, " ")
-    .trim();
-}
-
-function contentLooksClinicallyMeaningful(value: string) {
-  const normalized = normalizeText(value);
-
-  return /\b(?:adverse|aranote|aramis|arasens|benefit|candidate|caution|cautious|clinical|complete response|cr|darolutamide|data|dose|efficacy|eligible|ev 302|ev302|guideline|inclusion|exclusion|keynote|management|mcspc|mfs|monitor|neuropathy|nmcrpc|nubeqa|orr|patient|pfs|population|rash|resource|rpfs|safety|side effect|study|toxicity|trial)\b/.test(
-    normalized,
-  );
-}
-
-function contentLooksTooSimpleForModel(value: string) {
-  const normalized = normalizeText(value);
-
-  return (
-    normalized.length < 24 &&
-    /^(?:yes|yeah|yep|no|nope|ok|okay|sure|agree|disagree|none|not sure|maybe)$/.test(
-      normalized,
-    )
-  );
-}
-
 function shouldAskOpenAI(
   input: MvpHybridTurnRouteInput,
   deterministic: MvpTurnRouteDecision,
 ) {
   if (env.MVP_TURN_ROUTER_PROVIDER !== "openai_hybrid") {
-    return false;
-  }
-
-  if (process.env.NODE_ENV === "test") {
     return false;
   }
 
@@ -84,16 +56,7 @@ function shouldAskOpenAI(
     return false;
   }
 
-  if (contentLooksTooSimpleForModel(input.participantContent)) {
-    return false;
-  }
-
-  return (
-    deterministic.kind === "unknown_in_domain" ||
-    deterministic.kind === "source_question" ||
-    deterministic.isUnanticipated ||
-    contentLooksClinicallyMeaningful(input.participantContent)
-  );
+  return Boolean(input.participantContent.trim());
 }
 
 function topicFromResult(
@@ -118,13 +81,8 @@ function uniqueAllowedQuestionIds(
   });
 }
 
-function decisionFromModelResult(
-  deterministic: MvpTurnRouteDecision,
-  result: MvpTurnRouteAnalysisResult,
-): MvpTurnRouteDecision {
-  const needsSource = deterministic.needsSource || result.needsSource;
-  const sourceDirective =
-    result.sourceDirective ?? deterministic.sourceDirective ?? null;
+function decisionFromModelResult(result: MvpTurnRouteAnalysisResult): MvpTurnRouteDecision {
+  const needsSource = result.needsSource;
 
   return {
     kind: result.kind,
@@ -133,7 +91,7 @@ function decisionFromModelResult(
     isOutOfScope: result.isOutOfScope,
     isUnanticipated: result.isUnanticipated,
     rationale: result.rationale,
-    sourceDirective: needsSource ? sourceDirective : null,
+    sourceDirective: needsSource ? result.sourceDirective : null,
   };
 }
 
@@ -149,9 +107,14 @@ export async function classifyMvpTurnRouteHybrid(
     selectedQuestionText: input.selectedQuestionText,
     selectedQuestionSourceContext: input.selectedQuestionSourceContext,
   });
+  const localIntent = interpretMvpParticipantIntent(input);
+  const fallbackIntent = deterministic.isOutOfScope
+    ? { answerStatus: "not_answered" as const, answerEvidence: [], asksSourceQuestion: false }
+    : localIntent;
 
   if (!shouldAskOpenAI(input, deterministic)) {
     return {
+      ...fallbackIntent,
       decision: deterministic,
       provider: "deterministic",
       suggestedQuestionIds: [],
@@ -163,6 +126,7 @@ export async function classifyMvpTurnRouteHybrid(
   const gateway = getOptionalOpenAIGateway();
   if (!gateway) {
     return {
+      ...fallbackIntent,
       decision: deterministic,
       provider: "deterministic",
       suggestedQuestionIds: [],
@@ -180,24 +144,41 @@ export async function classifyMvpTurnRouteHybrid(
       activeIntentSteeringRule: input.activeIntentSteeringRule ?? null,
       currentQuestionId: input.currentQuestionId ?? null,
       currentQuestion: input.currentQuestion ?? null,
+      currentQuestionObjective: input.currentQuestionObjective ?? null,
+      currentQuestionKeywords: input.currentQuestionKeywords ?? [],
+      currentQuestionCompletionSignals: input.currentQuestionCompletionSignals ?? [],
       participantMessage: input.participantContent,
       recentInterviewerContext: input.recentInterviewerContext ?? null,
       candidateQuestions: input.candidateQuestions,
     });
+    const result = mvpTurnRouteAnalysisResultSchema.parse(route.result);
+    if (result.answerEvidence.some((excerpt) => !input.participantContent.includes(excerpt))) {
+      throw new Error("Route answer evidence must be an exact excerpt of the participant message.");
+    }
+    if (result.answerStatus !== "not_answered" && !input.currentQuestion) {
+      throw new Error("Route analysis cannot credit an answer without an active research question.");
+    }
+    if (result.topic && result.topic !== "unknown_in_domain" && !result.topic.startsWith(`${input.surveySlug}_`)) {
+      throw new Error("Route analysis cannot select a source topic belonging to another survey.");
+    }
     const suggestedQuestionIds = uniqueAllowedQuestionIds(
-      route.result,
+      result,
       input.candidateQuestions,
     );
 
     return {
-      decision: decisionFromModelResult(deterministic, route.result),
+      answerStatus: result.answerStatus,
+      asksSourceQuestion: result.asksSourceQuestion,
+      answerEvidence: result.answerEvidence,
+      decision: decisionFromModelResult(result),
       provider: "openai_hybrid",
       suggestedQuestionIds,
-      modelResult: route.result,
+      modelResult: result,
       error: null,
     };
   } catch (error) {
     return {
+      ...fallbackIntent,
       decision: deterministic,
       provider: "deterministic",
       suggestedQuestionIds: [],

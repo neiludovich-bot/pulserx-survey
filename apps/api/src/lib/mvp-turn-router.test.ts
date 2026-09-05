@@ -2,6 +2,21 @@ import { describe, expect, it } from "vitest";
 import { classifyMvpTurnRoute } from "./mvp-turn-router";
 
 describe("MVP turn router", () => {
+  it.each([
+    ["nubeqa", "PFS and DDI"],
+    ["brukinsa", "Safety and drug interactions"],
+    ["padcev", "Neuropathy and treatment burden"],
+  ] as const)("distinguishes a %s decision-priority answer from a source request", (surveySlug, participantContent) => {
+    const decision = classifyMvpTurnRoute({
+      surveySlug,
+      participantContent,
+      currentQuestion: "Which factors matter most when evaluating treatment?",
+    });
+    expect(decision.kind).toBe("planned_answer");
+    expect(decision.needsSource).toBe(false);
+    expect(decision.sourceDirective).toBeNull();
+  });
+
   it("routes PADCEV EV-302 response questions as side-lane source excursions", () => {
     const decision = classifyMvpTurnRoute({
       surveySlug: "padcev",

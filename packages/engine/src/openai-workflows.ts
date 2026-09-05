@@ -177,7 +177,7 @@ export class OpenAIResponsesGateway {
       callType: "turn_route",
       model: this.config.analysisModel,
       promptVersion: mvpTurnRouterSystemPrompt.version,
-      schemaName: "mvp_turn_route_analysis_result",
+      schemaName: "mvp_turn_route_analysis_result_v3",
       schema: mvpTurnRouteAnalysisResultSchema,
       instructions: mvpTurnRouterSystemPrompt.instructions,
       input: parsed,

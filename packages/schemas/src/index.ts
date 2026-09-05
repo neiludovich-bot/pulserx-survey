@@ -178,7 +178,7 @@ export const mvpTurnRouteCandidateSchema = z.object({
   alreadyAsked: z.boolean(),
   routeKeywords: z.array(z.string()).default([]),
   sourceContextRequirement: z.string().min(1).nullable().default(null),
-});
+}).strict();
 
 export const mvpTurnRouteAnalysisInputSchema = z.object({
   surveySlug: z.enum(["brukinsa", "padcev", "data", "nubeqa"]),
@@ -188,12 +188,19 @@ export const mvpTurnRouteAnalysisInputSchema = z.object({
   activeIntentSteeringRule: z.string().min(1).nullable(),
   currentQuestionId: z.string().min(1).nullable(),
   currentQuestion: z.string().min(1).nullable(),
+  currentQuestionObjective: z.string().min(1).nullable().default(null),
+  currentQuestionKeywords: z.array(z.string()).default([]),
+  currentQuestionCompletionSignals: z.array(z.string()).default([]),
   participantMessage: z.string().min(1),
   recentInterviewerContext: z.string().min(1).nullable().default(null),
   candidateQuestions: z.array(mvpTurnRouteCandidateSchema).min(1).max(16),
-});
+}).strict();
 
 export const mvpTurnRouteAnalysisResultSchema = z.object({
+  schemaVersion: z.literal(3),
+  answerStatus: z.enum(["answered", "partial", "not_answered"]),
+  asksSourceQuestion: z.boolean(),
+  answerEvidence: z.array(z.string().trim().min(1)).max(8),
   kind: mvpTurnRouteKindSchema,
   topic: mvpDisplayTopicSchema.nullable(),
   needsSource: z.boolean(),
@@ -202,6 +209,13 @@ export const mvpTurnRouteAnalysisResultSchema = z.object({
   suggestedQuestionIds: z.array(z.string().min(1)).max(3).default([]),
   sourceDirective: z.string().min(1).nullable().default(null),
   rationale: z.string().min(1).max(500),
+}).strict().superRefine((value, context) => {
+  if ((value.answerStatus === "not_answered") !== (value.answerEvidence.length === 0)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["answerEvidence"], message: "Answer credit requires exact supporting participant excerpts; unanswered turns have no answer evidence." });
+  }
+  if (value.needsSource !== (value.asksSourceQuestion && !value.isOutOfScope)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["needsSource"], message: "Source retrieval requires an in-scope participant information request." });
+  }
 });
 
 export const healthResponseSchema = z.object({

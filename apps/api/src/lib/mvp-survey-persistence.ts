@@ -32,6 +32,8 @@ export type MvpPersistenceSessionSnapshot = {
   queuedQuestionIds: string[];
   excursionQuestionIds: string[];
   askedQuestionIds: string[];
+  answeredQuestionIds?: string[];
+  answerEvidenceByQuestionId?: Record<string, string[]>;
   adaptiveProbeQuestions: unknown[];
   completedReason: string | null;
 };
@@ -99,6 +101,12 @@ function metadataForSession(
     queuedQuestionIds: session.queuedQuestionIds,
     excursionQuestionIds: session.excursionQuestionIds,
     askedQuestionIds: session.askedQuestionIds,
+    answeredQuestionIds: answeredQuestionIdsFromMetadata(
+      session.answeredQuestionIds,
+    ),
+    answerEvidenceByQuestionId: answerEvidenceFromMetadata(
+      session.answerEvidenceByQuestionId,
+    ),
     adaptiveProbeQuestions: inputJson(session.adaptiveProbeQuestions),
     completedReason: session.completedReason,
   };
@@ -118,6 +126,36 @@ function stringArray(value: unknown): string[] {
 
 function stringOrNull(value: unknown) {
   return typeof value === "string" ? value : null;
+}
+
+function nonblankString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function answeredQuestionIdsFromMetadata(value: unknown): string[] {
+  return Array.isArray(value) ? [...new Set(value.filter(nonblankString))] : [];
+}
+
+function answerEvidenceFromMetadata(value: unknown): Record<string, string[]> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+
+  // Do not manufacture evidence from malformed metadata. Keep the exact
+  // supporting text for valid entries and discard an invalid entry as a whole.
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(
+        ([questionId, evidence]) =>
+          nonblankString(questionId) &&
+          !["__proto__", "constructor", "prototype"].includes(questionId) &&
+          Array.isArray(evidence) &&
+          evidence.length > 0 &&
+          evidence.every(nonblankString),
+      )
+      .map(([questionId, evidence]) => [
+        questionId,
+        [...new Set(evidence as string[])],
+      ]),
+  );
 }
 
 function numberOrDefault(value: unknown, fallback: number) {
@@ -142,7 +180,10 @@ function referencesFromPayload(
     : [];
 }
 
-function messageIdFromPayload(payload: Prisma.JsonValue | null, fallback: string) {
+function messageIdFromPayload(
+  payload: Prisma.JsonValue | null,
+  fallback: string,
+) {
   const record = jsonRecord(payload);
   return stringOrNull(record.messageId) ?? fallback;
 }
@@ -454,14 +495,18 @@ export async function loadMvpSurveySessionSnapshot(sessionId: string) {
         startedAt: persisted.startedAt ?? persisted.createdAt,
         currentQuestionId: stringOrNull(metadata.currentQuestionId),
         currentQuestion: stringOrNull(metadata.currentQuestion),
-        pendingReturnQuestionId: stringOrNull(
-          metadata.pendingReturnQuestionId,
-        ),
+        pendingReturnQuestionId: stringOrNull(metadata.pendingReturnQuestionId),
         activeDiseaseAreas: stringArray(metadata.activeDiseaseAreas),
         primaryDiseaseArea: stringOrNull(metadata.primaryDiseaseArea),
         queuedQuestionIds: stringArray(metadata.queuedQuestionIds),
         excursionQuestionIds: stringArray(metadata.excursionQuestionIds),
         askedQuestionIds: stringArray(metadata.askedQuestionIds),
+        answeredQuestionIds: answeredQuestionIdsFromMetadata(
+          metadata.answeredQuestionIds,
+        ),
+        answerEvidenceByQuestionId: answerEvidenceFromMetadata(
+          metadata.answerEvidenceByQuestionId,
+        ),
         adaptiveProbeQuestions: Array.isArray(metadata.adaptiveProbeQuestions)
           ? metadata.adaptiveProbeQuestions
           : [],

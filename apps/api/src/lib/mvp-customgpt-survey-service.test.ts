@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { env } from "../env";
 import {
   resetMvpCustomGptSurveySessions,
@@ -12,9 +12,12 @@ const originalCustomGptProjectId = env.CUSTOMGPT_PROJECT_ID;
 const originalCustomGptNubeqaProjectId = env.CUSTOMGPT_NUBEQA_PROJECT_ID;
 const originalOpenAiApiKey = env.OPENAI_API_KEY;
 const originalMvpSourceProvider = env.MVP_SOURCE_PROVIDER;
+const originalTurnRouterProvider = env.MVP_TURN_ROUTER_PROVIDER;
+beforeEach(() => { env.MVP_TURN_ROUTER_PROVIDER = "deterministic"; });
 
 afterEach(() => {
   vi.useRealTimers();
+  env.MVP_TURN_ROUTER_PROVIDER = originalTurnRouterProvider;
   env.CUSTOMGPT_API_KEY = originalCustomGptApiKey;
   env.CUSTOMGPT_PROJECT_ID = originalCustomGptProjectId;
   env.CUSTOMGPT_NUBEQA_PROJECT_ID = originalCustomGptNubeqaProjectId;
@@ -243,14 +246,14 @@ describe("MVP CustomGPT survey service", () => {
 
     expect(fetchMock).not.toHaveBeenCalled();
     expect(next.status).toBe("active");
-    expect(next.nextAction).toBe("answer_then_ask");
+    expect(next.nextAction).toBe("ask");
     expect(next.currentQuestion).toContain("Is it okay to begin?");
     expect(next.messages.at(-1)?.content).toContain("SEQUOIA");
     expect(next.messages.at(-1)?.content).toContain("[1]");
     expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
-    expect(next.messages.at(-1)?.content).toContain("Is it okay to begin?");
+    expect(next.messages.at(-1)?.content).not.toContain("Is it okay to begin?");
     expect(next.messages.at(-1)?.references.length).toBeGreaterThan(0);
   });
 
@@ -568,8 +571,9 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     expect(next.status).toBe("active");
-    expect(next.nextAction).toBe("answer_then_ask");
+    expect(next.nextAction).toBe("ask");
     expect(next.currentQuestion).toContain("BRUKINSA");
+    expect(next.messages.at(-1)?.content).not.toContain(next.currentQuestion!);
     expect(next.messages.at(-1)?.content).toContain("[1]");
     expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
@@ -593,7 +597,7 @@ describe("MVP CustomGPT survey service", () => {
     const messageBody = JSON.parse(String(messageRequest?.body)) as {
       prompt: string;
     };
-    expect(messageBody.prompt).toContain("Turn response mode: answer_then_ask");
+    expect(messageBody.prompt).toContain("Turn response mode: answer_only");
     expect(messageBody.prompt).toContain(
       "Selected next survey question reserved for the survey controller",
     );
@@ -675,8 +679,9 @@ describe("MVP CustomGPT survey service", () => {
       content: "well what are the known drug drug interactions",
     });
 
-    expect(next.nextAction).toBe("answer_then_ask");
+    expect(next.nextAction).toBe("ask");
     expect(next.messages.at(-1)?.content).toContain("CYP3A4/P-gp");
+    expect(next.messages.at(-1)?.content).not.toContain(next.currentQuestion!);
     expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
@@ -896,7 +901,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(next.messages.at(-1)?.content).not.toContain(
       "For which first-line CLL/SLL patient types",
     );
-    expect(next.messages.at(-1)?.content).toContain(
+    expect(next.messages.at(-1)?.content).not.toContain(
       "About how many patients in that primary disease area",
     );
   });
@@ -1584,23 +1589,25 @@ describe("MVP CustomGPT survey service", () => {
     });
 
     const lastPrompt = prompts.at(-1) ?? "";
-    expect(dataTurn.currentQuestion).toContain("Which part of this evidence");
+    expect(dataTurn.nextAction).toBe("ask");
+    expect(dataTurn.currentQuestion).toContain("Which B-cell malignancies");
     expect(dataTurn.messages.at(-1)?.content).toContain(
       "concrete study highlights",
     );
     expect(dataTurn.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
-    expect(dataTurn.messages.at(-1)?.content).toContain(
+    expect(dataTurn.messages.at(-1)?.content).not.toContain(
       "Which part of this evidence",
     );
+    expect(dataTurn.messages.at(-1)?.content).not.toContain(dataTurn.currentQuestion!);
     expect(dataTurn.currentQuestion).not.toContain("current perception");
     expect(lastPrompt).toContain("Give the actual useful study details");
     expect(lastPrompt).toContain("key numeric result");
     expect(lastPrompt).toContain("prioritize concrete study results");
-    expect(lastPrompt).toContain("SEQUOIA and ALPINE highlights");
+    expect(lastPrompt).toContain("approved BRUKINSA HCP source material for CLL/SLL, MCL");
 
-    expect(dataTurn.nextAction).toBe("answer_then_ask");
+    expect(dataTurn.nextAction).toBe("ask");
   });
 
   it("passes recent source context so repeated PADCEV AE follow-ups do not restate the same safety dump", async () => {
@@ -2308,7 +2315,7 @@ describe("MVP CustomGPT survey service", () => {
         "Before we go further, which patient populations are appropriate and where would you be cautious?",
     });
 
-    expect(excursionTurn.nextAction).toBe("answer_then_ask");
+    expect(excursionTurn.nextAction).toBe("ask");
     expect(excursionTurn.currentQuestion).toContain(
       "one PADCEV safety or tolerability issue",
     );
@@ -2318,6 +2325,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(excursionTurn.messages.at(-1)?.content).not.toContain(
       "which locally advanced or metastatic urothelial cancer patient types",
     );
+    expect(excursionTurn.messages.at(-1)?.content).not.toContain(excursionTurn.currentQuestion!);
     expect(prompts.at(-1) ?? "").toContain(
       "explicitly asked about PADCEV patient fit",
     );
@@ -2422,14 +2430,14 @@ describe("MVP CustomGPT survey service", () => {
     expect(latestPrompt).not.toContain(
       "Do not use or cite efficacy/PFS/OS pages",
     );
-    expect(next.nextAction).toBe("answer_then_ask");
+    expect(next.nextAction).toBe("ask");
     expect(next.currentQuestion).toContain(
       "one PADCEV safety or tolerability issue",
     );
     expect(next.messages.at(-1)?.content).not.toContain(
       "Should we stay with that",
     );
-    expect(next.messages.at(-1)?.content).toContain(
+    expect(next.messages.at(-1)?.content).not.toContain(
       "What is the one PADCEV safety or tolerability issue",
     );
     expect(next.messages.at(-1)?.references[0]?.title).toContain("Efficacy");

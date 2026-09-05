@@ -1,4 +1,5 @@
 import type { MvpSurveySlug } from "./mvp-survey-definition";
+import { participantRequestsInformation, type MvpParticipantIntentInput } from "./mvp-participant-intent";
 import {
   matchedPadcevSideEffectBranches,
   padcevSideEffectMapApplies,
@@ -42,7 +43,7 @@ export type MvpTurnRouteDecision = {
   sourceDirective: string | null;
 };
 
-type RouteInput = {
+type RouteInput = MvpParticipantIntentInput & {
   surveySlug: MvpSurveySlug;
   activeIntentSlug?: string | null;
   participantContent: string;
@@ -61,15 +62,6 @@ function normalizeText(value: string | null | undefined) {
 
 function anyMatch(value: string, patterns: RegExp[]) {
   return patterns.some((pattern) => pattern.test(value));
-}
-
-function contentLooksLikeQuestion(raw: string, normalized: string) {
-  return (
-    raw.includes("?") ||
-    anyMatch(normalized, [
-      /\b(?:what|why|how|which|who|when|where|known|explain|tell me|show me|source|reference|data|study|trial|guide|checklist|resource|download|pdf|drug interaction|drug interactions|drug drug interaction|drug drug interactions|ddi)\b/,
-    ])
-  );
 }
 
 function outOfScopeQuestion(normalized: string) {
@@ -308,12 +300,9 @@ export function classifyMvpTurnRoute(input: RouteInput): MvpTurnRouteDecision {
       input.selectedQuestionSourceContext,
     ].join(" "),
   );
-  const participantAskedQuestion = contentLooksLikeQuestion(
-    input.participantContent,
-    participantText,
-  );
+  const participantAskedQuestion = participantRequestsInformation(input.participantContent);
 
-  if (outOfScopeQuestion(participantText)) {
+  if (participantAskedQuestion && outOfScopeQuestion(participantText)) {
     return {
       kind: "out_of_scope",
       topic: null,
@@ -344,15 +333,17 @@ export function classifyMvpTurnRoute(input: RouteInput): MvpTurnRouteDecision {
 
     if (participantTopic) {
       return {
-        kind: efficacyExcursion ? "off_lane_excursion" : "in_lane_topic",
+        kind: !participantAskedQuestion ? "planned_answer" : efficacyExcursion ? "off_lane_excursion" : "in_lane_topic",
         topic: routeTopic,
-        needsSource: true,
+        needsSource: participantAskedQuestion,
         isOutOfScope: false,
         isUnanticipated: !matchedSideEffectBranch,
-        rationale: efficacyExcursion
+        rationale: !participantAskedQuestion
+          ? "Participant mentioned a topic while answering; a topic mention is not an evidence request."
+          : efficacyExcursion
           ? "Participant asked an in-domain PADCEV source question outside the active intent lane."
           : "Participant asked an in-domain PADCEV question that maps to a known route.",
-        sourceDirective,
+        sourceDirective: participantAskedQuestion ? sourceDirective : null,
       };
     }
 
@@ -376,14 +367,15 @@ export function classifyMvpTurnRoute(input: RouteInput): MvpTurnRouteDecision {
 
     if (participantTopic) {
       return {
-        kind: "in_lane_topic",
+        kind: participantAskedQuestion ? "in_lane_topic" : "planned_answer",
         topic: routeTopic,
-        needsSource: true,
+        needsSource: participantAskedQuestion,
         isOutOfScope: false,
         isUnanticipated: false,
-        rationale:
-          "Participant asked an in-domain BRUKINSA question that maps to a known route.",
-        sourceDirective: genericBrukinsaDirective(routeTopic),
+        rationale: participantAskedQuestion
+          ? "Participant asked an in-domain BRUKINSA question that maps to a known route."
+          : "Participant mentioned a topic while answering; a topic mention is not an evidence request.",
+        sourceDirective: participantAskedQuestion ? genericBrukinsaDirective(routeTopic) : null,
       };
     }
 
@@ -407,14 +399,15 @@ export function classifyMvpTurnRoute(input: RouteInput): MvpTurnRouteDecision {
 
     if (participantTopic) {
       return {
-        kind: "in_lane_topic",
+        kind: participantAskedQuestion ? "in_lane_topic" : "planned_answer",
         topic: routeTopic,
-        needsSource: true,
+        needsSource: participantAskedQuestion,
         isOutOfScope: false,
         isUnanticipated: false,
-        rationale:
-          "Participant asked an in-domain NUBEQA question that maps to a known route.",
-        sourceDirective: genericNubeqaDirective(routeTopic),
+        rationale: participantAskedQuestion
+          ? "Participant asked an in-domain NUBEQA question that maps to a known route."
+          : "Participant mentioned a topic while answering; a topic mention is not an evidence request.",
+        sourceDirective: participantAskedQuestion ? genericNubeqaDirective(routeTopic) : null,
       };
     }
 
