@@ -111,6 +111,7 @@ export const controlledRagCompositionInputSchema = z.object({
   surveySlug: z.string().min(1),
   participantMessage: z.string().min(1),
   resolvedSourceQuestion: z.string().min(1).nullable().default(null),
+  sourceTopicContext: z.string().min(1).max(6000).nullable().optional(),
   surveyContext: z.string().default(""),
   currentQuestion: z.string().min(1).nullable(),
   selectedNextQuestion: z.string().min(1).nullable(),

@@ -80,4 +80,25 @@ describe("retained source evidence for clarification", () => {
     expect(result.evidencePacket?.sources).toEqual([{ ...ddi, text: excerpt, assets: [] }]);
     expect(result.answer).toContain("[1]");
   });
+
+  it("grounds a mixed reaction and 'those medications' question in prior DDI evidence while researching the new ask", async () => {
+    const ddi = CONTROLLED_RAG_CHUNKS.find((chunk) => chunk.id === "nubeqa-ddi-profile")!;
+    const prior = { ...ddi, id: "db:prior-interaction-passage", assets: ddi.assets ?? [] };
+    const message = "It's something that I need to track but not terribly concerning.  So someone on those medications are at risk for what adverse reactions";
+    mocks.select.mockResolvedValue({ result: { selections: [{ sourceId: prior.id, supportExcerpt: prior.text, assetIds: [`${prior.id}:asset:0`] }], rationale: "The question refers to the previously described interaction classes." } });
+    mocks.compose.mockResolvedValue({ result: { answerBody: "The source distinguishes interaction classes but does not quantify adverse reactions for an unspecified concomitant medication. [1]", usedSourceIndexes: [1] } });
+    const result = await askControlledRagForSurveyInterviewerTurn({ ...input, surveySlug: "nubeqa", participantMessage: message, sourceTopicContext: "What drug-drug interactions are described for NUBEQA?", evidencePacket: { sources: [prior] } });
+    expect(mocks.query).toHaveBeenCalledOnce();
+    expect(mocks.select).toHaveBeenCalledWith(expect.objectContaining({ query: message, sourceTopicContext: "What drug-drug interactions are described for NUBEQA?", priorSourceIds: [prior.id] }));
+    expect(mocks.select.mock.calls[0][0].candidates[0]).toEqual(expect.objectContaining({ id: prior.id, text: prior.text }));
+    expect(mocks.compose.mock.calls[0][0]).toEqual(expect.objectContaining({ participantMessage: message, sourceTopicContext: "What drug-drug interactions are described for NUBEQA?", clinicalEvidenceCard: null, sources: [expect.objectContaining({ text: prior.text })] }));
+    expect(result.references.map((reference) => reference.citationId)).toEqual([`rag:${prior.id}`]);
+    expect(result.references[0].assets[0].url).toContain("drug-interactions-of-nubeqa");
+  });
+
+  it("does not attach old interaction context to an independent adverse-reaction question", async () => {
+    await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: "What are the adverse reactions in EV-302?" });
+    expect(mocks.select).toHaveBeenCalledWith(expect.objectContaining({ query: "What are the adverse reactions in EV-302?", sourceTopicContext: null, priorSourceIds: [] }));
+    expect(mocks.select.mock.calls[0][0].candidates.some((candidate: { id: string }) => candidate.id === packet.sources[0].id)).toBe(false);
+  });
 });

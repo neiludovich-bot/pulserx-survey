@@ -5,6 +5,7 @@ import {
   moderatorPlanModelResultSchema,
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionResultSchema,
+  moderatorEvidenceSelectionInputSchema,
   moderatorEvidencePacketSchema,
   type ModeratorEvidencePacket,
   type ModeratorPlanInput,
@@ -197,6 +198,30 @@ describe("moderator planning contract", () => {
     })).toThrow("source-answer action");
   });
 
+  it.each([
+    { asksSourceQuestion: true, modelAction: "probe_reaction" as const },
+    { asksSourceQuestion: false, modelAction: "answer_source" as const },
+  ])("preserves the exact mixed reaction plus trailing source question without a question mark: $modelAction", ({ asksSourceQuestion, modelAction }) => {
+    const reaction = "It's something that I need to track but not terribly concerning.";
+    const participantMessage = `${reaction}  So someone on those medications are at risk for what adverse reactions`;
+    const mixedInput = structuredClone(presentedInput);
+    mixedInput.participantMessage = participantMessage;
+    mixedInput.asksSourceQuestion = asksSourceQuestion;
+    mixedInput.answerStatus = "answered";
+    mixedInput.state.priorities[0].label = "DDI";
+    mixedInput.state.priorities[0].sourceQuestion = "What drug-drug interactions are described for NUBEQA?";
+    mixedInput.recentTurns = [{ role: "interviewer", content: "The cited interaction information was presented. How does the DDI information affect your assessment?" }];
+    const normalized = normalizeModeratorPlanModelResult(mixedInput, {
+      ...modelPlanBase, priorityMentions: [], action: modelAction, selectedPriorityId: mixedInput.state.activePriorityId,
+      reactionStatus: "answered", reactionEvidence: [reaction],
+    });
+    expect(normalized).toMatchObject({
+      newPriorities: [], action: "answer_source", selectedPriorityId: mixedInput.state.activePriorityId,
+      reactionStatus: "answered", reactionEvidence: [reaction],
+    });
+    expect(normalized.reactionEvidence.join(" ")).not.toContain("adverse reactions");
+  });
+
   it("allows the planner to recognize a clarification missed by the upstream router", () => {
     const clarification = { ...presentedInput, participantMessage: "Can you explain that more simply?", asksSourceQuestion: false, answerStatus: "not_answered" as const };
     const result = normalizeModeratorPlanModelResult(clarification, {
@@ -326,6 +351,17 @@ describe("moderator evidence ID validation", () => {
       { id: "pfs", title: "PFS", url: "https://example.com/pfs", description: "", text: "PFS information", tags: [], assets: [{ id: "chart", title: "PFS chart", url: "https://example.com/chart", description: "", assetKind: "CHART", tags: [] }] },
     ],
   };
+
+  it("keeps dependent-source context typed and backward compatible without replacing the query", async () => {
+    expect(moderatorEvidenceSelectionInputSchema.parse(evidenceInput)).toMatchObject({ sourceTopicContext: null, priorSourceIds: [] });
+    const contextualInput = { ...evidenceInput, query: "Someone on those medications is at risk for what adverse reactions", sourceTopicContext: "The preceding discussion concerned drug interactions.", priorSourceIds: ["ddi"] };
+    expect(moderatorEvidenceSelectionInputSchema.safeParse({ ...contextualInput, sourceTopicContext: { loose: "context" } }).success).toBe(false);
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [] }], rationale: "Retain the referenced interaction context without inferring general adverse-event causality." } });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    await gateway.selectModeratorEvidence(contextualInput);
+    const requestInput = JSON.parse(parse.mock.calls[0][0].input[0].content[0].text);
+    expect(requestInput).toMatchObject({ query: contextualInput.query, sourceTopicContext: contextualInput.sourceTopicContext, priorSourceIds: ["ddi"] });
+  });
 
   it("accepts relevant text without an unrelated visual and an unsupported empty selection", () => {
     expect(validateModeratorEvidenceSelection(evidenceInput, { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [] }], rationale: "The interaction page addresses the query." }).selections).toHaveLength(1);

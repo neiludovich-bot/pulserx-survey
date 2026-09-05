@@ -12,7 +12,7 @@ import {
   type MvpTurnRouteDecision,
 } from "./mvp-turn-router";
 import type { MvpSurveySlug } from "./mvp-survey-definition";
-import { interpretMvpParticipantIntent, participantOnlyRequestsInformation, participantExplicitlyStatesPriority, type MvpParticipantIntent, type MvpParticipantIntentInput } from "./mvp-participant-intent";
+import { interpretMvpParticipantIntent, participantOnlyRequestsInformation, participantHasInSituQuestion, participantRequestsInformation, participantExplicitlyStatesPriority, type MvpParticipantIntent, type MvpParticipantIntentInput } from "./mvp-participant-intent";
 
 export type MvpRouteAnalysisCandidate = MvpTurnRouteCandidate;
 
@@ -158,6 +158,10 @@ export async function classifyMvpTurnRouteHybrid(
     }
     if (result.answerEvidence.some((excerpt) => !input.participantContent.includes(excerpt))) {
       throw new Error("Route answer evidence must be an exact excerpt of the participant message.");
+    }
+    if (participantHasInSituQuestion(input.participantContent) &&
+        (!result.asksSourceQuestion || result.answerEvidence.some(participantRequestsInformation))) {
+      throw new Error("A trailing information question must retain its source request separately from reaction evidence.");
     }
     if (result.answerStatus !== "not_answered" && !input.currentQuestion) {
       throw new Error("Route analysis cannot credit an answer without an active research question.");

@@ -123,6 +123,8 @@ export const moderatorPhrasingResultSchema = z.object({
 export const moderatorEvidenceSelectionInputSchema = z.object({
   surveySlug: z.enum(["nubeqa", "brukinsa", "padcev"]),
   query: z.string().min(1).max(4000),
+  sourceTopicContext: z.string().min(1).max(6000).nullable().default(null),
+  priorSourceIds: z.array(z.string().min(1)).max(3).default([]),
   candidates: z.array(z.object({
     id: z.string().min(1),
     title: z.string(),
@@ -158,5 +160,5 @@ export type ModeratorPlanResult = z.infer<typeof moderatorPlanResultSchema>;
 export type ModeratorPlanModelResult = z.infer<typeof moderatorPlanModelResultSchema>;
 export type ModeratorPhrasingInput = z.infer<typeof moderatorPhrasingInputSchema>;
 export type ModeratorPhrasingResult = z.infer<typeof moderatorPhrasingResultSchema>;
-export type ModeratorEvidenceSelectionInput = z.infer<typeof moderatorEvidenceSelectionInputSchema>;
+export type ModeratorEvidenceSelectionInput = z.input<typeof moderatorEvidenceSelectionInputSchema>;
 export type ModeratorEvidenceSelectionResult = z.infer<typeof moderatorEvidenceSelectionResultSchema>;

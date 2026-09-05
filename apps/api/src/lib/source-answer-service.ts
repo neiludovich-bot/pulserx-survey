@@ -109,7 +109,7 @@ export async function askSourceProviderForSurveyInterviewerTurn(
     conversationId: input.conversationId,
     participantMessage: input.participantMessage,
     surveyContext: [
-      input.sourceTopicContext ? `Current source topic for referential follow-ups: ${input.sourceTopicContext}. Use this to interpret that/this/it; an explicit new participant question takes precedence.` : null,
+      input.sourceTopicContext ? `Current source topic for referential follow-ups: ${input.sourceTopicContext}. Use this only to resolve references such as that, it, or those medications; an independent new participant question takes precedence. Do not infer causal effects from general adverse-event data when the question concerns previously discussed interactions.` : null,
       input.surveyContext,
     ].filter(Boolean).join("\n"),
     currentQuestion: input.currentQuestion,

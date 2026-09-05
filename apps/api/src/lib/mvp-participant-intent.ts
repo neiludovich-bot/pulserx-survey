@@ -31,7 +31,21 @@ function isRequestClause(clause: string) {
   if (/^what (?:(?:would|could|will) help(?: (?:me|us))?(?: most| the most)?|matters?(?: most| the most| to me| to us)?|(?:i|we) (?:would )?(?:need|want|prefer|value|care about)) (?:is|are|would be)\b/.test(text)) {
     return false;
   }
-  return requestOpening.test(text);
+  return requestOpening.test(text) || isInSituRequestClause(clause);
+}
+
+// Spoken questions can leave the interrogative in the object position:
+// "Those patients are at risk for what complications". Keep these separate
+// from reported knowledge or relative clauses such as "I know which...".
+function isInSituRequestClause(clause: string) {
+  const text = normalize(clause).replace(/^(?:(?:well|so|also|and|but|actually|please|okay|ok)\s+)+/, "");
+  if (/\b(?:know|knows|knew|understand|understands|understood|depends?|depending|aware|unsure|uncertain|worried|concerned|explain|explains|explained)\b/.test(text)) return false;
+  if (/\b(?:what|which)\s+(?:i|we|you|they|he|she|it|this|that|the|works?|seems?|happens?|follows?|comes?|matters?|helps?|makes?|is|are|was|were|would|could|will|might|should)\b/.test(text)) return false;
+  return /\S.+\b(?:for|from|with|about|to|at|on|of|by|in)\s+(?:what|which)\s+\S/.test(text);
+}
+
+export function participantHasInSituQuestion(content: string) {
+  return participantClauses(content).some(isInSituRequestClause);
 }
 
 function participantClauses(content: string) {

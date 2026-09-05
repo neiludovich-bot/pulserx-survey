@@ -32,16 +32,18 @@ const guide = [
 ];
 const firstReaction = "The PFS evidence changes how I weigh benefit.";
 const secondReaction = "I would review concomitant medicines before choosing it, so that interaction profile would affect my decision.";
+const mixedReaction = "It's something that I need to track but not terribly concerning.";
+const mixedMessage = `${mixedReaction}  So someone on those medications are at risk for what adverse reactions`;
 
 function planResult(input: ModeratorPlanInput): ModeratorPlanResult {
-  const reaction = [firstReaction, secondReaction].includes(input.participantMessage);
+  const reaction = [firstReaction, secondReaction, mixedMessage].includes(input.participantMessage);
   return {
     newPriorities: input.participantMessage === "PFS and DDI" ? [
       { label: "PFS", participantEvidence: "PFS", sourceQuestion: `What PFS evidence is available for ${input.brand}?` },
       { label: "DDI", participantEvidence: "DDI", sourceQuestion: `What drug interactions are documented for ${input.brand}?` },
     ] : [],
     reactionStatus: reaction ? "answered" : "not_answered",
-    reactionEvidence: reaction ? [input.participantMessage] : [],
+    reactionEvidence: reaction ? [input.participantMessage === mixedMessage ? mixedReaction : input.participantMessage] : [],
     action: input.asksSourceQuestion ? "answer_source" : reaction ? "present_priority" : "probe_reaction",
     selectedPriorityId: null,
     rationale: "Capture each stated priority and its evidence reaction before returning to the authored guide.",
@@ -91,6 +93,53 @@ function auditFor(participantMessage: string) {
 }
 
 describe("moderator controller integration", () => {
+  it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((surveySlug) => [
+    { surveySlug, router: "deterministic" as const }, { surveySlug, router: "openai_hybrid" as const },
+  ]))("handles the exact mixed reaction and adverse-reaction question for $surveySlug ($router)", async ({ surveySlug, router }) => {
+    const started = startMvpCustomGptSurvey({ surveySlug, targetDurationSeconds: 600, guide });
+    const turn = (content: string) => submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content });
+    await turn("PFS and DDI");
+    const second = await turn(firstReaction);
+    const secondAudit = auditFor(firstReaction);
+    const ddiId = secondAudit.session.moderatorState.activePriorityId;
+    const ddiQuestionId = `moderator-reaction:${ddiId}`;
+    expect(second.currentQuestion).toContain("DDI information");
+    env.MVP_TURN_ROUTER_PROVIDER = router;
+    mocks.analyze.mockResolvedValue({ result: {
+      schemaVersion: 3, answerStatus: "answered", answerEvidence: [mixedMessage], asksSourceQuestion: false,
+      kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false,
+      suggestedQuestionIds: [], sourceDirective: null, rationale: "Incorrectly overlooked the source question in a mixed reaction.",
+    } });
+    mocks.source.mockClear();
+    const mixed = await turn(mixedMessage);
+    const mixedAudit = auditFor(mixedMessage);
+    expect(mocks.plan).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage: mixedMessage, asksSourceQuestion: true, answerStatus: "answered" }));
+    expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage: mixedMessage, responseMode: "answer_only" }));
+    expect(mixed.messages.at(-1)?.content).toContain("source summary");
+    expect(mixed.messages.at(-1)?.content).not.toContain(second.currentQuestion!);
+    expect(mixedAudit.session.answeredQuestionIds).toContain(ddiQuestionId);
+    expect(mixedAudit.session.answerEvidenceByQuestionId[ddiQuestionId]).toEqual([mixedReaction]);
+    expect(mixedAudit.session.moderatorState.priorities[1].reactionEvidence).toEqual([mixedReaction]);
+    expect(mixedAudit.session.moderatorState.priorities.every((priority: { status: string }) => priority.status === "reacted")).toBe(true);
+    expect(mixedAudit.session.moderatorState.sourceDiscussion).toBeDefined();
+
+    mocks.analyze.mockResolvedValue({ result: {
+      schemaVersion: 3, answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: false,
+      kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false,
+      suggestedQuestionIds: [], sourceDirective: null, rationale: "Incorrectly treated the follow-up as navigation.",
+    } });
+    const followupText = "Can you explain that more simply?";
+    const followup = await turn(followupText);
+    expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage: followupText, responseMode: "answer_only" }));
+    expect(followup.messages.at(-1)?.content).not.toContain(second.currentQuestion!);
+    expect(auditFor(followupText).session.answerEvidenceByQuestionId[ddiQuestionId]).toEqual([mixedReaction]);
+    expect(auditFor(followupText).session.moderatorState.sourceDiscussion).toBeDefined();
+    const resumed = await turn("continue");
+    expect(resumed.currentQuestion).toBe(guide[1]);
+    expect(resumed.messages.at(-1)?.content).not.toContain(second.currentQuestion!);
+    expect(auditFor("continue").session.moderatorState.sourceDiscussion).toBeUndefined();
+  });
+
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s moderator clarification requests active when the hybrid model incorrectly denies a source request", async (surveySlug) => {
     const started = startMvpCustomGptSurvey({ surveySlug, targetDurationSeconds: 600, guide });
     const first = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "PFS and DDI" });

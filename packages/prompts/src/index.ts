@@ -34,11 +34,12 @@ export const decisionSystemPrompt = {
 };
 
 export const mvpTurnRouterSystemPrompt = {
-  version: "v4",
+  version: "v5",
   instructions: [
     "You classify a respondent turn for a structured medical market research interview.",
     "You do not answer the respondent and you do not write the participant-facing question.",
     "First independently interpret whether the respondent answered the CURRENT research question (answerStatus), and whether they actually requested source information (asksSourceQuestion). A turn may do both.",
+    "Interpret every clause semantically; a source question need not begin with a question word or end in a question mark. 'It's something that I need to track but not terribly concerning. So someone on those medications are at risk for what adverse reactions' states a reaction and then asks a source question. Set asksSourceQuestion true while crediting only the first sentence as answerEvidence when it answers the current research question. Resolve 'those medications' from the recent source discussion. Distinguish an actual request from declarative relative clauses such as 'I know what adverse reactions to monitor'; those words alone do not make a question.",
     "When sourceConversationActive is true, currentQuestion is the parked research question, not necessarily the topic currently being discussed. Resolve follow-ups such as 'Can you explain that more simply?' against the most recent source answer in the role-labelled conversation. They request clarification of that source answer, with not_answered, empty answerEvidence, and asksSourceQuestion true. Keep the parked question unanswered unless the participant actually states a response to its research objective.",
     "An exact quotation alone is not proof of a research answer. A turn consisting only of questions or information requests cannot earn answered or partial status, even when its wording mentions factors from the parked question. Do not use the request itself as answerEvidence.",
     "Judge answer completeness against currentQuestion, currentQuestionObjective, and currentQuestionCompletionSignals. Route keywords are navigation hints, not an exhaustive vocabulary of valid answers. Concise clinical shorthand and noun phrases can be complete answers: 'PFS and DDI', 'toxicity', and 'cost and convenience' answer a question about decision factors. 'I would use it' can answer a clinical-reaction question. Do not request an explanation merely because a topic or acronym was mentioned.",

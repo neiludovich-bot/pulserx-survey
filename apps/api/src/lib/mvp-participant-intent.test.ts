@@ -10,6 +10,28 @@ const context = {
 };
 
 describe("participant answer and information-request interpretation", () => {
+  it.each([
+    "So someone on those medications are at risk for what adverse reactions",
+    "Those patients are at risk for which complications",
+    "These medicines interact with which treatments",
+  ])("recognizes a trailing information question without punctuation: %s", (question) => {
+    const reaction = "It's something that I need to track but not terribly concerning.";
+    expect(interpretMvpParticipantIntent({ ...context, participantContent: `${reaction}  ${question}` })).toEqual({
+      answerStatus: "answered", asksSourceQuestion: true, answerEvidence: [reaction],
+    });
+    expect(interpretMvpParticipantIntent({ ...context, participantContent: question })).toEqual({
+      answerStatus: "not_answered", asksSourceQuestion: true, answerEvidence: [],
+    });
+  });
+  it.each([
+    "I know which medications need monitoring",
+    "It depends on which regimen we choose",
+    "Those patients are concerned about what the study showed",
+    "This is what I need for my assessment",
+    "I look for what works best in my practice",
+  ])("does not turn a declarative relative clause into a question: %s", (participantContent) => {
+    expect(interpretMvpParticipantIntent({ ...context, participantContent }).asksSourceQuestion).toBe(false);
+  });
   it.each(["PFS and DDI", "toxicity", "cost and convenience", "quality of life", "I would use it"])("credits a contextual answer without requesting source evidence: %s", (participantContent) => {
     expect(interpretMvpParticipantIntent({ ...context, participantContent })).toEqual({
       answerStatus: "answered", asksSourceQuestion: false, answerEvidence: [participantContent],

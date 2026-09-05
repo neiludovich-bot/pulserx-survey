@@ -304,21 +304,25 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.source).not.toHaveBeenCalled();
   });
 
-  it("finishes a source discussion after the final mixed reaction before handing back to the guide", async () => {
+  it.each([true, false])("finishes the exact mixed adverse-reaction question before handing back to the guide (upstream source flag=%s)", async (asksSourceQuestion) => {
     const first = await presentAgenda(surveySlug);
-    const sourceQuestion = `What drug interactions are documented for ${surveySlug.toUpperCase()}?`;
     const firstReaction = "This evidence would affect my decision.";
     mocks.plan.mockResolvedValueOnce({ result: planned({ action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [firstReaction] }) });
     const second = await runModeratorTurn(inputFor(surveySlug, {
       state: first.state, currentQuestion: first.question, participantMessage: firstReaction, isPriorityQuestion: false,
     }));
-    const finalReaction = "I would review concomitant medicines before choosing it.";
+    const finalReaction = "It's something that I need to track but not terribly concerning.";
+    const mixedMessage = `${finalReaction}  So someone on those medications are at risk for what adverse reactions`;
     mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", reactionStatus: "answered", reactionEvidence: [finalReaction] }) });
     const mixed = await runModeratorTurn(inputFor(surveySlug, {
       state: second!.state, currentQuestion: second!.question,
-      participantMessage: `${finalReaction} ${sourceQuestion}`,
-      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "answered",
+      participantMessage: mixedMessage,
+      isPriorityQuestion: false, asksSourceQuestion, answerStatus: "answered",
     }));
+    expect(mixed?.question).toBeNull();
+    expect(mixed?.content).not.toContain(second!.question!);
+    expect(mixed?.state.priorities[1].reactionEvidence).toEqual([finalReaction]);
+    expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage: mixedMessage, responseMode: "answer_only" }));
     expect(mixed?.state.priorities.every((priority) => priority.status === "reacted")).toBe(true);
     expect(mixed?.state.activePriorityId).toBeNull();
     expect(mixed?.state.sourceDiscussion).toBeDefined();

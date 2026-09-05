@@ -129,6 +129,12 @@ export function isReferentialClarification(message: string) {
   return /^(?:explain(?: (?:that|this|it))?(?: (?:more simply|in simpler terms|in simple terms|again|a bit more))?|(?:say|tell me) more(?: about (?:that|this|it))?|simplify(?: (?:that|this|it))?|what does (?:that|this|it) mean)$/.test(text);
 }
 
+function hasBackwardSourceReference(message: string) {
+  // Linguistic references identify a dependency on already presented entities;
+  // they do not choose a clinical topic or imply a medical relationship.
+  return /\b(?:those|these|such|they|them)\b|\bthe same\b|\b(?:on|with|from|for|of|to)\s+it\b/i.test(message);
+}
+
 function sourceTurnInputs(input: ControlledRagSurveyTurnInput) {
   if (input.responseMode !== "answer_only") {
     const retrievalQuery = [input.selectedQuestionSourceContext, input.selectedNextQuestion].filter(Boolean).join("\n") || input.participantMessage;
@@ -1557,6 +1563,7 @@ async function composeSourceAnswer(
       surveySlug: input.surveySlug,
       participantMessage: input.participantMessage,
       resolvedSourceQuestion: retrievalQuery,
+      sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null,
       surveyContext: input.surveyContext,
       currentQuestion: input.currentQuestion,
       selectedNextQuestion: input.selectedNextQuestion,
@@ -1608,18 +1615,29 @@ export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
   const { retrievalQuery, retrievalInput, compositionInput } = sourceTurnInputs(input);
-  const retained = input.responseMode === "answer_only" && isReferentialClarification(input.participantMessage)
-    ? moderatorEvidencePacketSchema.safeParse(input.evidencePacket)
+  const parsedPacket = moderatorEvidencePacketSchema.safeParse(input.evidencePacket);
+  const retained = parsedPacket.success && parsedPacket.data.sources.every((source) => source.surveySlug === input.surveySlug)
+    ? parsedPacket.data : null;
+  const pureClarification = input.responseMode === "answer_only" && isReferentialClarification(input.participantMessage);
+  const dependentQuestion = input.responseMode === "answer_only" && hasBackwardSourceReference(input.participantMessage);
+  const priorSources = dependentQuestion ? retained?.sources ?? [] : [];
+  const sourceTopicContext = dependentQuestion
+    ? input.sourceTopicContext?.trim() || priorSources.map((source) => source.title).join("; ") || null
     : null;
+  const contextualCompositionInput = { ...compositionInput, sourceTopicContext: pureClarification ? input.sourceTopicContext : sourceTopicContext };
   let chunks: ControlledRagChunk[];
   let evidenceCard: ClinicalEvidenceCard | null;
-  if (retained?.success && retained.data.sources.every((source) => source.surveySlug === input.surveySlug)) {
+  if (pureClarification && retained) {
     // Rephrase exactly the evidence already presented. Never rerun retrieval
     // or treat the generated interviewer answer as a new factual source.
-    chunks = retained.data.sources;
+    chunks = retained.sources;
     evidenceCard = null;
   } else {
   const retrievedChunks = await retrieveChunks(retrievalInput);
+  // A new dependent question may need additional evidence, but its antecedent
+  // must survive retrieval. Preserve exact prior source excerpts as candidates;
+  // the selector still decides which evidence actually supports the new ask.
+  const candidates = [...priorSources, ...retrievedChunks.filter((chunk) => !priorSources.some((source) => source.id === chunk.id))].slice(0, 24);
   const initialEvidenceCard = buildClinicalEvidenceCard(retrievalInput, retrievedChunks);
   const orderedCandidates = orderChunksForEvidenceCard(
     retrievedChunks,
@@ -1632,13 +1650,15 @@ export async function askControlledRagForSurveyInterviewerTurn(
   const selection = await selectFocusedSourceEvidence({
     surveySlug: input.surveySlug,
     query: retrievalQuery,
-    candidates: retrievedChunks,
-    fallbackSourceIds: preferredFallbackIds.length ? preferredFallbackIds : fallbackMatches.slice(0, 1).map((chunk) => chunk.id),
+    candidates,
+    sourceTopicContext,
+    priorSourceIds: priorSources.map((source) => source.id),
+    fallbackSourceIds: priorSources.length ? priorSources.map((source) => source.id) : preferredFallbackIds.length ? preferredFallbackIds : fallbackMatches.slice(0, 1).map((chunk) => chunk.id),
   });
   chunks = selection.chunks;
   // Semantic selection owns the evidence scope. Do not reintroduce a broad
   // topic card containing facts from sources that the selector did not choose.
-  evidenceCard = selection.mode === "fallback"
+  evidenceCard = selection.mode === "fallback" && !dependentQuestion
     ? buildClinicalEvidenceCard(retrievalInput, chunks)
     : null;
   }
@@ -1658,7 +1678,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
   const references = referencesForChunks(chunks);
   const responseMode = input.responseMode ?? "answer_then_ask";
   const composedAnswer = stripComposerFollowUpQuestions(
-    await composeSourceAnswer(compositionInput, chunks, evidenceCard, retrievalQuery),
+    await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, retrievalQuery),
     input.selectedNextQuestion,
     responseMode,
   );
@@ -1666,7 +1686,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
   try {
     cited = alignCitedSourceReferences(composedAnswer, references);
   } catch {
-    cited = alignCitedSourceReferences(fallbackSourceAnswer(compositionInput, chunks, evidenceCard), references);
+    cited = alignCitedSourceReferences(fallbackSourceAnswer(contextualCompositionInput, chunks, evidenceCard), references);
   }
   const answer = [
     cited.answer,

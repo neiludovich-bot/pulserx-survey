@@ -37,6 +37,19 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it.each([false, true])("preserves both parts of a mixed trailing question even when the model misroutes it (source=%s)", async (asksSourceQuestion) => {
+    const reaction = "It's something that I need to track but not terribly concerning.";
+    const participantContent = `${reaction}  So someone on those medications are at risk for what adverse reactions`;
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: {
+      ...result, asksSourceQuestion, needsSource: asksSourceQuestion,
+      kind: asksSourceQuestion ? "source_question" : "planned_answer",
+      sourceDirective: asksSourceQuestion ? "Answer the follow-up about those medications." : null,
+      answerEvidence: [participantContent],
+    } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, participantContent, sourceConversationActive: true });
+    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "answered", asksSourceQuestion: true, answerEvidence: [reaction] });
+    expect(route.error).toContain("trailing information question");
+  });
   it.each(["not_answered", "partial"])("retains explicit mixed-turn priorities when the model says %s", async (answerStatus) => {
     const statement = "PFS and DDI matter most to me.";
     gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: {
