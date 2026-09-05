@@ -3226,7 +3226,7 @@ export async function submitMvpCustomGptSurveyTurn(
         currentQuestionObjective: currentQuestionBefore?.objective ?? null,
         currentQuestionKeywords: currentQuestionBefore?.routeKeywords ?? [],
         currentQuestionCompletionSignals: currentQuestionBefore?.completionSignals ?? [],
-        sourceConversationActive: Boolean(session.pendingReturnQuestionId) ||
+        sourceConversationActive: Boolean(session.pendingReturnQuestionId) || Boolean(session.moderatorState.sourceDiscussion) ||
           session.moderatorState.priorities.some((priority) =>
             priority.id === session.moderatorState.activePriorityId && priority.status === "presented"),
         recentInterviewerContext: recentParticipantInterpretationContext(session),
@@ -3240,7 +3240,7 @@ export async function submitMvpCustomGptSurveyTurn(
     !currentQuestionBefore.id.startsWith("moderator-reaction:") &&
     /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
   if (!fixedFlow && session.surveySlug !== "data" && !participantRequestedStop && !hardTimeboxExpired(session) && participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
-      ((currentQuestionBefore && !currentQuestionBefore.close && !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id)) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
+      ((currentQuestionBefore && !currentQuestionBefore.close && !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id)) || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
     const moderator = await runModeratorTurn({
       state: session.moderatorState,
       brand: session.sourceBrand,

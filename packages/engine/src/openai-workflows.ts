@@ -273,6 +273,7 @@ export class OpenAIResponsesGateway {
       ...parsed,
       state: {
         ...parsed.state,
+        ...(parsed.state.sourceDiscussion ? { sourceDiscussion: { query: parsed.state.sourceDiscussion.query } } : {}),
         priorities: parsed.state.priorities.map(({ evidencePacket: _evidencePacket, ...priority }) => priority),
       },
     };

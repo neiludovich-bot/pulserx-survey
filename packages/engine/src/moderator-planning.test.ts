@@ -348,11 +348,14 @@ describe("moderator structured gateway", () => {
   it("omits retained evidence from model planning context without mutating canonical state", async () => {
     const withEvidence = structuredClone(presentedInput);
     withEvidence.state.priorities[0].evidencePacket = evidencePacket;
+    withEvidence.state.sourceDiscussion = { query: "What interactions are documented?", evidencePacket };
     const parse = vi.fn().mockResolvedValue({ output_parsed: { ...modelPlanBase, priorityMentions: [], reactionStatus: "answered", reactionEvidence: ["I would use it"], action: "resume_guide" } });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     const planned = await gateway.planModeratorTurn(withEvidence);
     const requestInput = JSON.parse(parse.mock.calls[0][0].input[0].content[0].text);
     expect(requestInput.state.priorities[0]).not.toHaveProperty("evidencePacket");
+    expect(requestInput.state.sourceDiscussion).toEqual({ query: "What interactions are documented?" });
+    expect(withEvidence.state.sourceDiscussion.evidencePacket).toEqual(evidencePacket);
     expect(withEvidence.state.priorities[0].evidencePacket).toEqual(evidencePacket);
     expect(planned.result.reactionStatus).toBe("answered");
   });

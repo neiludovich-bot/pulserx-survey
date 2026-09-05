@@ -337,6 +337,7 @@ describe("MVP survey persistence", () => {
         text: "Original retrieved source excerpt, separate from the generated assistant answer.", assets: [],
       }] };
       persistedModeratorState.priorities[1].evidencePacket = evidencePacket;
+      persistedModeratorState.sourceDiscussion = { query: "What interaction precautions are documented?", evidencePacket };
       await persistMvpSurveyTurnAudit({
         session: { ...sessionSnapshot, surveySlug, sourceBrand: surveySlug.toUpperCase(), moderatorState: persistedModeratorState,
           guide: importedGuide, fullGuide: importedGuide },
@@ -367,6 +368,7 @@ describe("MVP survey persistence", () => {
       });
       const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
       expect(restored?.session.moderatorState).toEqual(persistedModeratorState);
+      expect(restored?.session.moderatorState?.sourceDiscussion).toEqual(persistedModeratorState.sourceDiscussion);
       expect(restored?.session.moderatorState?.priorities[1].evidencePacket).toEqual(evidencePacket);
       expect(restored?.session.moderatorState?.priorities[1].evidencePacket?.sources[0].text).not.toContain("What is your reaction");
       expect(restored?.session.guide).toEqual(importedGuide);

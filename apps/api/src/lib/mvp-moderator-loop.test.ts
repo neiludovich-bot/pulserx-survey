@@ -159,7 +159,8 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       recentTurns: [{ role: "interviewer", content: first.content! }],
     }));
     expect(detour?.decision.action).toBe("answer_source");
-    expect(detour?.state).toEqual(first.state);
+    expect(detour?.state.priorities).toEqual(first.state.priorities);
+    expect(detour?.state.activePriorityId).toEqual(first.state.activePriorityId);
     expect(detour?.question).toBeNull();
     expect(detour?.content).not.toContain(first.question!);
 
@@ -205,7 +206,8 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       recentTurns: [{ role: "participant", content: reaction }, { role: "interviewer", content: second!.content! }],
     }));
 
-    expect(followup?.state).toEqual(second!.state);
+    expect(followup?.state.priorities).toEqual(second!.state.priorities);
+    expect(followup?.state.activePriorityId).toEqual(second!.state.activePriorityId);
     expect(followup?.question).toBeNull();
     expect(followup?.content).not.toContain(second!.question!);
     expect(mocks.source).toHaveBeenCalledTimes(1);
@@ -216,6 +218,77 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       responseMode: "answer_only",
     }));
     expect(activeSourceQuestion).toMatch(/drug interactions/);
+  });
+
+  it("clarifies the latest DDI detour after restart while preserving the original PFS reaction", async () => {
+    const first = await presentAgenda(surveySlug);
+    const sourceQuestion = `What drug interactions are documented for ${surveySlug.toUpperCase()}?`;
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });
+    const detour = await runModeratorTurn(inputFor(surveySlug, {
+      state: first.state, currentQuestion: first.question, participantMessage: sourceQuestion,
+      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered",
+    }));
+    expect(detour?.state.sourceDiscussion).toEqual({ query: sourceQuestion, evidencePacket: evidenceFor(surveySlug, "DDI") });
+    expect(detour?.state.priorities).toEqual(first.state.priorities);
+    mocks.source.mockClear();
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });
+    const followup = await runModeratorTurn(inputFor(surveySlug, {
+      state: JSON.parse(JSON.stringify(detour!.state)), currentQuestion: first.question,
+      participantMessage: "Can you explain that more simply?",
+      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered",
+    }));
+    expect(mocks.source).toHaveBeenCalledWith(expect.objectContaining({
+      sourceTopicContext: sourceQuestion, evidencePacket: evidenceFor(surveySlug, "DDI"),
+    }));
+    expect(followup?.state.sourceDiscussion).toEqual(detour?.state.sourceDiscussion);
+    expect(followup?.state.priorities[0].evidencePacket).toEqual(evidenceFor(surveySlug, "PFS"));
+    expect(followup?.question).toBeNull();
+    mocks.source.mockClear();
+    const resumed = await runModeratorTurn(inputFor(surveySlug, {
+      state: followup!.state, currentQuestion: first.question, participantMessage: "continue",
+      isPriorityQuestion: false, isResumeCue: true, answerStatus: "not_answered",
+    }));
+    expect(resumed?.state).toEqual(first.state);
+    expect(resumed?.question).toBe(first.question);
+    expect(resumed?.state).not.toHaveProperty("sourceDiscussion");
+    expect(mocks.source).not.toHaveBeenCalled();
+  });
+
+  it("finishes a source discussion after the final mixed reaction before handing back to the guide", async () => {
+    const first = await presentAgenda(surveySlug);
+    const sourceQuestion = `What drug interactions are documented for ${surveySlug.toUpperCase()}?`;
+    const firstReaction = "This evidence would affect my decision.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [firstReaction] }) });
+    const second = await runModeratorTurn(inputFor(surveySlug, {
+      state: first.state, currentQuestion: first.question, participantMessage: firstReaction, isPriorityQuestion: false,
+    }));
+    const finalReaction = "I would review concomitant medicines before choosing it.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", reactionStatus: "answered", reactionEvidence: [finalReaction] }) });
+    const mixed = await runModeratorTurn(inputFor(surveySlug, {
+      state: second!.state, currentQuestion: second!.question,
+      participantMessage: `${finalReaction} ${sourceQuestion}`,
+      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "answered",
+    }));
+    expect(mixed?.state.priorities.every((priority) => priority.status === "reacted")).toBe(true);
+    expect(mixed?.state.activePriorityId).toBeNull();
+    expect(mixed?.state.sourceDiscussion).toBeDefined();
+    mocks.source.mockClear();
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source" }) });
+    const followup = await runModeratorTurn(inputFor(surveySlug, {
+      state: JSON.parse(JSON.stringify(mixed!.state)), currentQuestion: second!.question,
+      participantMessage: "Can you explain that more simply?",
+      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered",
+    }));
+    expect(followup?.decision.action).toBe("answer_source");
+    expect(mocks.source).toHaveBeenCalledWith(expect.objectContaining({ evidencePacket: evidenceFor(surveySlug, "DDI") }));
+    expect(followup?.state.priorities).toEqual(mixed!.state.priorities);
+    const resumed = await runModeratorTurn(inputFor(surveySlug, {
+      state: followup!.state, currentQuestion: second!.question, participantMessage: "continue",
+      isPriorityQuestion: false, isResumeCue: true, answerStatus: "not_answered",
+    }));
+    expect(resumed?.decision.action).toBe("resume_guide");
+    expect(resumed?.content).toBeNull();
+    expect(resumed?.state).not.toHaveProperty("sourceDiscussion");
   });
 
   it("honors an explicit request to leave all remaining topics without fabricating reactions", async () => {

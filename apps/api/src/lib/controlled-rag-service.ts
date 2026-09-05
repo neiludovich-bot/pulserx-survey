@@ -119,7 +119,7 @@ function compact(value: string | null | undefined, maxChars: number) {
     : `${value.slice(0, maxChars - 18).trimEnd()} [truncated]`;
 }
 
-function isReferentialClarification(message: string) {
+export function isReferentialClarification(message: string) {
   const text = normalizeText(message)
     .replace(/^(?:please\s+|(?:can|could|would) (?:you )?)/, "")
     .replace(/^please\s+/, "")

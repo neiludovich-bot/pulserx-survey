@@ -46,6 +46,10 @@ export const moderatorStateSchema = z.object({
   version: z.literal(1),
   priorities: z.array(moderatorPrioritySchema).max(64),
   activePriorityId: z.string().min(1).nullable(),
+  sourceDiscussion: z.object({
+    query: z.string().min(1).max(12000),
+    evidencePacket: moderatorEvidencePacketSchema.optional(),
+  }).strict().optional(),
 }).strict().superRefine((state, context) => {
   const ids = new Set(state.priorities.map((priority) => priority.id));
   if (ids.size !== state.priorities.length) {

@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference } from "@interview/schemas";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
+import { isReferentialClarification } from "./controlled-rag-service";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
 type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string };
@@ -29,7 +30,7 @@ export async function runModeratorTurn(input: Input) {
   }
   const previousActive = state.priorities.find((p) => p.id === state.activePriorityId);
   const sourceOnlyTurn = (input.asksSourceQuestion || plan.action === "answer_source") && input.answerStatus === "not_answered";
-  if (!hadOpenPriorities && plan.newPriorities.length === 0) return null;
+  if (!hadOpenPriorities && !state.sourceDiscussion && plan.newPriorities.length === 0) return null;
   for (const priority of plan.newPriorities) {
     if (state.priorities.length >= 64) break;
     if (!state.priorities.some((p) => normalized(p.label) === normalized(priority.label))) {
@@ -84,9 +85,17 @@ export async function runModeratorTurn(input: Input) {
   };
   if ((input.asksSourceQuestion || plan.action === "answer_source") && !input.isResumeCue) {
     action = "answer_source";
-    const answer = await source(input.participantMessage, previousActive?.sourceQuestion ?? null, previousActive?.evidencePacket);
+    const discussion = state.sourceDiscussion;
+    const sourceTopic = discussion?.query ?? previousActive?.sourceQuestion ?? null;
+    const retainedPacket = discussion ? discussion.evidencePacket : previousActive?.evidencePacket;
+    const answer = await source(input.participantMessage, sourceTopic, retainedPacket);
+    state.sourceDiscussion = {
+      query: isReferentialClarification(input.participantMessage) && sourceTopic ? sourceTopic : input.participantMessage,
+      ...(sourceEvidencePacket ? { evidencePacket: structuredClone(sourceEvidencePacket) } : {}),
+    };
     content = answer ? `${answer}\n\nWhat else would you like to explore? Say "continue" when you're ready to return to the interview.` : 'I could not find supporting evidence for that question. You can clarify your question, or say "continue" to return to the interview.';
   } else {
+    delete state.sourceDiscussion;
     const active = state.priorities.find((p) => p.id === state.activePriorityId && p.status === "presented");
     if (active) {
       action = "probe_reaction";
