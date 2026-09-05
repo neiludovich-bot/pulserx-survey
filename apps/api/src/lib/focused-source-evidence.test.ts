@@ -121,4 +121,17 @@ describe("focused evidence selection", () => {
     expect(result.references.map((reference) => reference.citationId)).toEqual([`rag:${trial.id}`]);
     expect(result.references[0].assets).toEqual([expect.objectContaining({ assetKind: "LINK", url: trial.url })]);
   });
+
+  it("does not present indexing tags or document descriptions as medical evidence to the composer", async () => {
+    vi.stubEnv("NODE_ENV", "development"); vi.stubEnv("DATABASE_URL", "");
+    const source = CONTROLLED_RAG_CHUNKS.find((chunk) => chunk.id === "brukinsa-safety-management")!;
+    expect(source.tags).toContain("cyp3a");
+    expect(source.text.toLowerCase()).not.toContain("cyp3a");
+    const selectModeratorEvidence = vi.fn().mockResolvedValue({ result: { selections: [{ sourceId: source.id, supportExcerpt: source.text, assetIds: [] }], rationale: "Selected actual source text." } });
+    const composeControlledRagAnswer = vi.fn().mockResolvedValue({ result: { answerBody: "The source describes medication-management considerations. [1]", usedSourceIndexes: [1] } });
+    vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({ selectModeratorEvidence, composeControlledRagAnswer } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
+    await askControlledRagForSurveyInterviewerTurn({ surveySlug: "brukinsa", participantMessage: "Which drug interactions are noted?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" });
+    expect(composeControlledRagAnswer.mock.calls[0][0].sources).toEqual([expect.objectContaining({ text: source.text, tags: [], description: null })]);
+    expect(JSON.stringify(composeControlledRagAnswer.mock.calls[0][0].sources).toLowerCase()).not.toContain("cyp3a");
+  });
 });

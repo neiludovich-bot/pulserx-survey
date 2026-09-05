@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 
-const SEARCH_STOP_WORDS = new Set("a an and are as at be can could do does for from how i in is it me my of on or please show tell that the their there these this to us was we were what when where which with would you your about approved available clinical current describe discuss documented evidence explain information known material materials question regarding source sources support supports supported".split(" "));
+const SEARCH_STOP_WORDS = new Set("a an and are as at be can could do does for from how i in is it me my of on or please show tell that the their there these this to us was we were what when where which with would you your about approved available clinical current describe describes described discuss discusses discussed document documented evidence explain explains explained information known list lists listed material materials mention mentions mentioned note notes noted question regarding report reports reported source sources support supports supported".split(" "));
 
 export function sourceContentSearchTerms(query: string, surveySlug: string) {
   // Prefer a supplied expansion over its acronym. No clinical aliases or

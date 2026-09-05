@@ -1316,8 +1316,13 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
   // Preserve the approved catalog alongside retrieved library excerpts, so
   // keyword-poor paraphrases can still be resolved by semantic selection.
   const curatedIds = new Set(candidateChunks.filter((chunk) => !chunk.id.startsWith("db:")).map((chunk) => chunk.id));
-  const databaseIds = new Set(activeDatabaseChunks.slice(0, Math.max(0, 24 - curatedIds.size)).map((chunk) => chunk.id));
-  return rankedCandidates.filter((chunk) => curatedIds.has(chunk.id) || databaseIds.has(chunk.id)).slice(0, 24);
+  // Preserve the content-ranked library order, not just its membership.
+  // Inherited tags and broad evidence cards must not promote an introductory
+  // document fragment ahead of the passage that actually matches the query.
+  return [
+    ...activeDatabaseChunks.slice(0, Math.max(0, 24 - curatedIds.size)),
+    ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
+  ].slice(0, 24);
 }
 
 function referencesForChunks(
@@ -1575,8 +1580,10 @@ async function composeSourceAnswer(
         index: index + 1,
         title: chunk.title,
         url: chunk.url || null,
-        description: chunk.description || null,
-        tags: chunk.tags,
+        // Search metadata is not clinical evidence. Only the selected exact
+        // source text may supply facts to the composer.
+        description: null,
+        tags: [],
         text: compact(chunk.text, 1500),
       })),
     });
@@ -1625,7 +1632,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
   const selection = await selectFocusedSourceEvidence({
     surveySlug: input.surveySlug,
     query: retrievalQuery,
-    candidates: orderedCandidates,
+    candidates: retrievedChunks,
     fallbackSourceIds: preferredFallbackIds.length ? preferredFallbackIds : fallbackMatches.slice(0, 1).map((chunk) => chunk.id),
   });
   chunks = selection.chunks;
