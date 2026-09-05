@@ -121,12 +121,9 @@ export const moderatorPlanModelResultSchema = moderatorPlanResultSchema.innerTyp
     }).strict()).max(32),
   }).strict();
 
-export const moderatorPhrasingInputSchema = z.object({
+const moderatorPhrasingContextSchema = z.object({
   brand: z.string().min(1).max(100),
-  action: z.enum(["reaction", "transition"]),
-  priorityLabel: z.string().min(1).max(200),
   participantMessage: z.string().max(12000),
-  previousPriorityLabel: z.string().min(1).max(200).nullable(),
   understanding: participantUnderstandingSchema.optional(),
   presentationPlan: presentationPlanSchema.optional(),
   selectedObjective: z.string().min(1).max(1000).optional(),
@@ -135,6 +132,32 @@ export const moderatorPhrasingInputSchema = z.object({
   recentQuestionTexts: z.array(z.string().min(1).max(1000)).max(8).optional(),
   probeIntent: z.enum(["clarification", "implication", "information_need"]).optional(),
 }).strict();
+
+const moderatorPriorityPhrasingInputSchema = moderatorPhrasingContextSchema.extend({
+  priorityLabel: z.string().min(1).max(200),
+  previousPriorityLabel: z.string().min(1).max(200).nullable(),
+}).strict();
+
+export const moderatorPhrasingInputSchema = z.discriminatedUnion("action", [
+  moderatorPriorityPhrasingInputSchema.extend({ action: z.literal("reaction") }),
+  moderatorPriorityPhrasingInputSchema.extend({ action: z.literal("transition") }),
+  moderatorPhrasingContextSchema.extend({
+    action: z.literal("guide_resume"),
+    selectedQuestion: z.object({
+      id: z.string().min(1).max(200),
+      question: z.string().min(1).max(2000),
+      objective: z.string().min(1).max(2000),
+    }).strict(),
+    discussedPriorities: z.array(z.object({
+      label: z.string().min(1).max(200),
+      reactionEvidence: z.array(evidenceExcerptSchema).max(16),
+    }).strict()).max(32),
+    recentTurns: z.array(z.object({
+      role: z.enum(["interviewer", "participant"]),
+      content: z.string().min(1).max(12000),
+    }).strict()).max(24).optional(),
+  }).strict(),
+]);
 
 export const moderatorPhrasingResultSchema = z.object({
   text: z.string().trim().min(1).max(600),
@@ -180,6 +203,12 @@ export const moderatorEvidenceSelectionResultSchema = z.object({
 // Model output requires the role; only application/legacy inputs receive a default.
 export const moderatorEvidenceSelectionModelResultSchema = moderatorEvidenceSelectionResultSchema.extend({
   selections: z.array(moderatorEvidenceSelectionSchema.extend({ evidenceRole: moderatorEvidenceRoleSchema })).max(3),
+}).strict();
+
+// A focused contextual pass may select no evidence, but cannot generate a direct role.
+// This constrains generation; exact excerpt and source validation still apply afterward.
+export const moderatorContextualEvidenceSelectionModelResultSchema = moderatorEvidenceSelectionResultSchema.extend({
+  selections: z.array(moderatorEvidenceSelectionSchema.extend({ evidenceRole: z.enum(["contextual"]) })).max(3),
 }).strict();
 
 export type ModeratorPriority = z.infer<typeof moderatorPrioritySchema>;

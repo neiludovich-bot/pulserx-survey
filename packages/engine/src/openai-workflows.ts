@@ -12,7 +12,7 @@ import {
   sourceQuestionPlannerSystemPrompt,
   contextualSourceCompositionSystemPrompt,
   sourceGroundingReviewSystemPrompt,
-  presentationCompositionInstructions,
+  directSourceCompositionSystemPrompt,
   phraserSystemPrompt
 } from "@interview/prompts";
 import {
@@ -40,6 +40,7 @@ import {
   moderatorEvidenceSelectionInputSchema,
   moderatorEvidenceSelectionResultSchema,
   moderatorEvidenceSelectionModelResultSchema,
+  moderatorContextualEvidenceSelectionModelResultSchema,
   sourceQuestionPlanInputSchema,
   sourceQuestionPlanSchema,
   type SourceQuestionPlanInput,
@@ -262,40 +263,10 @@ export class OpenAIResponsesGateway {
     return this.runStructuredCall<ControlledRagCompositionResult>({
       callType: "source_composition",
       model: this.config.sourceModel ?? this.config.phrasingModel,
-      promptVersion: "controlled-rag-composition-v12",
+      promptVersion: directSourceCompositionSystemPrompt.version,
       schemaName: "controlled_rag_composition_result_v2",
       schema: controlledRagCompositionModelResultSchema,
-      instructions: [
-        ...presentationCompositionInstructions,
-        "You compose clinician-facing, source-grounded interviewer answers for a structured medical market research interview.",
-        "Use the supplied source excerpts only as evidence. Do not add facts, claims, trial outcomes, labels, guidance, or caveats that are not supported by those excerpts.",
-        "Only each source's text supplies clinical evidence. Titles, URLs, descriptions, tags, prior generated answers, and participant statements identify context; they cannot establish a medical fact. Never infer an interaction, mechanism, outcome, or dose change from indexing metadata or connect separately listed topics into an unstated medical claim.",
-        "input.sourceTopicContext and recentTurns resolve references and practical intent; they are context, not evidence. input.sourceQuestionPlan is the typed evidence-scope plan, not medical authority. Follow its interpretedQuestion, answerApproach, and contextBoundary while grounding every factual statement in source text. Never invent a causal link, medication class, patient detail, or missing trial result. Do not append a research question or advance the interview.",
-        "A source's evidenceRole identifies its purpose, not an additional fact. Direct excerpts support the original relationship or question; contextual excerpts supply distinct general safety or monitoring details. For contextual_explanation, use the relevant factual detail actually present in contextual excerpts rather than repeating the direct interaction instruction twice. Keep general warnings or monitoring facts explicitly separate from events shown to be caused or increased by an interaction; the role itself cannot establish causality. Do not invent a missing named warning or monitoring detail.",
-        "For contextual_explanation, lead with the useful source-supported information answering the practical question. Explain what the instruction refers to, then name the relevant safety concerns or monitoring details actually stated in the excerpts. In an interaction discussion, distinguish which drug's exposure changes and whose adverse reactions the cited guidance says to monitor. Attribute guidance to the label rather than prescribing a personal monitoring plan. Add one brief qualification after the relevant information to distinguish general label safety from events proven caused or increased by an interaction. Do not open with missing interaction-specific data when useful supported context is available, or repeat an already-explained limitation as the main point. If no specific symptoms, tests, intervals, thresholds, or actions are given, do not invent them; identify that particular missing detail only when needed. Use everyday language; do not call this 'complementary evidence', 'contextual explanation', or 'complementary safety information' in the answer.",
-        "For direct, genuinely precise trial or causal-only requests, retain their exact scope and state a missing requested detail succinctly rather than substituting general data. For clarify, explain the supported known context and the specific unresolved detail without assuming it. A limitation concerns the cited evidence, not all medical knowledge. Do not begin a non-yes/no question with 'Yes'.",
-        "Preserve the source's exact endpoint identity. PFS, radiographic PFS (rPFS), metastasis-free survival (MFS), and overall survival (OS) are distinct labels. A broad PFS question may be answered with explicitly labeled rPFS evidence, but MFS or OS cannot substitute for PFS. Do not combine these under invented terms such as 'progression-free-type endpoints'. Keep study, population, comparator, and endpoint attached to each result.",
-        "Do not mention the retrieval process, source inventory, source snippets, source areas, knowledge base, or what is available here. The respondent should see a polished clinical answer, not your internal evidence map.",
-        "If input.clinicalEvidenceCard is present, treat it as the moderator's evidence card and answer plan. Use its clinicianBrief, keyFacts, caveats, and answerDirective to decide what matters most for this turn.",
-        "Do not recite every source. Synthesize across the card and cite the source indexes that support the facts.",
-        "Do not choose the next survey question. The application has already selected it. Your job is only to answer the participant's current source question or provide the source-backed setup needed for the next question.",
-        "If input.responseMode is answer_only, answer the participant's source question as a standalone turn and do not steer into the selected next question.",
-        "input.resolvedSourceQuestion identifies the source topic being answered, including the earlier question referred to by a clarification. Preserve that topic; input.participantMessage tells you whether to simplify, explain, or add detail. For example, if the resolved question asks about drug interactions and the participant says 'explain that more simply', simplify drug interactions, not general dosing or disease positioning. Select only evidence-card facts relevant to that resolved question; their order is not a priority ranking.",
-        "If input.responseMode is answer_then_ask, still do not include the selected next question in answerBody; the application will append the selected question after your source answer.",
-        "Never add your own follow-up question, bridge question, transition question, or question mark in answerBody.",
-        "Write for an HCP respondent: concise, specific, clinically useful, and conversational. Avoid robotic openers such as 'For context' unless it is genuinely needed.",
-        "For broad orientation questions, synthesize the clinical story by disease state, patient population, study, comparator, endpoint, result, safety/dosing consideration, or caveat as relevant. Do not just list pages or studies.",
-        "For concern-driven turns, answer the concern directly first. Stop after the source-grounded answer.",
-        "If the participant names a concern, acknowledge it once in neutral language and then answer with the most relevant source-supported facts.",
-        "Do not speak in the participant's voice or mirror their self-description as your own. For example, never write 'I'm not familiar with...' or 'I am concerned about...' based on the participant's message; use neutral interviewer language such as 'On that point...' or answer directly.",
-        "State source facts neutrally. Do not characterize data as strong, compelling, impressive, meaningful, substantial, important, or as what stands out unless that exact characterization appears in the source excerpts.",
-        "If asked what data show, report the study population, comparator, endpoints, and numeric results available in the excerpts. Do not infer clinical significance or recommend a conclusion.",
-        "If the participant asks a direct source question, answer that question first. If the cited HCP material is limited, say specifically what is and is not supported without exposing internal retrieval language.",
-        "Avoid repeating context already covered in recent interviewer turns. Focus on the current angle.",
-        "Use one short paragraph or 2-4 focused bullets. Do not write a full label-style inventory unless the participant explicitly asked for a broad label summary.",
-        "Use plain text. Do not use Markdown emphasis. Cite factual claims with bracket markers like [1] or [2] matching the source index.",
-        "Do not include the selected next question in answerBody."
-      ],
+      instructions: directSourceCompositionSystemPrompt.instructions,
       input: parsed,
       metadata: {
         survey_slug: parsed.surveySlug
@@ -427,7 +398,9 @@ export class OpenAIResponsesGateway {
       schema: moderatorPhrasingResultSchema,
       instructions: moderatorPhraserSystemPrompt.instructions,
       input: parsed,
-      metadata: { brand: parsed.brand, action: parsed.action },
+      metadata: { brand: parsed.brand, action: parsed.action,
+        ...(parsed.action === "guide_resume" ? { selected_question_id: parsed.selectedQuestion.id } : {}),
+      },
     });
     return { ...call, result: validateModeratorPhrasing(parsed, call.result) };
   }
@@ -438,8 +411,8 @@ export class OpenAIResponsesGateway {
       callType: "moderator_evidence",
       model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: moderatorEvidenceSelectorSystemPrompt.version,
-      schemaName: "moderator_evidence_selection_result_v3",
-      schema: moderatorEvidenceSelectionModelResultSchema,
+      schemaName: parsed.evidenceFocus === "contextual" ? "moderator_contextual_evidence_selection_result_v1" : "moderator_evidence_selection_result_v3",
+      schema: parsed.evidenceFocus === "contextual" ? moderatorContextualEvidenceSelectionModelResultSchema : moderatorEvidenceSelectionModelResultSchema,
       instructions: moderatorEvidenceSelectorSystemPrompt.instructions,
       input: parsed,
       metadata: { survey_slug: parsed.surveySlug },

@@ -20,6 +20,7 @@ import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, withSourceNavigationHint } from "./mvp-source-discussion";
 import { isReferentialClarification } from "./controlled-rag-service";
 import { applyParticipantUnderstanding, presentationFor } from "./mvp-presentation";
+import { getOptionalOpenAIGateway } from "./model-gateway";
 import { env } from "../env";
 import {
   BRUKINSA_HCP_MVP_GUIDE,
@@ -2019,6 +2020,9 @@ function selectNextQuestion(
       !participantAsksSourceQuestion && remaining > TIMEBOX_WRAP_UP_THRESHOLD_SECONDS && !session.askedQuestionIds.includes("familiarity_information_need")) {
     const question: MvpGuideQuestion = { id: "familiarity_information_need", module: "Orientation", objective: "Identify all information priorities the participant needs explained before discussing the research guide.",
       canonicalQuestion: `What would you most like clarified about ${session.sourceBrand} before we go further?`, sourceContextRequirement: null, captureBeforeSourceContext: true, routeKeywords: [], completionSignals: ["participant identifies information priorities to understand"], adaptiveProbes: [], analyzableOutputs: ["information_need"] };
+    if (!session.answeredQuestionIds.includes(current.id) && session.guide.some((item) => item.id === current.id)) {
+      session.pendingReturnQuestionId = current.id;
+    }
     session.adaptiveProbeQuestions.push(question);
     return question;
   }
@@ -3257,7 +3261,20 @@ export async function submitMvpCustomGptSurveyTurn(
     : null;
   let moderatorCompleted = false;
   let moderatorDecision: Record<string, unknown> | null = null;
-  applyParticipantUnderstanding(session.moderatorState, participantAnalysis?.understandingUpdate, input.content);
+  const understandingUpdate = applyParticipantUnderstanding(session.moderatorState, participantAnalysis?.understandingUpdate, input.content);
+  if (understandingUpdate?.productFamiliarity) {
+    // Explicit familiarity can be volunteered before its authored question.
+    // Record coverage without claiming that the question was already asked.
+    for (const question of allQuestions(session).filter((question) => question.id === "familiarity" || question.analyzableOutputs.includes("baseline_familiarity"))) {
+      if (!session.answeredQuestionIds.includes(question.id)) session.answeredQuestionIds.push(question.id);
+      session.answerEvidenceByQuestionId[question.id] = [...new Set([...(session.answerEvidenceByQuestionId[question.id] ?? []), ...understandingUpdate.participantEvidence])];
+    }
+    if (participantAnalysis && currentQuestionBefore && currentQuestionBefore.id !== "familiarity" &&
+        REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id) && !answerMatchesCurrentQuestion(currentQuestionBefore, input.content) &&
+        participantAnalysis.answerEvidence.every((excerpt) => understandingUpdate.participantEvidence.some((evidence) => evidence.includes(excerpt)))) {
+      participantAnalysis = { ...participantAnalysis, answerStatus: "not_answered", answerEvidence: [] };
+    }
+  }
   if (currentQuestionBefore?.id === "familiarity_information_need" && participantAnalysis &&
       !participantAnalysis.decision.isOutOfScope && participantAnalysis.asksSourceQuestion) {
     // A question is itself a valid answer to an explicit information-need
@@ -3322,7 +3339,6 @@ export async function submitMvpCustomGptSurveyTurn(
           session.currentQuestionId = actualQuestionId;
           if (!session.askedQuestionIds.includes(actualQuestionId)) session.askedQuestionIds.push(actualQuestionId);
         }
-        session.pendingReturnQuestionId = null;
         session.messages.push(createMessage("interviewer", moderator.content, moderator.references));
         const nextAction = moderator.sourceUsed && moderator.question ? "answer_then_ask" as const : "ask" as const;
         const audit = {
@@ -3338,13 +3354,12 @@ export async function submitMvpCustomGptSurveyTurn(
         return responseForSession(session, nextAction);
       }
       moderatorCompleted = true;
-      session.pendingReturnQuestionId = null;
       participantAnalysis = { ...participantAnalysis, answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: false, suggestedQuestionIds: [], decision: { kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false, sourceDirective: null, rationale: "Participant priorities have been discussed; resume the research guide." } };
     }
   }
   const interpretedTurnIsValid = participantAnalysis &&
     !transcriptLooksNonEnglishOrGarbled(input.content) &&
-    (participantAnalysis.answerStatus !== "not_answered" || participantAnalysis.asksSourceQuestion);
+    (participantAnalysis.answerStatus !== "not_answered" || participantAnalysis.asksSourceQuestion || Boolean(understandingUpdate));
   const answerQuality = fixedFlow || moderatorCompleted || resumeQuestion || participantRequestedStop || interpretedTurnIsValid
     ? { accepted: true as const }
     : currentAnswerQuality(session, input.content);
@@ -3788,7 +3803,36 @@ export async function submitMvpCustomGptSurveyTurn(
     assistantContent = 'I could not retrieve the source context needed before that question. Say "continue" to try again.';
   }
 
-  if (moderatorCompleted && !session.completedReason) assistantContent = `We've finished discussing the priorities you raised. Let's return to the interview.\n\n${assistantContent}`;
+  if (moderatorCompleted && !session.completedReason) {
+    let guideResumePhrased = false;
+    // Selection stays canonical. Rephrase only a source-free resumed question;
+    // source-required questions retain their authored evidence presentation.
+    if (actualAskedQuestion && !needsCustomGpt) {
+      const gateway = getOptionalOpenAIGateway();
+      let guideResumePhrasing: Record<string, unknown> = { status: "fallback", reason: "Phrasing model unavailable." };
+      if (gateway) {
+        try {
+          const phrased = await gateway.phraseModeratorTurn({
+            brand: session.sourceBrand,
+            action: "guide_resume",
+            participantMessage: input.content,
+            selectedQuestion: { id: actualAskedQuestion.id, question: selectedQuestionText ?? actualAskedQuestion.canonicalQuestion, objective: actualAskedQuestion.objective },
+            discussedPriorities: session.moderatorState.priorities.filter((priority) => priority.status === "reacted" || priority.status === "skipped").map((priority) => ({ label: priority.label, reactionEvidence: priority.reactionEvidence })),
+            understanding: session.moderatorState.understanding,
+            recentQuestionTexts: session.messages.filter((message) => message.role === "interviewer" && message.content.includes("?")).slice(-8).map((message) => message.content.slice(0, 1000)),
+            recentTurns: session.messages.slice(-12).map((message) => ({ role: message.role, content: message.content.slice(0, 6000) })),
+          });
+          assistantContent = phrased.result.text;
+          guideResumePhrased = true;
+          guideResumePhrasing = { status: "success", selectedQuestionId: actualAskedQuestion.id, result: phrased.result, trace: phrased.trace };
+        } catch (error) {
+          guideResumePhrasing = { status: "fallback", selectedQuestionId: actualAskedQuestion.id, reason: error instanceof Error ? error.message : "Guide resume phrasing failed." };
+        }
+      }
+      moderatorDecision = { ...moderatorDecision, guideResumePhrasing };
+    }
+    if (!guideResumePhrased) assistantContent = `We've finished discussing the priorities you raised. Let's return to the interview.\n\n${assistantContent}`;
+  }
   session.messages.push(
     createMessage("interviewer", assistantContent, references),
   );

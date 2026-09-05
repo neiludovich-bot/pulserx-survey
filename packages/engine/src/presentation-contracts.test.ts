@@ -5,6 +5,7 @@ import {
   mvpTurnRouteAnalysisResultSchema, type MvpTurnRouteAnalysisInput, type PresentationPlan,
 } from "@interview/schemas";
 import { OpenAIResponsesGateway } from "./openai-workflows";
+import { directSourceCompositionSystemPrompt } from "@interview/prompts";
 
 const understanding = { version: 1 as const, productFamiliarity: "low" as const, preferredDepth: "brief" as const, participantEvidence: ["Not very familiar with it."] };
 const brief: PresentationPlan = { version: 1, purpose: "orientation", depth: "brief", maxFacts: 3, maxTopics: 1, askReadiness: true };
@@ -76,6 +77,12 @@ describe("presentation and understanding contracts", () => {
     expect(JSON.parse(request.input[0].content[0].text).presentationPlan).toEqual(brief);
     expect(request.instructions).toContain("one concept in two or three supported facts");
     expect(request.instructions).toContain("do not append your own readiness or research question");
+    expect(request.instructions).toBe(directSourceCompositionSystemPrompt.instructions.join("\n"));
+    expect(request.instructions).toContain("two to four sentences, about 100 words or fewer");
+    expect(request.instructions).toContain("name rPFS naturally once");
+    expect(request.instructions).toContain("at most 180 words");
+    expect(request.instructions).toContain("Only sources[].text establishes medical facts");
+    expect(request.instructions).toContain("MFS or OS cannot substitute for PFS");
   });
 
   it("phrases a specific information need with recent context and keeps legacy phrasing inputs valid", async () => {
@@ -93,5 +100,42 @@ describe("presentation and understanding contracts", () => {
     expect(sourceTurnOutcomeSchema.parse({ version: 1, status: "grounding_rejected", attempts: [attempt] }).attempts).toEqual([attempt]);
     expect(() => sourceTurnOutcomeSchema.parse({ version: 1, status: "grounding_rejected", attempts: Array(5).fill(attempt) })).toThrow();
     expect(() => sourceTurnOutcomeSchema.parse({ version: 1, status: "composition_failure", participantMessage: "raw transcript", attempts: [] })).toThrow();
+  });
+
+  it.each(["NUBEQA", "BRUKINSA", "PADCEV"])("phrases the selected resumed guide question with prior discussion for %s and retains its audit trace", async (brand) => {
+    const input = {
+      brand, action: "guide_resume" as const, participantMessage: "Thanks, continue.", understanding,
+      selectedQuestion: { id: "decision_framework", question: `Before we get into ${brand}-specific information, what are your main treatment-selection factors?`, objective: "Understand the participant's treatment-selection factors." },
+      discussedPriorities: [{ label: "PFS", reactionEvidence: ["The efficacy results are one part of my assessment."] }, { label: "DDI", reactionEvidence: ["It is something I need to track."] }],
+      recentTurns: [{ role: "participant" as const, content: "Thanks, continue." }],
+    };
+    const text = "Alongside PFS and DDI, what other factors matter most in your treatment selection?";
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { text }, id: "guide-resume-response" });
+    const result = await gateway(parse).phraseModeratorTurn(input);
+    const request = parse.mock.calls[0][0];
+    expect(JSON.parse(request.input[0].content[0].text)).toEqual(input);
+    expect(result.result).toEqual({ text });
+    expect(result.trace).toMatchObject({ callType: "moderator_phrasing", promptVersion: "v5", response: { id: "guide-resume-response" } });
+    expect(request.metadata).toMatchObject({ action: "guide_resume", selected_question_id: "decision_framework" });
+    expect(request.text.format.schema.additionalProperties).toBe(false);
+    expect(request.text.format.schema.required).toEqual(["text"]);
+    expect(request.instructions).toContain("Remove obsolete timing language");
+    expect(request.instructions).toContain("Preserve its research intent, population, and scope");
+  });
+
+  it("requires the selected canonical question for guide resume and rejects multiple or appended questions", async () => {
+    const base = { brand: "NUBEQA", action: "guide_resume" as const, participantMessage: "continue", discussedPriorities: [] };
+    expect(moderatorPhrasingInputSchema.safeParse(base).success).toBe(false);
+    const input = { ...base, selectedQuestion: { id: "access", question: "How does access affect your selection?", objective: "Understand access factors." } };
+    const parse = vi.fn();
+    for (const output of [
+      { text: "What matters? Would you prescribe it?" },
+      { text: "How does access matter? Next, let's review safety." },
+      { text: "How does access matter?\nWhat else?" },
+      { text: "How does access matter?", nextAction: "present_priority" },
+    ]) {
+      parse.mockResolvedValue({ output_parsed: output });
+      await expect(gateway(parse).phraseModeratorTurn(input)).rejects.toThrow();
+    }
   });
 });

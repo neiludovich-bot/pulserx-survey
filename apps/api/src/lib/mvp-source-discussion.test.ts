@@ -30,6 +30,73 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
+  it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((brand) => [false, true].map((phrasingFails) => ({ brand, phrasingFails }))))("reconciles volunteered familiarity and resumes the unanswered $brand default-guide step (phrasing failure=$phrasingFails)", async ({ brand, phrasingFails }) => {
+    const started = startMvpCustomGptSurvey({ surveySlug: brand, targetDurationSeconds: 600 });
+    const researchAnswer = (evidence: string, source = false) => ({ ...questionRoute, answerStatus: "answered", answerEvidence: [evidence], asksSourceQuestion: source, decision: { ...questionRoute.decision, kind: source ? "source_question" : "planned_answer", needsSource: source, sourceDirective: source ? "Answer the source question." : null } });
+    mocks.route.mockResolvedValueOnce(researchAnswer("Yes, we can begin."));
+    const intake = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Yes, we can begin." });
+    const low = "Not very familiar with it.";
+    // Deliberately include a mistaken current-role answer credit: the separate
+    // validated familiarity fact must not satisfy unrelated structured intake.
+    mocks.route.mockResolvedValueOnce({ ...researchAnswer(low), understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidence: [low] } });
+    const orientation = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: low });
+    expect(orientation.currentQuestion).toContain("What would you most like clarified");
+    const baseline = mocks.persist.mock.calls.at(-1)![0].session;
+    expect(baseline.answeredQuestionIds).toContain("familiarity");
+    expect(baseline.answerEvidenceByQuestionId.familiarity).toEqual([low]);
+    if (brand !== "nubeqa") {
+      expect(baseline.answeredQuestionIds).not.toContain("role");
+      expect(baseline.pendingReturnQuestionId).toBe("role");
+    }
+    rehydrate(orientation);
+    mocks.gatewayEnabled = true;
+    const priorities = "PFS and DDI are the two things I would want to understand.";
+    mocks.route.mockResolvedValueOnce(researchAnswer(priorities));
+    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [{ label: "PFS", participantEvidence: "PFS", sourceQuestion: "What progression-free survival results are reported?" }, { label: "DDI", participantEvidence: "DDI", sourceQuestion: "What drug interactions are described?" }], reactionStatus: "not_answered", reactionEvidence: [], action: "present_priority", selectedPriorityId: null, rationale: "Explain the two priorities." } });
+    const resumedWording = brand === "nubeqa" ? "What factors matter most in your treatment decisions?" : "What is your clinical role?";
+    mocks.phrase.mockImplementation(async ({ action, priorityLabel }: { action: string; priorityLabel: string }) => {
+      if (action === "guide_resume" && phrasingFails) throw new Error("Invalid resumed-question phrasing");
+      return { result: { text: action === "guide_resume" ? resumedWording : `What would you want clarified about ${priorityLabel}?` }, trace: { responseId: "phrasing-fixture" } };
+    });
+    mocks.source.mockResolvedValue(success(brand));
+    const presented = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: priorities });
+    rehydrate(presented);
+    const priorityState = mocks.persist.mock.calls.at(-1)![0].session.moderatorState;
+    const reaction = "The efficacy results would be one part of my assessment.";
+    mocks.route.mockResolvedValueOnce(researchAnswer(reaction));
+    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: priorityState.priorities[1].id, rationale: "Move to DDI." } });
+    await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: reaction });
+    const mixedReaction = "It's something I need to track but not terribly concerning.";
+    mocks.route.mockResolvedValueOnce(researchAnswer(mixedReaction, true));
+    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionStatus: "answered", reactionEvidence: [mixedReaction], action: "answer_source", selectedPriorityId: priorityState.priorities[1].id, rationale: "Credit the reaction and answer the followup." } });
+    const detour = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: `${mixedReaction} What adverse reactions are described?` });
+    rehydrate(detour);
+    mocks.route.mockResolvedValueOnce(questionRoute);
+    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionStatus: "not_answered", reactionEvidence: [], action: "answer_source", selectedPriorityId: null, rationale: "Clarify the source discussion." } });
+    const clarified = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Can you explain that more simply?" });
+    rehydrate(clarified);
+    mocks.route.mockResolvedValueOnce({ ...questionRoute, asksSourceQuestion: false, decision: { ...questionRoute.decision, kind: "planned_answer", needsSource: false, sourceDirective: null } });
+    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionStatus: "not_answered", reactionEvidence: [], action: "resume_guide", selectedPriorityId: null, rationale: "Resume after both reactions and the detour." } });
+    const resumed = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Thanks, continue." });
+    expect(resumed.currentQuestion).not.toMatch(/How familiar/);
+    expect(resumed.currentQuestion).toBe(brand === "nubeqa" ? baseline.guide.find((question: { id: string }) => question.id === "decision_framework").canonicalQuestion : intake.currentQuestion);
+    const final = mocks.persist.mock.calls.at(-1)![0].session;
+    const selected = baseline.guide.find((question: { id: string }) => question.id === (brand === "nubeqa" ? "decision_framework" : "role"));
+    expect(mocks.phrase.mock.calls.at(-1)![0]).toMatchObject({ action: "guide_resume", selectedQuestion: { id: selected.id, question: selected.canonicalQuestion, objective: selected.objective }, discussedPriorities: [{ label: "PFS", reactionEvidence: [reaction] }, { label: "DDI", reactionEvidence: [mixedReaction] }] });
+    expect(final.currentQuestionId).toBe(selected.id);
+    const phrasingAudit = mocks.persist.mock.calls.at(-1)![0].turn.moderatorDecision.guideResumePhrasing;
+    expect(phrasingAudit.status).toBe(phrasingFails ? "fallback" : "success");
+    if (phrasingFails) expect(resumed.messages.at(-1)?.content).toContain(selected.canonicalQuestion);
+    else {
+      expect(resumed.messages.at(-1)?.content).toBe(resumedWording);
+      expect(resumed.messages.at(-1)?.content).not.toContain("Before we get into");
+      expect(phrasingAudit.trace).toEqual({ responseId: "phrasing-fixture" });
+    }
+    expect(final.answerEvidenceByQuestionId.familiarity).toEqual([low]);
+    expect(final.moderatorState.priorities.map((p: { status: string }) => p.status)).toEqual(["reacted", "reacted"]);
+    expect(final.pendingReturnQuestionId).toBeNull();
+    if (brand !== "nubeqa") expect(final.answeredQuestionIds).not.toContain("role");
+  });
   it.each([null, "detailed"] as const)("uses validated familiarity in imported guides and preserves explicit depth=%s", async (preferredDepth) => {
     const started = startMvpCustomGptSurvey({ surveySlug: "nubeqa", targetDurationSeconds: 600, guide: ["How familiar are you with NUBEQA?", "What factors matter most?", "What else would you like to add?"] });
     const content = preferredDepth ? "Not very familiar, but give me detail" : "Not very familiar";

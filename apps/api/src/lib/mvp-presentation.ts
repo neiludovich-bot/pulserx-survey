@@ -10,6 +10,7 @@ export function applyParticipantUnderstanding(state: ModeratorState, update: Par
     depthPreferenceExplicit: Boolean(update.preferredDepth || prior?.depthPreferenceExplicit),
     participantEvidence: [...new Set([...(prior?.participantEvidence ?? []), ...update.participantEvidence])].slice(-16),
   };
+  return update;
 }
 
 export function presentationFor(state: ModeratorState, purpose: PresentationPlan["purpose"]): PresentationPlan {

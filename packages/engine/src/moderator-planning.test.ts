@@ -6,6 +6,7 @@ import {
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionResultSchema,
   moderatorEvidenceSelectionModelResultSchema,
+  moderatorContextualEvidenceSelectionModelResultSchema,
   moderatorEvidenceSelectionInputSchema,
   moderatorEvidencePacketSchema,
   type ModeratorEvidencePacket,
@@ -394,6 +395,20 @@ describe("moderator evidence ID validation", () => {
     expect(moderatorEvidencePacketSchema.parse(packet).sources[0].evidenceRole).toBe("contextual");
   });
 
+  it("constrains contextual generation to the contextual role without relabeling direct output", async () => {
+    const output = { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [], evidenceRole: "contextual" }], rationale: "Selected supporting excerpt" };
+    const parse = vi.fn().mockResolvedValue({ output_parsed: output });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    await gateway.selectModeratorEvidence({ ...evidenceInput, evidenceFocus: "contextual" });
+    const format = parse.mock.calls[0][0].text.format;
+    expect(format.name).toBe("moderator_contextual_evidence_selection_result_v1");
+    expect(format.schema.properties.selections.items.properties.evidenceRole.enum).toEqual(["contextual"]);
+    expect(moderatorContextualEvidenceSelectionModelResultSchema.parse({ selections: [], rationale: "No relevant contextual facts" }).selections).toEqual([]);
+    expect(moderatorContextualEvidenceSelectionModelResultSchema.safeParse({ ...output, selections: [{ ...output.selections[0], evidenceRole: "direct" }] }).success).toBe(false);
+    parse.mockResolvedValue({ output_parsed: { ...output, selections: [{ ...output.selections[0], evidenceRole: "direct" }] } });
+    await expect(gateway.selectModeratorEvidence({ ...evidenceInput, evidenceFocus: "contextual" })).rejects.toThrow("cannot select direct");
+  });
+
   it("rejects unknown sources, repeated sources, and assets attached to a different source", () => {
     for (const selections of [
       [{ sourceId: "missing", supportExcerpt: "Interaction information", assetIds: [] }],
@@ -454,6 +469,7 @@ describe("moderator structured gateway", () => {
     ["moderator_plan_v2", moderatorPlanModelResultSchema],
     ["moderator_phrasing", moderatorPhrasingResultSchema],
     ["moderator_evidence", moderatorEvidenceSelectionModelResultSchema],
+    ["moderator_contextual_evidence", moderatorContextualEvidenceSelectionModelResultSchema],
   ] as const)("serializes %s through the installed OpenAI strict-schema helper", (name, schema) => {
     const format = zodTextFormat(schema, name);
     const json = JSON.parse(JSON.stringify(format));

@@ -85,7 +85,7 @@ beforeEach(() => {
   mocks.phrase.mockReset();
   mocks.phrase.mockImplementation(async (input: ModeratorPhrasingInput) => ({
     result: {
-      text: input.action === "reaction"
+      text: input.action === "guide_resume" ? input.selectedQuestion.question : input.action === "reaction"
         ? `How does this information about ${input.priorityLabel} affect your assessment?`
         : `You also mentioned ${input.priorityLabel}. Let's consider that next.`,
     },

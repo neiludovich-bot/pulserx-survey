@@ -134,7 +134,7 @@ export function isReferentialClarification(message: string) {
     .replace(/\s+please$/, "");
 
   // Match the entire request so a newly named topic always owns retrieval.
-  return /^(?:explain(?: (?:that|this|it))?(?: (?:more simply|in simpler terms|in simple terms|again|a bit more))?|(?:say|tell me) more(?: about (?:that|this|it))?|simplify(?: (?:that|this|it))?|what does (?:that|this|it) mean)$/.test(text);
+  return /^(?:explain(?: (?:that|this|it))?(?: (?:more simply|in simpler terms|in simple terms|again|a bit more))?|(?:even )?(?:more simply|simpler|shorter)|(?:say|tell me) more(?: about (?:that|this|it))?|simplify(?: (?:that|this|it))?|what does (?:that|this|it) mean)$/.test(text);
 }
 
 function hasBackwardSourceReference(message: string) {

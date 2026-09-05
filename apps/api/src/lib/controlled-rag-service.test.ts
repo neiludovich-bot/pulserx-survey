@@ -4,6 +4,7 @@ import { CONTROLLED_RAG_CHUNKS } from "./controlled-rag-source-packs";
 import {
   askControlledRagForSurveyInterviewerTurn,
   controlledRagTestInternals,
+  isReferentialClarification,
 } from "./controlled-rag-service";
 
 describe("controlled RAG source provider", () => {
@@ -48,6 +49,8 @@ describe("controlled RAG source provider", () => {
 
   it.each([
     "Can you explain that more simply?",
+    "Even more simply please.",
+    "Shorter please.",
     "Can explain more simply?",
     "Say more.",
     "What does that mean?",
@@ -65,6 +68,7 @@ describe("controlled RAG source provider", () => {
   });
 
   it("lets an explicit new ARANOTE request replace the previous DDI source topic", async () => {
+    expect(isReferentialClarification("Even more simply, explain ARANOTE please.")).toBe(false);
     const result = await askControlledRagForSurveyInterviewerTurn({
       ...parkedFactorsInput,
       participantMessage: "Can you explain ARANOTE rPFS more simply?",
@@ -85,6 +89,37 @@ describe("controlled RAG source provider", () => {
     expect(result.references[0]?.url).toBe("https://www.nubeqahcp.com/safety/ddi-profile");
     expect(result.answer).toContain("CYP3A4");
     expect(result.answer).not.toContain("For nmCRPC, ARAMIS frames");
+  });
+
+  it("rephrases retained complementary evidence without retrieving again for even more simply", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const planSourceQuestion = vi.fn();
+    const selectModeratorEvidence = vi.fn();
+    const composeControlledRagAnswer = vi.fn().mockResolvedValue({ result: {
+      answerBody: "Synthetic direct fact. [1] Synthetic contextual fact. [2]", usedSourceIndexes: [1, 2], limitations: [],
+    } });
+    vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({
+      planSourceQuestion, selectModeratorEvidence, composeControlledRagAnswer,
+    } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
+    const sources = (["direct", "contextual"] as const).map((role) => ({
+      id: `synthetic-${role}`, surveySlug: "nubeqa" as const, title: `Synthetic ${role}`,
+      url: `https://example.test/${role}`, description: "", tags: [], assets: [],
+      text: `Synthetic ${role} fact.`, evidenceRole: role,
+    }));
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      ...parkedFactorsInput, participantMessage: "Even more simply please.",
+      sourceTopicContext: "The practical follow-up already being discussed", evidencePacket: { sources },
+    });
+    expect(result.enabled).toBe(true);
+    expect(planSourceQuestion).not.toHaveBeenCalled();
+    expect(selectModeratorEvidence).not.toHaveBeenCalled();
+    expect(composeControlledRagAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      participantMessage: "Even more simply please.",
+      sources: expect.arrayContaining([
+        expect.objectContaining({ text: "Synthetic direct fact.", evidenceRole: "direct" }),
+        expect.objectContaining({ text: "Synthetic contextual fact.", evidenceRole: "contextual" }),
+      ]),
+    }));
   });
 
   it("composes the original clarification with DDI evidence and history, excluding parked questions", async () => {
