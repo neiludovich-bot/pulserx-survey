@@ -107,6 +107,23 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("keeps source evidence and reaction state through a failed followup, retry, and continue", async () => {
+    const initial = await presentAgenda(surveySlug);
+    const active = initial.state.priorities[0];
+    mocks.source.mockResolvedValueOnce({ enabled: false, answer: null, references: [], reason: "Grounding rejected", sourceOutcome: { version: 1, status: "grounding_rejected", attempts: [] } });
+    const failed = await runModeratorTurn(inputFor(surveySlug, { state: initial.state, isPriorityQuestion: false, participantMessage: "What else does that evidence say?", asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(failed?.state.sourceDiscussion).toMatchObject({ query: active.sourceQuestion, pendingQuestion: "What else does that evidence say?", status: "failed", evidencePacket: active.evidencePacket, returnTarget: { kind: "priority", id: active.id }, failure: { stage: "grounding" } });
+    expect(failed?.state.priorities[0]).toMatchObject({ status: "presented", probeCount: 0, reactionEvidence: [] });
+    expect(failed?.question).toBeNull();
+    const retried = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(failed!.state), isPriorityQuestion: false, participantMessage: "retry", asksSourceQuestion: false, answerStatus: "not_answered" }));
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ participantMessage: "What else does that evidence say?", sourceTopicContext: active.sourceQuestion, evidencePacket: active.evidencePacket });
+    expect(retried?.content).not.toContain('say "continue"');
+    const resumed = await runModeratorTurn(inputFor(surveySlug, { state: retried!.state, isPriorityQuestion: false, participantMessage: "continue", asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
+    expect(resumed?.state.activePriorityId).toBe(active.id);
+    expect(resumed?.state.priorities[0].probeCount).toBe(0);
+    expect(resumed?.state.sourceDiscussion).toBeUndefined();
+    expect(resumed?.question).toContain("PFS");
+  });
   it.each(["schema", "evidence"])("retries one invalid planner %s result without duplicate state changes or source calls", async (failure) => {
     const first = await presentAgenda(surveySlug);
     const reaction = "That evidence would increase my confidence in choosing it for appropriate patients.";
@@ -303,7 +320,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ recentTurns }));
     expect(result?.decision.sourceQuestionPlan).toEqual(sourceQuestionPlan);
     expect(result?.decision.sourceAnswerGrounding).toEqual(sourceAnswerGrounding);
-    expect(result?.state.sourceDiscussion).toEqual({
+    expect(result?.state.sourceDiscussion).toMatchObject({
       query: sourceQuestionPlan.interpretedQuestion, evidencePacket: evidenceFor(surveySlug, "DDI"),
     });
     expect(result?.state.priorities).toEqual(first.state.priorities);
@@ -317,7 +334,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       state: first.state, currentQuestion: first.question, participantMessage: sourceQuestion,
       isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered",
     }));
-    expect(detour?.state.sourceDiscussion).toEqual({ query: sourceQuestion, evidencePacket: evidenceFor(surveySlug, "DDI") });
+    expect(detour?.state.sourceDiscussion).toMatchObject({ query: sourceQuestion, evidencePacket: evidenceFor(surveySlug, "DDI") });
     expect(detour?.state.priorities).toEqual(first.state.priorities);
     mocks.source.mockClear();
     mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });

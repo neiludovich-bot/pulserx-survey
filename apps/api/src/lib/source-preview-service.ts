@@ -529,50 +529,13 @@ function curatedAssetLooksLikeDocument(asset: CuratedSourceAsset) {
   return !curatedAssetLooksLikeImage(asset) || urlLooksLikePdf(asset.url);
 }
 
-function scoreCuratedAsset(asset: CuratedSourceAsset) {
-  const haystack =
-    `${asset.title} ${asset.description ?? ""} ${asset.url} ${asset.tags.join(" ")}`.toLowerCase();
-  const kind = asset.assetKind.toUpperCase();
-  let score = asset.priority;
-
-  if (["CHART", "TABLE", "IMAGE"].includes(kind)) {
-    score += 120;
-  }
-
-  if (kind === "PDF" || urlLooksLikePdf(asset.url)) {
-    score += 90;
-  }
-
-  if (/\b(?:graph|chart|curve|kaplan|km|table|forest plot|pfs|rpfs|mfs|metastasis-free|metastasis free|overall survival|os|orr|hazard ratio|confidence interval|95% ci|ev-302|keynote|ev-301|ev-201|sequoia|alpine|aspen|aranote|arasens|aramis)\b/.test(haystack)) {
-    score += 90;
-  }
-
-  if (/\b(?:guide|checklist|monitoring|dose modification|dosing and administration|peripheral neuropathy|adverse reaction|management resource)\b/.test(haystack)) {
-    score += 80;
-  }
-
-  if (/\b(?:hero|lifestyle|campaign|airplane|aircraft|plane|jet|flight|travel|splash|product shot|pill|tablet|capsule)\b/.test(haystack)) {
-    score -= 220;
-  }
-
-  return score;
-}
-
 function uniqueCuratedAssets(assets: CuratedSourceAsset[]) {
   const seen = new Set<string>();
-
-  return [...assets]
-    .map((asset) => ({ asset, score: scoreCuratedAsset(asset) }))
-    .filter(({ score }) => score > 0)
-    .sort((left, right) => right.score - left.score)
-    .filter(({ asset }) => {
-      if (seen.has(asset.url)) {
-        return false;
-      }
-      seen.add(asset.url);
-      return true;
-    })
-    .map(({ asset }) => asset);
+  return assets.filter((asset) => {
+    if (seen.has(asset.url)) return false;
+    seen.add(asset.url);
+    return true;
+  });
 }
 
 function curatedImages(assets: CuratedSourceAsset[]): SourcePreviewImage[] {
@@ -788,7 +751,7 @@ function extractTitle(html: string, fallbackTitle?: string) {
 export async function previewSourceImages(
   input: MvpCustomGptSourcePreviewRequest,
 ) {
-  const cacheKey = JSON.stringify({ url: input.url, title: input.title, assets: input.assets ?? [] });
+  const cacheKey = JSON.stringify({ url: input.url, title: input.title, assets: input.assets ?? null });
   const cached = sourcePreviewCache.get(cacheKey);
   if (cached) {
     return cached;
@@ -801,7 +764,7 @@ export async function previewSourceImages(
 
   // The turn selected these assets for a particular question. Page-wide
   // scraping would undo that selection (for example, DDI -> adverse events).
-  if (inputImages.length || inputDocuments.length) {
+  if (input.assets !== undefined) {
     const result = mvpCustomGptSourcePreviewResponseSchema.parse({
       sourceUrl: url.toString(),
       title: input.title ?? null,

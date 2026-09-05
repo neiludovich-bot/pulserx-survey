@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { sourceQuestionPlanSchema, sourceQuestionRecentTurnsSchema } from "./source-question";
 import { moderatorEvidenceRoleSchema } from "./moderator";
+import { participantUnderstandingSchema, participantUnderstandingUpdateSchema, presentationPlanSchema } from "./presentation";
+export * from "./presentation";
 export * from "./moderator";
 export * from "./source-question";
 
@@ -112,6 +114,7 @@ export const controlledRagCompositionSourceSchema = z.object({
 });
 
 export const controlledRagCompositionInputSchema = z.object({
+  presentationPlan: presentationPlanSchema.optional(),
   surveySlug: z.string().min(1),
   participantMessage: z.string().min(1),
   resolvedSourceQuestion: z.string().min(1).nullable().default(null),
@@ -190,6 +193,7 @@ export const mvpTurnRouteCandidateSchema = z.object({
 }).strict();
 
 export const mvpTurnRouteAnalysisInputSchema = z.object({
+  understanding: participantUnderstandingSchema.optional(),
   surveySlug: z.enum(["brukinsa", "padcev", "data", "nubeqa"]),
   sourceBrand: z.string().min(1),
   activeIntentSlug: z.string().min(1).nullable(),
@@ -207,7 +211,8 @@ export const mvpTurnRouteAnalysisInputSchema = z.object({
 }).strict();
 
 export const mvpTurnRouteAnalysisResultSchema = z.object({
-  schemaVersion: z.literal(3),
+  schemaVersion: z.union([z.literal(3), z.literal(4)]),
+  understandingUpdate: participantUnderstandingUpdateSchema.nullable().optional(),
   answerStatus: z.enum(["answered", "partial", "not_answered"]),
   asksSourceQuestion: z.boolean(),
   answerEvidence: z.array(z.string().trim().min(1)).max(8),
@@ -227,6 +232,13 @@ export const mvpTurnRouteAnalysisResultSchema = z.object({
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["needsSource"], message: "Source retrieval requires an in-scope participant information request." });
   }
 });
+
+export const mvpTurnRouteAnalysisModelResultSchema = mvpTurnRouteAnalysisResultSchema.innerType().extend({
+  schemaVersion: z.literal(4),
+  understandingUpdate: participantUnderstandingUpdateSchema.nullable(),
+  suggestedQuestionIds: z.array(z.string().min(1)).max(3),
+  sourceDirective: z.string().min(1).nullable(),
+}).strict();
 
 export const controlledRagContextualCompositionResultSchema = z.object({
   practicalAnswer: z.string().trim().min(1).max(2000),

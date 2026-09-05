@@ -55,7 +55,7 @@ describe("typed source-question planning", () => {
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "analysis-model", decisionModel: "decision-model", phrasingModel: "phrasing-model" }, undefined, { parse });
     const result = await gateway.planSourceQuestion(input);
     expect(result.result).toEqual(plan);
-    expect(result.trace).toMatchObject({ callType: "source_question_plan", promptVersion: "v1", request: { input } });
+    expect(result.trace).toMatchObject({ callType: "source_question_plan", promptVersion: "v2", request: { input } });
     const request = parse.mock.calls[0][0];
     expect(request).toMatchObject({ model: "analysis-model", text: { format: { name: "source_question_plan_v1", strict: true } } });
     expect(JSON.parse(request.input[0].content[0].text)).toEqual(input);

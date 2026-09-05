@@ -1,4 +1,4 @@
-import { moderatorEvidencePacketSchema, sourceAnswerGroundingAuditSchema, type SourceAnswerGroundingAudit, type GroundedReference, type ModeratorEvidencePacket, type SourceQuestionPlan, type SourceQuestionPlanInput } from "@interview/schemas";
+import { moderatorEvidencePacketSchema, sourceAnswerGroundingAuditSchema, type SourceAnswerGroundingAudit, type GroundedReference, type ModeratorEvidencePacket, type SourceQuestionPlan, type SourceQuestionPlanInput, type SourceTurnOutcome } from "@interview/schemas";
 import {
   CONTROLLED_RAG_CHUNKS,
   NUBEQA_ARANOTE_UTI_FACTS,
@@ -12,6 +12,7 @@ import { stripQuestionSentences } from "./source-answer-sentences";
 import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 import { sourceContentSearchSql } from "./source-retrieval-query";
 import { planSourceQuestion } from "./source-question-planner";
+import { sourceTurnOutcome } from "./source-turn-outcome";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -43,6 +44,7 @@ export type ControlledRagSurveyTurnInput = {
   sourceQuestionPlan?: SourceQuestionPlan | null;
   sourceTopicContext?: string | null;
   evidencePacket?: ModeratorEvidencePacket | null;
+  presentationPlan?: SourceQuestionPlanInput["presentationPlan"];
   responseMode?: "answer_only" | "answer_then_ask";
 };
 
@@ -56,6 +58,7 @@ export type ControlledRagSurveyTurnResult = {
   evidencePacket?: ModeratorEvidencePacket | null;
   sourceQuestionPlan?: SourceQuestionPlan | null;
   sourceAnswerGrounding?: SourceAnswerGroundingAudit | null;
+  sourceOutcome?: SourceTurnOutcome;
 };
 
 const STOP_WORDS = new Set([
@@ -1565,9 +1568,9 @@ async function composeSourceAnswer(
   const fallbackInput = { ...input, participantMessage: retrievalQuery };
 
   if (process.env.NODE_ENV === "test") {
-    return { available: true, answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null };
+    return { available: true, answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null, outcome: sourceTurnOutcome("success") };
   }
-  if (!gateway) return { available: false, answer: SOURCE_EXPLANATION_UNAVAILABLE, grounding: null };
+  if (!gateway) return { available: false, answer: SOURCE_EXPLANATION_UNAVAILABLE, grounding: null, outcome: sourceTurnOutcome("configuration_failure") };
 
   try {
     const composition = await gateway.composeControlledRagAnswer({
@@ -1576,6 +1579,7 @@ async function composeSourceAnswer(
       resolvedSourceQuestion: retrievalQuery,
       sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null,
       sourceQuestionPlan: input.sourceQuestionPlan ?? null,
+      presentationPlan: input.presentationPlan,
       recentTurns: input.recentTurns ?? [],
       surveyContext: input.surveyContext,
       currentQuestion: input.currentQuestion,
@@ -1621,13 +1625,14 @@ async function composeSourceAnswer(
       usedIndexes[0],
     );
     const grounding = "groundingReview" in composition ? sourceAnswerGroundingAuditSchema.parse(composition.groundingReview) : null;
-    return { available: true, answer, grounding };
+    return { available: true, answer, grounding, outcome: sourceTurnOutcome("success", composition) };
   } catch (error) {
-    console.warn({ event: "source_answer_composition_failed", groundingAttempted: !!error && typeof error === "object" && "contextualCompositionAttempts" in error });
+    const outcome = sourceTurnOutcome("composition_failure", error);
+    console.warn(JSON.stringify({ event: "source_answer_composition_failed", outcome }));
     // A rejected draft is not permission to expose unedited or truncated
     // retrieval fragments as a clinical explanation. Keep the source links
     // and the interview state available for clarification or resumption.
-    return { available: false, answer: SOURCE_EXPLANATION_UNAVAILABLE, grounding: null };
+    return { available: false, answer: SOURCE_EXPLANATION_UNAVAILABLE, grounding: null, outcome };
   }
 }
 
@@ -1642,7 +1647,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
   const recentTurns = (input.recentTurns ?? []).slice(-24).map((turn) => ({ ...turn, content: turn.content.slice(0, 12000) }));
   const sourceQuestionPlan = input.responseMode === "answer_only" && !(pureClarification && retained)
     ? await planSourceQuestion({ surveySlug: input.surveySlug, participantMessage: input.participantMessage.slice(0, 12000),
-        sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null, recentTurns })
+        sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null, recentTurns, presentationPlan: input.presentationPlan })
     : null;
   const retrievalQuery = sourceQuestionPlan?.interpretedQuestion ?? original.retrievalQuery;
   const retrievalInput = { ...original.retrievalInput, participantMessage: retrievalQuery };
@@ -1718,6 +1723,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
       conversationId: null,
       reason:
         "Controlled RAG did not retrieve a matching curated source chunk.",
+      sourceOutcome: sourceTurnOutcome("no_evidence"),
       sourceQuestionPlan,
     };
   }
@@ -1738,6 +1744,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     cited = { answer: SOURCE_EXPLANATION_UNAVAILABLE, references };
     composition.grounding = null;
     explanationAvailable = false;
+    composition.outcome = sourceTurnOutcome("composition_failure", new Error("Contextual composition requires individual citations."));
   }
   const answer = [
     cited.answer,
@@ -1762,6 +1769,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     evidencePacket: packet.success ? packet.data : null,
     sourceQuestionPlan,
     sourceAnswerGrounding: composition.grounding,
+    sourceOutcome: composition.outcome,
   };
 }
 

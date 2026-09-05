@@ -37,6 +37,14 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it.each([true, false])("exposes understanding updates only when their evidence is exact (valid=%s)", async (valid) => {
+    const participantContent = "Not very familiar; keep it brief.";
+    const understandingUpdate = { version: 1, productFamiliarity: "low", preferredDepth: "brief", participantEvidence: [valid ? "Not very familiar" : "I use it daily"] };
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, schemaVersion: 4, answerEvidence: ["Not very familiar"], understandingUpdate } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, currentQuestionId: "familiarity", currentQuestion: "How familiar are you?", participantContent });
+    if (valid) expect(route.understandingUpdate).toEqual(understandingUpdate);
+    else { expect(route.understandingUpdate).toBeUndefined(); expect(route.error).toContain("Understanding evidence"); }
+  });
   it.each([false, true])("preserves both parts of a mixed trailing question even when the model misroutes it (source=%s)", async (asksSourceQuestion) => {
     const reaction = "It's something that I need to track but not terribly concerning.";
     const participantContent = `${reaction}  So someone on those medications are at risk for what adverse reactions`;
@@ -72,6 +80,13 @@ describe("typed hybrid participant turn interpretation", () => {
     expect(route.asksSourceQuestion).toBe(false);
     expect(route.decision.needsSource).toBe(false);
     expect(gateway.analyzeMvpTurnRoute).toHaveBeenCalledWith(expect.objectContaining({ currentQuestionObjective: input.currentQuestionObjective, currentQuestionCompletionSignals: input.currentQuestionCompletionSignals }));
+  });
+
+  it("supplies durable participant understanding to the typed router", async () => {
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result });
+    const understanding = { version: 1 as const, productFamiliarity: "low" as const, preferredDepth: "detailed" as const, depthPreferenceExplicit: true, participantEvidence: ["I am new to this but want detail"] };
+    await classifyMvpTurnRouteHybrid({ ...input, understanding });
+    expect(gateway.analyzeMvpTurnRoute).toHaveBeenCalledWith(expect.objectContaining({ understanding }));
   });
 
   it("lets valid model interpretation override the deterministic source inference", async () => {

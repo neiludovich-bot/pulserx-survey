@@ -17,6 +17,7 @@ import { interpretMvpParticipantIntent, participantOnlyRequestsInformation, part
 export type MvpRouteAnalysisCandidate = MvpTurnRouteCandidate;
 
 export type MvpHybridTurnRouteInput = MvpParticipantIntentInput & {
+  understanding?: import("@interview/schemas").ParticipantUnderstanding;
   surveySlug: MvpSurveySlug;
   sourceBrand: string;
   activeIntentSlug?: string | null;
@@ -33,6 +34,7 @@ export type MvpHybridTurnRouteInput = MvpParticipantIntentInput & {
 };
 
 export type MvpHybridTurnRouteDecision = MvpParticipantIntent & {
+  understandingUpdate?: MvpTurnRouteAnalysisResult["understandingUpdate"];
   decision: MvpTurnRouteDecision;
   provider: "deterministic" | "openai_hybrid";
   suggestedQuestionIds: string[];
@@ -139,6 +141,7 @@ export async function classifyMvpTurnRouteHybrid(
     const route = await gateway.analyzeMvpTurnRoute({
       surveySlug: input.surveySlug,
       sourceBrand: input.sourceBrand,
+      understanding: input.understanding,
       activeIntentSlug: input.activeIntentSlug ?? null,
       activeIntentLabel: input.activeIntentLabel ?? null,
       activeIntentSteeringRule: input.activeIntentSteeringRule ?? null,
@@ -158,6 +161,9 @@ export async function classifyMvpTurnRouteHybrid(
     }
     if (result.answerEvidence.some((excerpt) => !input.participantContent.includes(excerpt))) {
       throw new Error("Route answer evidence must be an exact excerpt of the participant message.");
+    }
+    if (result.understandingUpdate?.participantEvidence.some((excerpt) => !input.participantContent.includes(excerpt))) {
+      throw new Error("Understanding evidence must be an exact excerpt of the participant message.");
     }
     if (participantHasInSituQuestion(input.participantContent) &&
         (!result.asksSourceQuestion || result.answerEvidence.some(participantRequestsInformation))) {
@@ -184,6 +190,7 @@ export async function classifyMvpTurnRouteHybrid(
       answerStatus: result.answerStatus,
       asksSourceQuestion: result.asksSourceQuestion,
       answerEvidence: result.answerEvidence,
+      understandingUpdate: result.understandingUpdate ?? null,
       decision: decisionFromModelResult(result),
       provider: "openai_hybrid",
       suggestedQuestionIds,

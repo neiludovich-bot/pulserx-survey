@@ -122,9 +122,17 @@ export async function selectFocusedSourceEvidence(input: {
       if (!chunks.length) console.info({ event: "source_evidence_selection_empty", candidateCount: candidates.length });
       return { chunks, mode: "semantic" };
     } catch (error) {
-      const record = error !== null && typeof error === "object" ? error as { name?: unknown; status?: unknown } : {};
+      const record = error !== null && typeof error === "object" ? error as { name?: unknown; status?: unknown; message?: unknown } : {};
       const names = new Set(["Error", "ZodError", "APIError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "APIConnectionError", "APIConnectionTimeoutError", "BadRequestError", "InternalServerError"]);
+      const message = typeof record.message === "string" ? record.message : "";
+      const code = /exact supporting excerpt|support must quote/.test(message) ? "nonverbatim_excerpt"
+        : /distinct submitted source IDs|Invalid evidence source/.test(message) ? "invalid_source_id"
+        : /assets must be unique|asset does not belong|Invalid evidence asset/.test(message) ? "invalid_asset_id"
+        : /contextual evidence search/.test(message) ? "wrong_evidence_role"
+        : /no parsed output/.test(message) ? "missing_structured_output"
+        : record.name === "ZodError" ? "invalid_schema" : "provider_failure";
       console.warn({ event: "source_evidence_selection_failed", attempt,
+        code,
         category: typeof record.name === "string" && names.has(record.name) ? record.name : "Error",
         status: typeof record.status === "number" ? record.status : null,
         reason: "No validated evidence selection was available." });

@@ -3,6 +3,8 @@ import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSche
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 import { isReferentialClarification } from "./controlled-rag-service";
+import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, withSourceNavigationHint } from "./mvp-source-discussion";
+import { presentationFor } from "./mvp-presentation";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
 type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string };
@@ -40,7 +42,8 @@ export async function runModeratorTurn(input: Input) {
     plan = { newPriorities: labels.map((label) => ({ label: label.slice(0, 200), participantEvidence: label, sourceQuestion: `What approved evidence about ${label} is available for ${input.brand}?` })), reactionStatus: "not_answered", reactionEvidence: [], action: "probe_reaction", selectedPriorityId: null, rationale: "Retain pending topics and ask for clarification while model planning is unavailable." };
   }
   const previousActive = state.priorities.find((p) => p.id === state.activePriorityId);
-  const sourceOnlyTurn = (input.asksSourceQuestion || plan.action === "answer_source") && input.answerStatus === "not_answered";
+  const retryRequested = Boolean(state.sourceDiscussion && isSourceRetryCue(input.participantMessage));
+  const sourceOnlyTurn = retryRequested || (input.asksSourceQuestion || plan.action === "answer_source") && input.answerStatus === "not_answered";
   if (!hadOpenPriorities && !state.sourceDiscussion && plan.newPriorities.length === 0) return null;
   for (const priority of plan.newPriorities) {
     if (state.priorities.length >= 64) break;
@@ -73,43 +76,55 @@ export async function runModeratorTurn(input: Input) {
   let question: string | null = null;
   let sourceReason: string | null = null;
   let sourceEvidencePacket: ModeratorEvidencePacket | undefined;
-  const sourcePlanning: { plan: SourceQuestionPlan | null; grounding: SourceAnswerGroundingAudit | null } = { plan: null, grounding: null };
+  const sourcePlanning: { plan: SourceQuestionPlan | null; grounding: SourceAnswerGroundingAudit | null; outcome?: import("@interview/schemas").SourceTurnOutcome } = { plan: null, grounding: null };
   const creditOriginalAnswer = !previousActive && input.answerStatus === "answered" && plan.newPriorities.length > 0;
   const phrase = async (kind: "reaction" | "transition", label: string) => {
     try {
       if (!gateway) throw new Error("No phrasing model");
-      const text = (await gateway.phraseModeratorTurn({ brand: input.brand, action: kind, priorityLabel: label, participantMessage: input.participantMessage, previousPriorityLabel: previousActive?.label ?? null })).result.text;
+      const text = (await gateway.phraseModeratorTurn({ brand: input.brand, action: kind, priorityLabel: label, participantMessage: input.participantMessage, previousPriorityLabel: previousActive?.label ?? null,
+        understanding: state.understanding, presentationPlan: presentationFor(state, "reaction_setup"), selectedObjective: input.currentQuestion?.slice(0, 1000),
+        evidenceSummary: (sourceEvidencePacket ?? previousActive?.evidencePacket)?.sources.map((source) => source.text).join("\n").slice(0, 6000),
+        reactionEvidence: previousActive?.reactionEvidence.slice(-16) ?? [],
+        recentQuestionTexts: input.recentTurns.filter((turn) => turn.role === "interviewer").flatMap((turn) => turn.content.split(/\n+/).filter((line) => line.includes("?"))).slice(-8).map((line) => line.slice(0, 1000)),
+        probeIntent: state.understanding?.productFamiliarity === "low" ? "information_need" : previousActive?.probeCount ? "clarification" : "implication",
+      })).result.text;
       if (kind === "reaction" && (text.match(/\?/g)?.length !== 1)) throw new Error("A reaction prompt must contain one question.");
       return text;
     } catch {
-      return kind === "reaction" ? `How does this information about ${label} affect your assessment of ${input.brand}?` : `You also mentioned ${label}. Let's look at that next.`;
+      return kind === "reaction" ? state.understanding?.productFamiliarity === "low" ? `What would you want clarified about ${label} before forming a view?` : `How does this information about ${label} affect your assessment of ${input.brand}?` : `You also mentioned ${label}. Let's look at that next.`;
     }
   };
   const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket) => {
     sourceUsed = true;
     try {
-      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, presentationPlan: presentationFor(state, "source_answer"), surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
       sourcePlanning.plan = answer.sourceQuestionPlan ?? null;
       sourcePlanning.grounding = answer.sourceAnswerGrounding ?? null;
+      sourcePlanning.outcome = answer.sourceOutcome;
       if (!answer.enabled || !answer.answer || !answer.references.length) { sourceReason = answer.reason ?? "No supporting evidence returned."; return null; }
       references = answer.references;
       sourceEvidencePacket = answer.evidencePacket ?? undefined;
       return answer.answer;
     } catch (error) { sourceReason = error instanceof Error ? error.message : "Evidence unavailable."; return null; }
   };
-  if ((input.asksSourceQuestion || plan.action === "answer_source") && !input.isResumeCue) {
+  const retryPendingPresentation = retryRequested && state.priorities.some((p) => p.id === state.sourceDiscussion?.returnTarget?.id && p.status === "pending");
+  if ((input.asksSourceQuestion || plan.action === "answer_source" || retryRequested) && !input.isResumeCue && !retryPendingPresentation) {
     action = "answer_source";
     const discussion = state.sourceDiscussion;
     const sourceTopic = discussion?.query ?? previousActive?.sourceQuestion ?? null;
     const retainedPacket = discussion ? discussion.evidencePacket : previousActive?.evidencePacket;
-    const answer = await source(input.participantMessage, sourceTopic, retainedPacket);
-    state.sourceDiscussion = {
-      query: sourcePlanning.plan?.interpretedQuestion ?? (isReferentialClarification(input.participantMessage) && sourceTopic ? sourceTopic : input.participantMessage),
-      ...(sourceEvidencePacket ? { evidencePacket: structuredClone(sourceEvidencePacket) } : {}),
-    };
-    content = answer ? `${answer}\n\nWhat else would you like to explore? Say "continue" when you're ready to return to the interview.` : 'I could not find supporting evidence for that question. You can clarify your question, or say "continue" to return to the interview.';
+    const request = sourceRequestForTurn(state, input.participantMessage);
+    if (!discussion && sourceTopic) state.sourceDiscussion = { query: sourceTopic, ...(retainedPacket ? { evidencePacket: structuredClone(retainedPacket) } : {}) };
+    beginSourceDiscussion(state, request, previousActive ? { kind: "priority", id: previousActive.id } : null);
+    if (retainedPacket && !state.sourceDiscussion!.evidencePacket) state.sourceDiscussion!.evidencePacket = structuredClone(retainedPacket);
+    const answer = await source(request, sourceTopic, retainedPacket);
+    if (answer) {
+      completeSourceDiscussion(state, sourcePlanning.plan?.interpretedQuestion ?? (isReferentialClarification(request) && sourceTopic ? sourceTopic : request), sourceEvidencePacket);
+    } else failSourceDiscussion(state, sourceDiscussionFailure(sourcePlanning.outcome, sourceReason ?? "Source answer unavailable."));
+    content = withSourceNavigationHint(state, answer ?? "I couldn't produce a supported answer to that question. I've kept our place in the interview.");
   } else {
-    delete state.sourceDiscussion;
+    const pendingPresentation = state.sourceDiscussion?.returnTarget?.kind === "priority" && state.priorities.some((p) => p.id === state.sourceDiscussion?.returnTarget?.id && p.status === "pending");
+    if (!pendingPresentation) delete state.sourceDiscussion;
     const active = state.priorities.find((p) => p.id === state.activePriorityId && p.status === "presented");
     if (active) {
       action = "probe_reaction";
@@ -127,8 +142,10 @@ export async function runModeratorTurn(input: Input) {
       const next = state.priorities.find((p) => p.id === plan.selectedPriorityId && p.status === "pending") ?? state.priorities.find((p) => p.status === "pending");
       if (next) {
         action = "present_priority";
+        beginSourceDiscussion(state, next.sourceQuestion, { kind: "priority", id: next.id });
         const answer = await source(next.sourceQuestion);
         if (answer) {
+          delete state.sourceDiscussion;
           next.status = "presented";
           next.referenceIds = references.map((r) => r.citationId);
           if (sourceEvidencePacket) next.evidencePacket = structuredClone(sourceEvidencePacket);
@@ -137,9 +154,12 @@ export async function runModeratorTurn(input: Input) {
           const transition = previousActive ? await phrase("transition", next.label) : `You mentioned ${acknowledgement}. Let's start with ${next.label}.`;
           question = await phrase("reaction", next.label);
           content = `${transition}\n\n${answer}\n\n${question}`;
-        } else content = `I couldn't retrieve supporting evidence about ${next.label}. I've kept it on our list. Say "continue" to retry, or ask a more specific question.`;
+        } else {
+          failSourceDiscussion(state, sourceDiscussionFailure(sourcePlanning.outcome, sourceReason ?? "Priority evidence unavailable."));
+          content = withSourceNavigationHint(state, `I couldn't retrieve supporting evidence about ${next.label}. I've kept it on our list.`);
+        }
       } else { action = "resume_guide"; state.activePriorityId = null; }
     }
   }
-  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding } };
+  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding, sourceOutcome: sourcePlanning.outcome ?? null } };
 }

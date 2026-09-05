@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { presentationPlanSchema } from "./presentation";
 
 export const sourceQuestionRecentTurnsSchema = z.array(z.object({
   role: z.enum(["interviewer", "participant"]),
@@ -11,6 +12,7 @@ export const sourceQuestionPlanInputSchema = z.object({
   participantMessage: z.string().min(1).max(12000),
   sourceTopicContext: z.string().min(1).max(6000).nullable(),
   recentTurns: sourceQuestionRecentTurnsSchema,
+  presentationPlan: presentationPlanSchema.optional(),
 }).strict();
 
 export const sourceQuestionPlanSchema = z.object({

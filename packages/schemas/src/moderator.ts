@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sourceQuestionPlanSchema } from "./source-question";
+import { participantUnderstandingSchema, presentationPlanSchema } from "./presentation";
 
 const evidenceExcerptSchema = z.string().min(1).max(4000);
 const answerStatusSchema = z.enum(["answered", "partial", "not_answered"]);
@@ -49,9 +50,18 @@ export const moderatorStateSchema = z.object({
   version: z.literal(1),
   priorities: z.array(moderatorPrioritySchema).max(64),
   activePriorityId: z.string().min(1).nullable(),
+  understanding: participantUnderstandingSchema.optional(),
   sourceDiscussion: z.object({
     query: z.string().min(1).max(12000),
     evidencePacket: moderatorEvidencePacketSchema.optional(),
+    pendingQuestion: z.string().min(1).max(12000).optional(),
+    status: z.enum(["open", "failed"]).optional(),
+    returnTarget: z.object({ kind: z.enum(["guide", "priority"]), id: z.string().min(1) }).strict().nullable().optional(),
+    navigationHintShown: z.boolean().optional(),
+    failure: z.object({
+      stage: z.enum(["unavailable", "planning", "retrieval", "composition", "grounding"]),
+      message: z.string().min(1).max(1000),
+    }).strict().nullable().optional(),
   }).strict().optional(),
 }).strict().superRefine((state, context) => {
   const ids = new Set(state.priorities.map((priority) => priority.id));
@@ -117,6 +127,13 @@ export const moderatorPhrasingInputSchema = z.object({
   priorityLabel: z.string().min(1).max(200),
   participantMessage: z.string().max(12000),
   previousPriorityLabel: z.string().min(1).max(200).nullable(),
+  understanding: participantUnderstandingSchema.optional(),
+  presentationPlan: presentationPlanSchema.optional(),
+  selectedObjective: z.string().min(1).max(1000).optional(),
+  evidenceSummary: z.string().max(6000).optional(),
+  reactionEvidence: z.array(evidenceExcerptSchema).max(16).optional(),
+  recentQuestionTexts: z.array(z.string().min(1).max(1000)).max(8).optional(),
+  probeIntent: z.enum(["clarification", "implication", "information_need"]).optional(),
 }).strict();
 
 export const moderatorPhrasingResultSchema = z.object({

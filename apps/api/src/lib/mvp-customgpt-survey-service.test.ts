@@ -127,7 +127,7 @@ describe("MVP CustomGPT survey service", () => {
     expect(completed.currentQuestion).toBeNull();
   });
 
-  it("keeps the guarded survey moving when CustomGPT credentials are missing", async () => {
+  it("preserves the consent question when a requested source answer cannot run without credentials", async () => {
     env.CUSTOMGPT_API_KEY = undefined;
     env.CUSTOMGPT_PROJECT_ID = undefined;
 
@@ -142,15 +142,14 @@ describe("MVP CustomGPT survey service", () => {
       content: "Can you explain the SEQUOIA frontline evidence first?",
     });
 
-    expect(next.nextAction).toBe("setup_required");
+    expect(next.nextAction).toBe("ask");
     expect(next.currentQuestion).toContain("Is it okay to begin?");
-    expect(next.messages.at(-1)?.content).toContain(
-      "CUSTOMGPT_API_KEY is not configured",
-    );
-    expect(next.messages.at(-1)?.content).toContain("Source context needed");
-    expect(next.messages.at(-1)?.content).toContain("SEQUOIA");
-    expect(next.messages.at(-1)?.content).toContain("Is it okay to begin?");
-    expect(next.messages.at(-1)?.content).not.toContain("guarded survey flow");
+    expect(next.messages.at(-1)?.content).toContain("kept our place");
+    expect(next.messages.at(-1)?.content).toContain('say "retry"');
+    expect(next.messages.at(-1)?.content).not.toMatch(/Is it okay to begin|CUSTOMGPT_API_KEY|Source context needed/);
+    const resumed = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "continue" });
+    expect(resumed.messages.at(-1)?.content).toContain("Is it okay to begin?");
+    expect(resumed.currentQuestion).toBe(next.currentQuestion);
   });
 
   it("does not call CustomGPT for plain non-source survey navigation", async () => {

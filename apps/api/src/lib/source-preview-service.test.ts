@@ -7,6 +7,32 @@ afterEach(() => {
 });
 
 describe("source preview service", () => {
+  it("honors an explicit empty selection without scraping and keeps discovery cache entries separate", async () => {
+    const fetchMock = vi.fn(async () => new Response('<html><img src="/pfs-curve.png" alt="PFS Kaplan Meier curve" width="900" height="600"></html>', { headers: { "content-type": "text/html" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const request = { url: "https://example.com/efficacy", title: "PFS efficacy" };
+    await previewSourceImages(request);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const explicitEmpty = await previewSourceImages({ ...request, assets: [] });
+    expect(explicitEmpty.images).toEqual([]);
+    expect(explicitEmpty.documents).toEqual([]);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves upstream selected figure order even when later assets have higher priority or efficacy labels", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const preview = await previewSourceImages({
+      url: "https://example.com/source", title: "Selected source",
+      assets: [
+        { title: "Selected diagram", url: "https://example.com/first.svg", assetKind: "IMAGE", description: null, tags: [], priority: 0 },
+        { title: "PFS Kaplan Meier efficacy chart", url: "https://example.com/second.svg", assetKind: "CHART", description: null, tags: ["pfs"], priority: 1000 },
+      ],
+    });
+    expect(preview.images.map((image) => image.url)).toEqual(["https://example.com/first.svg", "https://example.com/second.svg"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("preserves selected interaction evidence without adding page-wide adverse-reaction charts", async () => {
     const fetchMock = vi.fn(async () => new Response('<html><img src="/adverse-reactions.svg" alt="ARANOTE adverse reactions chart"></html>', { headers: { "content-type": "text/html" } }));
     vi.stubGlobal("fetch", fetchMock);

@@ -12,6 +12,7 @@ import {
   sourceQuestionPlannerSystemPrompt,
   contextualSourceCompositionSystemPrompt,
   sourceGroundingReviewSystemPrompt,
+  presentationCompositionInstructions,
   phraserSystemPrompt
 } from "@interview/prompts";
 import {
@@ -31,6 +32,7 @@ import {
   decisionResultSchema,
   mvpTurnRouteAnalysisInputSchema,
   mvpTurnRouteAnalysisResultSchema,
+  mvpTurnRouteAnalysisModelResultSchema,
   moderatorPlanInputSchema,
   moderatorPlanModelResultSchema,
   moderatorPhrasingInputSchema,
@@ -211,12 +213,12 @@ export class OpenAIResponsesGateway {
   async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {
     const parsed = mvpTurnRouteAnalysisInputSchema.parse(input);
 
-    return this.runStructuredCall<MvpTurnRouteAnalysisResult>({
+    const call = await this.runStructuredCall<MvpTurnRouteAnalysisResult>({
       callType: "turn_route",
       model: this.config.analysisModel,
       promptVersion: mvpTurnRouterSystemPrompt.version,
-      schemaName: "mvp_turn_route_analysis_result_v3",
-      schema: mvpTurnRouteAnalysisResultSchema,
+      schemaName: "mvp_turn_route_analysis_result_v4",
+      schema: mvpTurnRouteAnalysisModelResultSchema,
       instructions: mvpTurnRouterSystemPrompt.instructions,
       input: parsed,
       metadata: {
@@ -225,6 +227,11 @@ export class OpenAIResponsesGateway {
         current_question_id: parsed.currentQuestionId ?? "none"
       }
     });
+    const result = mvpTurnRouteAnalysisResultSchema.parse(call.result);
+    if (result.understandingUpdate?.participantEvidence.some((excerpt) => !parsed.participantMessage.includes(excerpt))) {
+      throw new Error("Understanding updates require exact current participant excerpts.");
+    }
+    return { ...call, result };
   }
 
   async phraseNextQuestion(input: PhrasingInput) {
@@ -255,10 +262,11 @@ export class OpenAIResponsesGateway {
     return this.runStructuredCall<ControlledRagCompositionResult>({
       callType: "source_composition",
       model: this.config.sourceModel ?? this.config.phrasingModel,
-      promptVersion: "controlled-rag-composition-v11",
+      promptVersion: "controlled-rag-composition-v12",
       schemaName: "controlled_rag_composition_result_v2",
       schema: controlledRagCompositionModelResultSchema,
       instructions: [
+        ...presentationCompositionInstructions,
         "You compose clinician-facing, source-grounded interviewer answers for a structured medical market research interview.",
         "Use the supplied source excerpts only as evidence. Do not add facts, claims, trial outcomes, labels, guidance, or caveats that are not supported by those excerpts.",
         "Only each source's text supplies clinical evidence. Titles, URLs, descriptions, tags, prior generated answers, and participant statements identify context; they cannot establish a medical fact. Never infer an interaction, mechanism, outcome, or dose change from indexing metadata or connect separately listed topics into an unstated medical claim.",
@@ -387,11 +395,12 @@ export class OpenAIResponsesGateway {
 
   async planModeratorTurn(input: ModeratorPlanInput) {
     const parsed = moderatorPlanInputSchema.parse(input);
+    const { evidencePacket: _discussionEvidence, ...discussionContext } = parsed.state.sourceDiscussion ?? {};
     const planningContext = {
       ...parsed,
       state: {
         ...parsed.state,
-        ...(parsed.state.sourceDiscussion ? { sourceDiscussion: { query: parsed.state.sourceDiscussion.query } } : {}),
+        ...(parsed.state.sourceDiscussion ? { sourceDiscussion: discussionContext } : {}),
         priorities: parsed.state.priorities.map(({ evidencePacket: _evidencePacket, ...priority }) => priority),
       },
     };

@@ -17,6 +17,9 @@ import {
   mvpCustomGptSurveyVoiceTurnResponseSchema,
 } from "@interview/schemas";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
+import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, withSourceNavigationHint } from "./mvp-source-discussion";
+import { isReferentialClarification } from "./controlled-rag-service";
+import { applyParticipantUnderstanding, presentationFor } from "./mvp-presentation";
 import { env } from "../env";
 import {
   BRUKINSA_HCP_MVP_GUIDE,
@@ -2010,6 +2013,15 @@ function selectNextQuestion(
   const current = currentQuestion(session);
   // Authored baseline requirements take precedence over adaptive suggestions.
   // Participant information requests can still interrupt and resume the guide.
+  if (current && session.moderatorState.understanding?.productFamiliarity === "low" &&
+      session.moderatorState.understanding.participantEvidence.some((excerpt) => participantContent.includes(excerpt)) &&
+      !session.moderatorState.priorities.some((priority) => ["pending", "presented"].includes(priority.status)) &&
+      !participantAsksSourceQuestion && remaining > TIMEBOX_WRAP_UP_THRESHOLD_SECONDS && !session.askedQuestionIds.includes("familiarity_information_need")) {
+    const question: MvpGuideQuestion = { id: "familiarity_information_need", module: "Orientation", objective: "Identify all information priorities the participant needs explained before discussing the research guide.",
+      canonicalQuestion: `What would you most like clarified about ${session.sourceBrand} before we go further?`, sourceContextRequirement: null, captureBeforeSourceContext: true, routeKeywords: [], completionSignals: ["participant identifies information priorities to understand"], adaptiveProbes: [], analyzableOutputs: ["information_need"] };
+    session.adaptiveProbeQuestions.push(question);
+    return question;
+  }
   if (
     forwardUnasked[0]?.captureBeforeSourceContext &&
     remaining > TIMEBOX_WRAP_UP_THRESHOLD_SECONDS &&
@@ -2607,6 +2619,9 @@ function sourceContextForQuestion(question: MvpGuideQuestion | null) {
   if (question.sourceContextRequirement) {
     return question.sourceContextRequirement;
   }
+  // Intake wording can mention "information" without requiring a medical
+  // evidence presentation before consent or baseline familiarity.
+  if (REQUIRED_INTAKE_QUESTION_IDS.has(question.id)) return null;
 
   if (/sequoia/i.test(question.canonicalQuestion)) {
     return "Before asking the SEQUOIA reaction question, briefly summarize what SEQUOIA is, the CLL/SLL setting or population described by the BRUKINSA HCP source, the relevant comparator or cohort structure if available, the key outcome or endpoint context, and any source-supported caveats needed for a fair reaction.";
@@ -3179,6 +3194,12 @@ export async function submitMvpCustomGptSurveyTurn(
   const sequenceBase = turnSequenceBase(session);
 
   const fixedFlow = isFixedFlowSurvey(session);
+  const discussionBefore = session.moderatorState.sourceDiscussion;
+  const sourceRequestContent = sourceRequestForTurn(session.moderatorState, input.content);
+  const retrySourceRequested = Boolean(discussionBefore && isSourceRetryCue(input.content));
+  if (discussionBefore?.returnTarget?.kind === "guide" && contentLooksLikeReturnToSurveyCue(input.content)) {
+    session.pendingReturnQuestionId = discussionBefore.returnTarget.id;
+  }
   const requestedResumeQuestion = !fixedFlow &&
     session.pendingReturnQuestionId &&
     contentLooksLikeReturnToSurveyCue(input.content)
@@ -3194,19 +3215,19 @@ export async function submitMvpCustomGptSurveyTurn(
     !fixedFlow && contentLooksLikeSurveyStop(input.content);
   // Interpret answers and participant questions independently, before answer
   // rejection or research selection. Medical terms alone are not requests.
-  let participantAnalysis: MvpHybridTurnRouteDecision | null = resumeQuestion
+  let participantAnalysis: MvpHybridTurnRouteDecision | null = resumeQuestion || retrySourceRequested
     ? {
         answerStatus: "not_answered",
         answerEvidence: [],
-        asksSourceQuestion: false,
+        asksSourceQuestion: retrySourceRequested,
         decision: {
-          kind: "planned_answer",
+          kind: retrySourceRequested ? "source_question" : "planned_answer",
           topic: null,
-          needsSource: false,
+          needsSource: retrySourceRequested,
           isOutOfScope: false,
           isUnanticipated: false,
           sourceDirective: null,
-          rationale: "The participant requested navigation back to the parked research question; no research answer was supplied.",
+          rationale: retrySourceRequested ? "Retry the pending source request without research answer credit." : "The participant requested navigation back to the parked research question; no research answer was supplied.",
         },
         provider: "deterministic",
         suggestedQuestionIds: [],
@@ -3217,6 +3238,7 @@ export async function submitMvpCustomGptSurveyTurn(
     ? await classifyMvpTurnRouteHybrid({
         surveySlug: session.surveySlug,
         sourceBrand: session.sourceBrand,
+        understanding: session.moderatorState.understanding,
         activeIntentSlug: session.surveyIntent?.slug ?? null,
         activeIntentLabel: session.surveyIntent?.label ?? null,
         activeIntentSteeringRule: session.surveyIntent?.steeringRule ?? null,
@@ -3235,11 +3257,29 @@ export async function submitMvpCustomGptSurveyTurn(
     : null;
   let moderatorCompleted = false;
   let moderatorDecision: Record<string, unknown> | null = null;
+  applyParticipantUnderstanding(session.moderatorState, participantAnalysis?.understandingUpdate, input.content);
+  if (currentQuestionBefore?.id === "familiarity_information_need" && participantAnalysis &&
+      !participantAnalysis.decision.isOutOfScope && participantAnalysis.asksSourceQuestion) {
+    // A question is itself a valid answer to an explicit information-need
+    // prompt. Capture it as such, never as an evidence reaction.
+    participantAnalysis = { ...participantAnalysis, answerStatus: "answered", answerEvidence: [input.content], asksSourceQuestion: true,
+      decision: { ...participantAnalysis.decision, kind: "source_question", needsSource: true, sourceDirective: "Briefly explain the participant's stated information need using supported sources." } };
+  }
+  // Apply validated authored-answer evidence before dispatch: a source detour
+  // or moderator response must not discard a separately supplied answer.
+  if (participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
+      participantAnalysis.answerStatus !== "not_answered" && !transcriptLooksNonEnglishOrGarbled(input.content)) {
+    updateDiseaseStateFromParticipant(session, participantAnalysis.answerEvidence.join(" "));
+    if (currentQuestionBefore && !currentQuestionBefore.id.startsWith("moderator-reaction:")) {
+      session.answerEvidenceByQuestionId[currentQuestionBefore.id] = [...new Set([...(session.answerEvidenceByQuestionId[currentQuestionBefore.id] ?? []), ...participantAnalysis.answerEvidence])];
+      if (participantAnalysis.answerStatus === "answered" && !session.answeredQuestionIds.includes(currentQuestionBefore.id)) session.answeredQuestionIds.push(currentQuestionBefore.id);
+    }
+  }
   const isPriorityQuestion = Boolean(currentQuestionBefore &&
     !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id) &&
     !currentQuestionBefore.id.startsWith("moderator-reaction:") &&
     /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
-  if (!fixedFlow && session.surveySlug !== "data" && !participantRequestedStop && !hardTimeboxExpired(session) && participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
+  if (!fixedFlow && discussionBefore?.returnTarget?.kind !== "guide" && session.surveySlug !== "data" && !participantRequestedStop && !hardTimeboxExpired(session) && participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
       ((currentQuestionBefore && !currentQuestionBefore.close && !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id)) || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
     const moderator = await runModeratorTurn({
       state: session.moderatorState,
@@ -3596,6 +3636,13 @@ export async function submitMvpCustomGptSurveyTurn(
   const sourceResponseMode = shouldPauseAfterSourceAnswer
     ? ("answer_only" as const)
     : ("answer_then_ask" as const);
+  if (sourceResponseMode === "answer_only" && !hardTimeboxExpired(session)) {
+    const returnTarget = selectedQuestion && !session.answeredQuestionIds.includes(selectedQuestion.id)
+      ? { kind: "guide" as const, id: selectedQuestion.id } : null;
+    beginSourceDiscussion(session.moderatorState, sourceRequestContent, returnTarget);
+    if (returnTarget) session.pendingReturnQuestionId = returnTarget.id;
+    actualAskedQuestion = null;
+  }
 
   let assistantContent: string;
   let references: GroundedReference[] = [];
@@ -3605,6 +3652,7 @@ export async function submitMvpCustomGptSurveyTurn(
     ? env.MVP_SOURCE_PROVIDER
     : null;
   let sourceProviderShadow: Record<string, unknown> | null = null;
+  let sourceOutcome: import("@interview/schemas").SourceTurnOutcome | null = null;
   let droppedReferences: GroundedReference[] = [];
   let nextAction: MvpCustomGptSurveyResponse["nextAction"] = needsCustomGpt
     ? "answer_then_ask"
@@ -3641,7 +3689,9 @@ export async function submitMvpCustomGptSurveyTurn(
       const sourceTurn = await askSourceProviderForSurveyInterviewerTurn({
         surveySlug: sourceSurveySlug as "brukinsa" | "padcev" | "nubeqa",
         projectId: session.projectId,
-        participantMessage: input.content,
+        participantMessage: sourceRequestContent,
+        sourceTopicContext: discussionBefore?.query ?? null,
+        evidencePacket: discussionBefore?.evidencePacket,
         surveyContext: surveyContext(
           session,
           selectedQuestion,
@@ -3652,14 +3702,17 @@ export async function submitMvpCustomGptSurveyTurn(
         selectedQuestionSourceContext: sourceContextRequirement,
         recentInterviewerContext: recentSourceDiscussionContext(session),
         recentTurns: session.messages.slice(0, -1).slice(-12).map((message) => ({ role: message.role, content: message.content.slice(0, 12000) })),
+        presentationPlan: presentationFor(session.moderatorState, currentQuestionBefore?.id === "familiarity_information_need" ? "orientation" : "source_answer"),
         remainingSeconds: remaining,
         askedQuestions: askedQuestions(session),
         responseMode: sourceResponseMode,
       });
       sourceProvider = sourceTurn.provider;
       sourceProviderShadow = sourceTurn.shadow ?? null;
+      sourceOutcome = sourceTurn.sourceOutcome ?? null;
       if (sourceTurn.sourceQuestionPlan) moderatorDecision = { ...moderatorDecision, sourceQuestionPlan: sourceTurn.sourceQuestionPlan };
       if (sourceTurn.sourceAnswerGrounding) moderatorDecision = { ...moderatorDecision, sourceAnswerGrounding: sourceTurn.sourceAnswerGrounding };
+      if (sourceTurn.sourceOutcome) moderatorDecision = { ...moderatorDecision, sourceOutcome: sourceTurn.sourceOutcome };
 
       if (!sourceTurn.enabled || !sourceTurn.answer) {
         customGptStatus = "fallback";
@@ -3700,12 +3753,9 @@ export async function submitMvpCustomGptSurveyTurn(
         references = filtered.references;
         droppedReferences = filtered.droppedReferences;
         if (sourceResponseMode === "answer_only") {
-          // This is a navigation invitation, not a new research question.
-          // Append after source cleanup; the controller owns survey resumption.
-          const invitation = session.pendingReturnQuestionId
-            ? 'What else would you like to know? When you\'re ready, say "continue" to return to the survey.'
-            : "What else would you like to know?";
-          assistantContent = `${assistantContent}\n\n${invitation}`;
+          completeSourceDiscussion(session.moderatorState, sourceTurn.sourceQuestionPlan?.interpretedQuestion ??
+            (isReferentialClarification(sourceRequestContent) && discussionBefore?.query ? discussionBefore.query : sourceRequestContent), sourceTurn.evidencePacket);
+          assistantContent = withSourceNavigationHint(session.moderatorState, assistantContent);
         }
       }
     } catch (error) {
@@ -3724,6 +3774,14 @@ export async function submitMvpCustomGptSurveyTurn(
     }
   }
 
+  if (sourceResponseMode === "answer_only" && customGptStatus !== "success" && !session.completedReason) {
+    failSourceDiscussion(session.moderatorState, sourceDiscussionFailure(sourceOutcome, customGptReason ?? "Source answer unavailable."));
+    actualAskedQuestion = null;
+    references = [];
+    assistantContent = withSourceNavigationHint(session.moderatorState, "I couldn't produce a supported answer to that question. I've kept our place in the interview.");
+    nextAction = "ask";
+  }
+
   if (resumeQuestion && needsCustomGpt && customGptStatus !== "success" && !session.completedReason) {
     // Do not solicit a reaction until its required evidence is available.
     actualAskedQuestion = null;
@@ -3738,6 +3796,7 @@ export async function submitMvpCustomGptSurveyTurn(
   if (actualAskedQuestion && !session.completedReason) {
     if (resumeQuestion && (!needsCustomGpt || customGptStatus === "success")) {
       session.pendingReturnQuestionId = null;
+      delete session.moderatorState.sourceDiscussion;
       session.excursionQuestionIds = session.excursionQuestionIds.filter(
         (questionId) => questionId !== actualAskedQuestion.id,
       );

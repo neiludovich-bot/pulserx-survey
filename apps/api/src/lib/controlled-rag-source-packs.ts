@@ -38,9 +38,9 @@ export const CONTROLLED_RAG_CHUNKS = [
     id: "brukinsa-cll-sequoia",
     surveySlug: "brukinsa",
     title: "BRUKINSA CLL/SLL Efficacy: SEQUOIA",
-    url: "https://brukinsahcp.com/cll/efficacy/#first",
+    url: "https://brukinsahcp.com/wp-content/uploads/brukinsa-prescribing-information.pdf#page=32",
     description:
-      "Curated CLL/SLL source card for SEQUOIA first-line efficacy context and source visuals.",
+      "US prescribing information section 14.4, Table 22: SEQUOIA randomized first-line CLL/SLL PFS analysis.",
     tags: [
       "cll",
       "sll",
@@ -50,15 +50,17 @@ export const CONTROLLED_RAG_CHUNKS = [
       "pfs",
       "efficacy",
     ],
-    text: "SEQUOIA is the BRUKINSA first-line CLL/SLL evidence anchor on the HCP site. It includes a treatment-naive CLL/SLL setting, Cohort 1 comparing BRUKINSA with bendamustine plus rituximab in patients without del(17p), and a separate del(17p) BRUKINSA-only cohort. The HCP source presents progression-free survival as a key efficacy focus and includes Kaplan-Meier visuals and patient-at-risk information for HCP review.",
+    // Verified 2026-09-05: US PI section 14.4, Table 22; these are the PI analysis, not later HCP follow-up results.
+    // https://brukinsahcp.com/wp-content/uploads/brukinsa-prescribing-information.pdf
+    text: "The BRUKINSA US prescribing information, Table 22, reports SEQUOIA in previously untreated CLL/SLL without del(17p): BRUKINSA (N=241) versus bendamustine plus rituximab (N=238). Independent review committee-assessed progression-free survival (PFS) had a hazard ratio of 0.42 (95% CI 0.28-0.63; p<0.0001). Median PFS was not estimable with BRUKINSA versus 33.7 months with bendamustine plus rituximab. These PI analysis results apply to the randomized cohort; the separate del(17p) cohort was single-arm and does not provide this comparison.",
   },
   {
     id: "brukinsa-cll-alpine",
     surveySlug: "brukinsa",
     title: "BRUKINSA CLL/SLL Efficacy: ALPINE",
-    url: "https://brukinsahcp.com/cll/efficacy/#second",
+    url: "https://brukinsahcp.com/wp-content/uploads/brukinsa-prescribing-information.pdf#page=35",
     description:
-      "Curated CLL/SLL source card for ALPINE relapsed/refractory head-to-head evidence.",
+      "US prescribing information section 14.4, Table 24: ALPINE independent-review PFS analysis in relapsed/refractory CLL/SLL.",
     tags: [
       "cll",
       "sll",
@@ -69,7 +71,8 @@ export const CONTROLLED_RAG_CHUNKS = [
       "pfs",
       "orr",
     ],
-    text: "ALPINE is the BRUKINSA relapsed/refractory CLL/SLL head-to-head evidence anchor on the HCP site. The HCP source frames ALPINE as BRUKINSA versus ibrutinib after prior systemic therapy, with ORR and PFS information used to support HCP discussion of comparative evidence.",
+    // Verified 2026-09-05: same US PI, section 14.4, Table 24 (IRC analysis).
+    text: "The BRUKINSA US prescribing information, Table 24, reports ALPINE in relapsed or refractory CLL/SLL: BRUKINSA (N=327) versus ibrutinib (N=325). Independent review committee-assessed progression-free survival (PFS) had a hazard ratio of 0.65 (95% CI 0.49-0.86; two-sided p=0.0024). Median PFS was not estimable with BRUKINSA versus 35 months with ibrutinib. These are the PI analysis results, distinct from later follow-up analyses on the HCP page.",
   },
   {
     id: "brukinsa-cll-guidelines",
@@ -110,7 +113,8 @@ export const CONTROLLED_RAG_CHUNKS = [
       "cardiac",
       "infection",
     ],
-    text: "BRUKINSA HCP dosing and safety resources cover real-world medication-management topics including tablet formulation, dosing schedule, dose reduction or modification, drug-interaction considerations, hepatic impairment, and Important Safety Information topics such as hemorrhage, infections, cytopenias, second primary malignancies, cardiac arrhythmias, hepatotoxicity, embryo-fetal toxicity, and common adverse reactions or lab abnormalities.",
+    // Verified 2026-09-05: Important Safety Information at https://brukinsahcp.com/cll/efficacy/.
+    text: "BRUKINSA Important Safety Information covers hemorrhage, infections, cytopenias, second primary malignancies, cardiac arrhythmias, hepatotoxicity, and embryo-fetal toxicity. Practical guidance includes checking for bleeding or infection symptoms and monitoring complete blood counts during treatment. Arrhythmia symptoms to monitor include palpitations, dizziness, syncope, dyspnea, and chest discomfort. Assess bilirubin and transaminases before and during treatment; abnormal liver tests warrant more frequent monitoring. Withhold BRUKINSA for suspected drug-induced liver injury and discontinue if confirmed. These are general treatment precautions; they do not establish which individual adverse reactions result from a specific drug interaction.",
   },
   {
     // Verified 2026-09-05 against the manufacturer's US PI, section 7.1,
@@ -154,9 +158,9 @@ export const CONTROLLED_RAG_CHUNKS = [
     id: "padcev-ev302",
     surveySlug: "padcev",
     title: "PADCEV + Pembrolizumab Efficacy: EV-302/KEYNOTE-A39",
-    url: "https://www.padcevhcp.com/padcev-pembrolizumab-efficacy",
+    url: "https://astellas.us/docs/PADCEV_label.pdf#page=42",
     description:
-      "Curated source card for PADCEV plus pembrolizumab first-line efficacy context.",
+      "US prescribing information section 14.1, Table 22: EV-302 PADCEV plus intravenous pembrolizumab PFS results.",
     tags: [
       "ev302",
       "ev-302",
@@ -171,7 +175,26 @@ export const CONTROLLED_RAG_CHUNKS = [
       "first line",
       "efficacy",
     ],
-    text: "EV-302/KEYNOTE-A39 is the PADCEV plus pembrolizumab first-line evidence anchor for locally advanced or metastatic urothelial cancer on the HCP site. The source includes survival, progression-free survival, and response-endpoint context or visuals when available, and should be used for exact current efficacy values, timepoints, and caveats.",
+    // Verified 2026-09-05: https://astellas.us/docs/PADCEV_label.pdf, section 14.1, Table 22.
+    text: "In the PADCEV US prescribing information, EV-302/KEYNOTE-A39 enrolled previously untreated locally advanced or metastatic urothelial cancer. PADCEV plus intravenous pembrolizumab (N=442) was compared with gemcitabine plus cisplatin or carboplatin (N=444). Blinded independent central review-assessed median progression-free survival (PFS) was 12.5 versus 6.3 months; hazard ratio 0.45 (95% CI 0.38-0.54; p<0.0001). These are combination-regimen results, not PADCEV monotherapy results.",
+  },
+  {
+    // Verified 2026-09-05: PADCEV US PI section 7.1 (July 2026 revision).
+    id: "padcev-ddi-profile",
+    surveySlug: "padcev",
+    title: "PADCEV Prescribing Information: Drug Interactions",
+    url: "https://astellas.us/docs/PADCEV_label.pdf#page=28",
+    description: "US prescribing information section 7.1: dual P-gp and strong CYP3A4 inhibitors, MMAE exposure, and toxicity monitoring.",
+    tags: ["padcev", "enfortumab vedotin", "drug interactions", "ddi", "p-gp", "cyp3a4", "inhibitors", "mmae"],
+    text: "The PADCEV US prescribing information, section 7.1, states that dual P-gp and strong CYP3A4 inhibitors may increase exposure to unconjugated monomethyl auristatin E (MMAE), potentially increasing PADCEV toxicity incidence or severity. It calls for close monitoring for toxicity signs during coadministration. This interaction section does not identify a specific interaction-attributable adverse reaction or monitoring schedule.",
+    assets: [{
+      title: "PADCEV US PI: Drug Interactions, section 7.1",
+      url: "https://astellas.us/docs/PADCEV_label.pdf#page=28",
+      description: "Official prescribing information on dual P-gp and strong CYP3A4 inhibitors.",
+      assetKind: "LINK",
+      tags: ["drug interactions", "cyp3a4", "p-gp", "mmae"],
+      priority: 90,
+    }],
   },
   {
     id: "padcev-safety-management",
@@ -194,7 +217,8 @@ export const CONTROLLED_RAG_CHUNKS = [
       "guide",
       "checklist",
     ],
-    text: "PADCEV safety-management HCP materials include adverse-reaction monitoring, dose interruption/reduction/discontinuation concepts, and practical resources such as monitoring checklists or adverse-reaction management materials when available. For neuropathy, rash or skin reactions, hyperglycemia, pneumonitis/ILD, ocular disorders, and other adverse events, use source-supported monitoring and dose-modification guidance rather than broad efficacy framing.",
+    // Verified 2026-09-05: https://astellas.us/docs/PADCEV_label.pdf, sections 5.1-5.5.
+    text: "PADCEV prescribing information calls for close skin-reaction monitoring throughout treatment and blood-glucose monitoring in patients with or at risk for diabetes or hyperglycemia. Monitor new or worsening peripheral neuropathy, ocular disorders, and pneumonitis/ILD symptoms such as cough, dyspnea, or hypoxia. Management may require treatment interruption, dose reduction, or discontinuation according to the specific reaction and grade. These general warnings do not establish which adverse reactions are caused by a particular interacting medicine.",
   },
   {
     id: "padcev-resources",
@@ -396,7 +420,9 @@ export const CONTROLLED_RAG_CHUNKS = [
       "ischemic heart disease",
       "seizure",
     ],
-    text: "The NUBEQA HCP dosing page describes 600 mg twice daily with food, continuing treatment until disease progression or unacceptable toxicity, and dose modification to 300 mg twice daily for severe renal impairment not receiving hemodialysis, moderate hepatic impairment, Grade 3 or greater toxicity, or intolerable adverse reaction when source-supported. The page also notes that in ARASENS NUBEQA continues even if a docetaxel cycle is delayed, interrupted, or discontinued. Important Safety Information includes ischemic heart disease and seizure warnings, plus adverse reaction context across ARAMIS, ARANOTE, and ARASENS. For drug interactions, the HCP page says combined P-gp plus strong or moderate CYP3A4 inducers can decrease darolutamide exposure and should be avoided; combined P-gp plus strong CYP3A4 inhibitors can increase darolutamide exposure, so patients should be monitored more frequently for adverse reactions and dose modified as needed. NUBEQA is also described as an inhibitor of BCRP, OATP1B1, and OATP1B3 transporters; concomitant use may increase substrate exposure, so BCRP substrates should be avoided when possible or monitored with possible substrate dose reduction, and OATP substrates should be monitored with possible dose reduction.",
+    // Verified 2026-09-05 against the cited HCP dosing page and its Important Safety Information.
+    // Keep practical general warnings separate from the dedicated interaction source.
+    text: "The NUBEQA HCP dosing page gives 600 mg twice daily with food. Severe renal impairment (eGFR 15-29 mL/min/1.73 m2, without hemodialysis) or moderate hepatic impairment (Child-Pugh B) calls for 300 mg twice daily. For Grade 3 or greater toxicity or an intolerable adverse reaction, withhold treatment or reduce to 300 mg twice daily until symptoms improve; 600 mg twice daily may resume when the reaction returns to baseline. General safety guidance includes monitoring ischemic heart disease symptoms and managing cardiovascular risk factors, including hypertension, diabetes, and dyslipidemia; discontinue NUBEQA for Grade 3-4 ischemic heart disease. Counsel patients about seizure risk and activities where loss of consciousness could cause harm; consider discontinuation if a seizure develops during treatment. These are general NUBEQA warnings, not evidence that a particular interacting medicine causes ischemic heart disease or seizure.",
     assets: [
       {
         title: "NUBEQA mCSPC dosing options",
