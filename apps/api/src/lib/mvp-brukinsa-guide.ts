@@ -6,6 +6,7 @@ export type MvpGuideQuestion = {
   objective: string;
   canonicalQuestion: string;
   sourceContextRequirement: string | null;
+  captureBeforeSourceContext?: boolean;
   routeKeywords: string[];
   completionSignals: string[];
   adaptiveProbes: string[];

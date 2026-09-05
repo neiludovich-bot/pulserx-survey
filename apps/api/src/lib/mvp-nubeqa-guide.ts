@@ -39,6 +39,7 @@ export const NUBEQA_HCP_MVP_GUIDE = [
   },
   {
     id: "decision_framework",
+    captureBeforeSourceContext: true,
     module: "Baseline perception",
     objective:
       "Capture decision drivers before the interviewer provides NUBEQA-specific source context.",

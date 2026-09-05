@@ -1984,6 +1984,7 @@ function selectResponsiveQuestionForContent(
 function selectNextQuestion(
   session: MvpSurveySession,
   participantContent: string,
+  participantAsksSourceQuestion: boolean,
 ) {
   const remaining = remainingSeconds(session);
   const forwardUnasked = forwardUnaskedQuestions(session, participantContent);
@@ -1996,6 +1997,17 @@ function selectNextQuestion(
 
   if (closingPhaseStarted(session)) {
     return unasked.find((question) => question.close) ?? null;
+  }
+
+  const current = currentQuestion(session);
+  // Authored baseline requirements take precedence over adaptive suggestions.
+  // Participant information requests can still interrupt and resume the guide.
+  if (
+    forwardUnasked[0]?.captureBeforeSourceContext &&
+    remaining > TIMEBOX_WRAP_UP_THRESHOLD_SECONDS &&
+    !participantAsksSourceQuestion
+  ) {
+    return forwardUnasked[0];
   }
 
   if (padcevSideEffectCloseRequested(session, participantContent)) {
@@ -2054,7 +2066,6 @@ function selectNextQuestion(
     return null;
   }
 
-  const current = currentQuestion(session);
   if (
     session.surveySlug === "padcev" &&
     padcevSideEffectMapApplies(session.surveyIntent?.slug)
@@ -2573,7 +2584,7 @@ function currentAnswerQuality(
 }
 
 function sourceContextForQuestion(question: MvpGuideQuestion | null) {
-  if (!question) {
+  if (!question || question.captureBeforeSourceContext) {
     return null;
   }
 
@@ -3513,7 +3524,7 @@ export async function submitMvpCustomGptSurveyTurn(
         !session.answeredQuestionIds.includes(parkedQuestion.id) &&
         questionAllowedByDiseaseLane(session, parkedQuestion, input.content)
       ? parkedQuestion
-      : selectNextQuestion(session, input.content);
+      : selectNextQuestion(session, input.content, participantSourceDetour);
   const questionSourceContextRequirement = participantSourceDetour
     ? null
     : sourceContextForQuestion(selectedQuestion);
