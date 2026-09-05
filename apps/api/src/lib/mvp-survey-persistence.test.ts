@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { sourceQuestionPlanSchema } from "@interview/schemas";
+import { sourceQuestionPlanSchema, sourceAnswerGroundingAuditSchema } from "@interview/schemas";
 import { guideFromQuestionStrings } from "./mvp-brukinsa-guide";
 import {
   loadMvpSurveySessionSnapshot,
@@ -329,6 +329,7 @@ describe("MVP survey persistence", () => {
         action: "ask_reaction",
         priorityId: "ddi",
         reason: "The interaction evidence was presented and its reaction remains unanswered.",
+        sourceAnswerGrounding: sourceAnswerGroundingAuditSchema.parse({ version: 1, status: "supported", attempt: 2, model: "source-model", responseId: "review-fixture" }),
         sourceQuestionPlan: sourceQuestionPlanSchema.parse({
           version: 1,
           interpretedQuestion: "What interaction precautions are documented?",

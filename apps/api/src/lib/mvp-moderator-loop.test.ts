@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sourceQuestionPlanSchema } from "@interview/schemas";
+import { sourceQuestionPlanSchema, sourceAnswerGroundingAuditSchema } from "@interview/schemas";
 import type { ModeratorPlanResult, ModeratorPhrasingInput, ModeratorEvidencePacket } from "@interview/schemas";
 import type { SourceAnswerProviderInput } from "./source-answer-service";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
@@ -286,12 +286,13 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       contextBoundary: "General monitoring information does not establish interaction-caused adverse reactions.",
       rationale: "Resolve the reference to the preceding interaction discussion while preserving the new monitoring question.",
     });
+    const sourceAnswerGrounding = sourceAnswerGroundingAuditSchema.parse({ version: 1, status: "supported", attempt: 2, model: "source-model", responseId: "review-fixture" });
     mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });
     mocks.source.mockResolvedValueOnce({
       enabled: true, provider: "controlled_rag", answer: "Synthetic contextual source explanation.",
       references: [{ citationId: `${surveySlug}-DDI-source`, title: "Synthetic interaction source", url: `https://example.test/${surveySlug}/DDI`, description: null, assets: [] }],
       citationIds: [`${surveySlug}-DDI-source`], conversationId: null, reason: null,
-      evidencePacket: evidenceFor(surveySlug, "DDI"), sourceQuestionPlan,
+      evidencePacket: evidenceFor(surveySlug, "DDI"), sourceQuestionPlan, sourceAnswerGrounding,
     });
     const result = await runModeratorTurn(inputFor(surveySlug, {
       state: first.state, currentQuestion: first.question,
@@ -301,6 +302,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
 
     expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ recentTurns }));
     expect(result?.decision.sourceQuestionPlan).toEqual(sourceQuestionPlan);
+    expect(result?.decision.sourceAnswerGrounding).toEqual(sourceAnswerGrounding);
     expect(result?.state.sourceDiscussion).toEqual({
       query: sourceQuestionPlan.interpretedQuestion, evidencePacket: evidenceFor(surveySlug, "DDI"),
     });

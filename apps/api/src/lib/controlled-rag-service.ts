@@ -1,4 +1,4 @@
-import { moderatorEvidencePacketSchema, type GroundedReference, type ModeratorEvidencePacket, type SourceQuestionPlan, type SourceQuestionPlanInput } from "@interview/schemas";
+import { moderatorEvidencePacketSchema, sourceAnswerGroundingAuditSchema, type SourceAnswerGroundingAudit, type GroundedReference, type ModeratorEvidencePacket, type SourceQuestionPlan, type SourceQuestionPlanInput } from "@interview/schemas";
 import {
   CONTROLLED_RAG_CHUNKS,
   NUBEQA_ARANOTE_UTI_FACTS,
@@ -55,6 +55,7 @@ export type ControlledRagSurveyTurnResult = {
   reason: string | null;
   evidencePacket?: ModeratorEvidencePacket | null;
   sourceQuestionPlan?: SourceQuestionPlan | null;
+  sourceAnswerGrounding?: SourceAnswerGroundingAudit | null;
 };
 
 const STOP_WORDS = new Set([
@@ -1562,7 +1563,7 @@ async function composeSourceAnswer(
   const fallbackInput = { ...input, participantMessage: retrievalQuery };
 
   if (!gateway || process.env.NODE_ENV === "test") {
-    return cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard));
+    return { answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null };
   }
 
   try {
@@ -1611,13 +1612,15 @@ async function composeSourceAnswer(
       [...body.matchAll(/\[(\d+)\]/g)].some((match) => !usedIndexes.includes(Number(match[1])))) {
       throw new Error("Composer cited evidence outside its selected sources.");
     }
-    return ensureCitationMarker(
+    const answer = ensureCitationMarker(
       body,
       chunks,
       usedIndexes[0],
     );
+    const grounding = "groundingReview" in composition ? sourceAnswerGroundingAuditSchema.parse(composition.groundingReview) : null;
+    return { answer, grounding };
   } catch {
-    return cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard));
+    return { answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null };
   }
 }
 
@@ -1714,8 +1717,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
 
   const references = referencesForChunks(chunks);
   const responseMode = input.responseMode ?? "answer_then_ask";
+  const composition = await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, retrievalQuery);
   const composedAnswer = stripComposerFollowUpQuestions(
-    await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, retrievalQuery),
+    composition.answer,
     input.selectedNextQuestion,
     responseMode,
   );
@@ -1724,6 +1728,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     cited = alignCitedSourceReferences(composedAnswer, references);
   } catch {
     cited = alignCitedSourceReferences(fallbackSourceAnswer(contextualCompositionInput, chunks, evidenceCard), references);
+    composition.grounding = null;
   }
   const answer = [
     cited.answer,
@@ -1747,6 +1752,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     reason: null,
     evidencePacket: packet.success ? packet.data : null,
     sourceQuestionPlan,
+    sourceAnswerGrounding: composition.grounding,
   };
 }
 

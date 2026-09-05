@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference, type SourceQuestionPlan } from "@interview/schemas";
+import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference, type SourceQuestionPlan, type SourceAnswerGroundingAudit } from "@interview/schemas";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 import { isReferentialClarification } from "./controlled-rag-service";
@@ -73,7 +73,7 @@ export async function runModeratorTurn(input: Input) {
   let question: string | null = null;
   let sourceReason: string | null = null;
   let sourceEvidencePacket: ModeratorEvidencePacket | undefined;
-  const sourcePlanning: { plan: SourceQuestionPlan | null } = { plan: null };
+  const sourcePlanning: { plan: SourceQuestionPlan | null; grounding: SourceAnswerGroundingAudit | null } = { plan: null, grounding: null };
   const creditOriginalAnswer = !previousActive && input.answerStatus === "answered" && plan.newPriorities.length > 0;
   const phrase = async (kind: "reaction" | "transition", label: string) => {
     try {
@@ -90,6 +90,7 @@ export async function runModeratorTurn(input: Input) {
     try {
       const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
       sourcePlanning.plan = answer.sourceQuestionPlan ?? null;
+      sourcePlanning.grounding = answer.sourceAnswerGrounding ?? null;
       if (!answer.enabled || !answer.answer || !answer.references.length) { sourceReason = answer.reason ?? "No supporting evidence returned."; return null; }
       references = answer.references;
       sourceEvidencePacket = answer.evidencePacket ?? undefined;
@@ -140,5 +141,5 @@ export async function runModeratorTurn(input: Input) {
       } else { action = "resume_guide"; state.activePriorityId = null; }
     }
   }
-  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan } };
+  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding } };
 }

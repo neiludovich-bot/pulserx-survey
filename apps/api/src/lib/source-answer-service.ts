@@ -1,5 +1,5 @@
 import { env } from "../env";
-import type { GroundedReference, ModeratorEvidencePacket, SourceQuestionPlan, SourceQuestionPlanInput } from "@interview/schemas";
+import type { GroundedReference, ModeratorEvidencePacket, SourceQuestionPlan, SourceQuestionPlanInput, SourceAnswerGroundingAudit } from "@interview/schemas";
 import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
 import { askCustomGptForSurveyInterviewerTurn } from "./customgpt-service";
 import type { CustomGptReference } from "./customgpt-service";
@@ -41,6 +41,7 @@ export type SourceAnswerProviderResult = {
     latencyMs: number;
   };
   sourceQuestionPlan?: SourceQuestionPlan | null;
+  sourceAnswerGrounding?: SourceAnswerGroundingAudit | null;
 };
 
 function groundedReferences(

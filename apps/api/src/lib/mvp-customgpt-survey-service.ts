@@ -3659,6 +3659,7 @@ export async function submitMvpCustomGptSurveyTurn(
       sourceProvider = sourceTurn.provider;
       sourceProviderShadow = sourceTurn.shadow ?? null;
       if (sourceTurn.sourceQuestionPlan) moderatorDecision = { ...moderatorDecision, sourceQuestionPlan: sourceTurn.sourceQuestionPlan };
+      if (sourceTurn.sourceAnswerGrounding) moderatorDecision = { ...moderatorDecision, sourceAnswerGrounding: sourceTurn.sourceAnswerGrounding };
 
       if (!sourceTurn.enabled || !sourceTurn.answer) {
         customGptStatus = "fallback";

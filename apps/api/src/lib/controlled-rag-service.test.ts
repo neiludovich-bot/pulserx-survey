@@ -23,6 +23,23 @@ describe("controlled RAG source provider", () => {
     responseMode: "answer_only" as const,
   };
 
+  it.each([true, false])("propagates a successful grounding audit and never marks fallback text as reviewed: %s", async (supported) => {
+    vi.stubEnv("NODE_ENV", "production");
+    const audit = { version: 1, status: "supported", attempt: 2, model: "fixture-source-model", responseId: "fixture-review" };
+    const compose = supported
+      ? vi.fn().mockResolvedValue({ result: { answerBody: "Synthetic supported guidance. [1]", usedSourceIndexes: [1], limitations: [] }, groundingReview: audit })
+      : vi.fn().mockRejectedValue(new Error("Unsupported invented monitoring instruction rejected."));
+    vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({ composeControlledRagAnswer: compose } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
+    const result = await askControlledRagForSurveyInterviewerTurn({ ...parkedFactorsInput, evidencePacket: { sources: [{
+      id: "synthetic-evidence", surveySlug: "nubeqa", title: "Synthetic source", url: "https://example.test/evidence", description: "", tags: [],
+      text: "Synthetic supported guidance.", evidenceRole: "contextual", assets: [],
+    }] } });
+    expect(compose).toHaveBeenCalledOnce();
+    expect(result.sourceAnswerGrounding).toEqual(supported ? audit : null);
+    expect(result.answer).toContain("Synthetic supported guidance.");
+    expect(result.answer).not.toContain("invented monitoring instruction");
+  });
+
   it.each([
     "Can you explain that more simply?",
     "Can explain more simply?",

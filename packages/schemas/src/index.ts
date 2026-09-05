@@ -236,6 +236,37 @@ export const controlledRagContextualCompositionResultSchema = z.object({
 
 export type ControlledRagContextualCompositionResult = z.infer<typeof controlledRagContextualCompositionResultSchema>;
 
+export const sourceGroundingViolationSchema = z.object({
+  excerpt: z.string().min(1).max(2500),
+  reason: z.string().min(1).max(600),
+}).strict();
+
+export const sourceGroundingReviewInputSchema = z.object({
+  draft: controlledRagContextualCompositionResultSchema.pick({ practicalAnswer: true, qualification: true }),
+  sources: z.array(z.object({ index: z.number().int().min(1).max(8), text: z.string().min(1).max(1800) }).strict()).min(1).max(8),
+}).strict();
+
+export const sourceGroundingReviewResultSchema = z.object({
+  version: z.literal(1),
+  supported: z.boolean(),
+  unsupportedClaims: z.array(sourceGroundingViolationSchema).max(16),
+}).strict();
+
+export const contextualSourceCompositionInputSchema = controlledRagCompositionInputSchema.extend({
+  groundingViolations: z.array(sourceGroundingViolationSchema).max(16),
+}).strict();
+
+export type SourceGroundingReviewResult = z.infer<typeof sourceGroundingReviewResultSchema>;
+
+export const sourceAnswerGroundingAuditSchema = z.object({
+  version: z.literal(1),
+  status: z.literal("supported"),
+  attempt: z.number().int().min(1).max(2),
+  model: z.string().nullable(),
+  responseId: z.string().nullable(),
+}).strict();
+export type SourceAnswerGroundingAudit = z.infer<typeof sourceAnswerGroundingAuditSchema>;
+
 export const controlledRagCompositionModelResultSchema = controlledRagCompositionResultSchema.extend({
   limitations: controlledRagCompositionResultSchema.shape.limitations.removeDefault(),
 }).strict();
@@ -561,6 +592,7 @@ export const openAIDebugTraceSchema = z.object({
     "decision",
     "phrasing",
     "source_composition",
+    "source_grounding_review",
     "turn_route",
     "moderator_plan",
     "moderator_phrasing",
