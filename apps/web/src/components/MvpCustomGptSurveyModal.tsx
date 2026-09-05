@@ -1447,17 +1447,22 @@ export function MvpCustomGptSurveyModal({
     setSourcePanel(null);
   }
 
+  const headerStudyName = survey?.studyName ?? studyName;
+  const displayStudyName = surveySlug !== "data" && headerStudyName === `${surveySlug.toUpperCase()} HCP MVP`
+    ? `${surveySlug.toUpperCase()} HCP discussion`
+    : headerStudyName;
+
   return (
     <main
       className={`mvp-survey-page ${
         sourcePanel ? "mvp-survey-page-with-source" : ""
       }`}
     >
-      <section className="mvp-survey-modal" aria-label="CustomGPT survey MVP">
+      <section className="mvp-survey-modal" aria-label="Research conversation">
         <header className="mvp-survey-header">
           <div>
-            <p className="mvp-kicker">CustomGPT Survey Bridge</p>
-            <h1>{survey?.studyName ?? studyName}</h1>
+            <p className="mvp-kicker">Research conversation</p>
+            <h1>{displayStudyName}</h1>
           </div>
           <div className="mvp-status-stack">
             <button
