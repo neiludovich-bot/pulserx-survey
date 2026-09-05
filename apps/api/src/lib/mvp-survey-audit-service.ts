@@ -45,7 +45,7 @@ function mapSessionSummary(session: {
 }) {
   return {
     id: session.id,
-    studyName: session.study.name,
+    studyName: metadataString(session.metadata, "studyName") ?? session.study.name,
     studySlug: session.study.slug,
     status: session.status,
     startedAt: iso(session.startedAt),
