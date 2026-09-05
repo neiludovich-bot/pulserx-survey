@@ -472,6 +472,14 @@ function recentParticipantInterpretationContext(session: MvpSurveySession) {
     .join("\n") || null;
 }
 
+function recentSourceDiscussionContext(session: MvpSurveySession) {
+  // The retrieval provider has a small context budget. Put the latest question
+  // and answer first, rather than allowing intake history to crowd them out.
+  return session.messages.slice(0, -1).slice(-2)
+    .map((message) => `${message.role}: ${compactHistoryText(message.content, 800)}`)
+    .join("\n") || null;
+}
+
 function configuredProjectId(
   definition: MvpSurveyDefinition,
   inputProjectId?: string,
@@ -3611,7 +3619,7 @@ export async function submitMvpCustomGptSurveyTurn(
         currentQuestion: questionText(currentQuestion(session)),
         selectedNextQuestion: selectedQuestionText,
         selectedQuestionSourceContext: sourceContextRequirement,
-        recentInterviewerContext: recentParticipantInterpretationContext(session),
+        recentInterviewerContext: recentSourceDiscussionContext(session),
         remainingSeconds: remaining,
         askedQuestions: askedQuestions(session),
         responseMode: sourceResponseMode,

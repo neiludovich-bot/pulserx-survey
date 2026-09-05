@@ -209,7 +209,7 @@ describe("participant answer intent through the MVP survey service", () => {
 
   it("keeps a request for a simpler explanation inside the source detour", async () => {
     const sessionId = await startAtNubeqaFactors();
-    await submitMvpCustomGptSurveyTurn({
+    const initialAnswer = await submitMvpCustomGptSurveyTurn({
       sessionId,
       content: "What drug interactions should I consider?",
     });
@@ -225,6 +225,13 @@ describe("participant answer intent through the MVP survey service", () => {
       participantMessage: content,
       responseMode: "answer_only",
     }));
+    const sourceContext = (mocks.source.mock.calls[0][0] as SourceAnswerProviderInput)
+      .recentInterviewerContext;
+    expect(sourceContext).toBe(
+      `participant: What drug interactions should I consider?\ninterviewer: ${initialAnswer.messages.at(-1)!.content}`,
+    );
+    expect(sourceContext).not.toContain("Is it okay to begin?");
+    expect(sourceContext).not.toContain(frameworkQuestion);
     const audited = mocks.persistTurn.mock.calls.find(([input]) =>
       input.turn.participantMessage === content,
     )?.[0];

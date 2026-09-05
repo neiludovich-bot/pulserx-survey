@@ -280,7 +280,7 @@ describe("CustomGPT clarification service", () => {
                     `${evidence[0]} What stands out from these results?`,
                     `${evidence[1]} How does the U.S. guidance apply? ${evidence[2]}`,
                     "Would the 70.3% result change your view?",
-                    '\u201cWhich result matters most to you?\u201d',
+                    "\u201cWhich result matters most to you?\u201d",
                     "How would this affect your view?",
                   ].join("\n\n"),
                   citations: [],
@@ -314,6 +314,67 @@ describe("CustomGPT clarification service", () => {
       );
       expect(result.answer).not.toContain("What stands out");
       expect(result.answer).not.toContain("How would this");
+    },
+  );
+
+  it.each([false, true])(
+    "anchors answer-only follow-ups to the recent source exchange within the prompt budget (max fields: %s)",
+    async (maxFields) => {
+      process.env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+      const prompts: string[] = [];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+          prompts.push(JSON.parse(String(init?.body)).prompt);
+          return new Response(
+            JSON.stringify({
+              data: {
+                openai_response: "Here is the simpler source explanation.",
+                citations: [],
+              },
+            }),
+            { status: 200 },
+          );
+        }),
+      );
+      const padding = maxFields ? " Context.".repeat(1000) : "";
+      const priorQuestion =
+        "participant: What drug interactions should I consider?";
+      const priorAnswer =
+        "interviewer: The source describes drug interaction classes and monitoring considerations.";
+      const { askCustomGptForSurveyInterviewerTurn } =
+        await import("./customgpt-service");
+      await askCustomGptForSurveyInterviewerTurn({
+        projectId: "654",
+        conversationId: "source_follow_up",
+        participantMessage: `Can you explain that more simply?${padding}`,
+        surveyContext: `Baseline decision framework.${padding}`,
+        currentQuestion: `Which treatment factors matter most?${padding}`,
+        selectedNextQuestion: `Which practical barrier matters most?${padding}`,
+        selectedQuestionSourceContext: `Answer the participant's source follow-up.${padding}`,
+        recentInterviewerContext: `${priorQuestion}\n${priorAnswer}${padding}`,
+        remainingSeconds: 60,
+        askedQuestions: Array.from(
+          { length: 4 },
+          () => `Prior survey question?${padding}`,
+        ),
+        responseMode: "answer_only",
+      });
+
+      expect(prompts).toHaveLength(1);
+      expect(prompts[0].length).toBeLessThanOrEqual(7800);
+      expect(prompts[0]).toContain(priorQuestion);
+      expect(prompts[0]).toContain(priorAnswer);
+      expect(prompts[0]).toContain(
+        "Most recent source exchange (participant question and source answer)",
+      );
+      expect(prompts[0]).toContain("PARKED survey question; DO NOT ANSWER");
+      expect(prompts[0]).toContain(
+        "use the most recent source exchange below, not the parked survey question",
+      );
+      expect(prompts[0]).not.toContain(
+        "Current survey question being answered",
+      );
     },
   );
 

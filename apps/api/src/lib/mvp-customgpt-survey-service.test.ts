@@ -1700,7 +1700,7 @@ describe("MVP CustomGPT survey service", () => {
     );
     expect(repeatedAePrompt).toContain("2-4 focused bullets");
     expect(repeatedAePrompt).toContain(
-      "Recent interviewer source context already covered",
+      "Most recent source exchange (participant question and source answer)",
     );
     expect(repeatedAePrompt).toContain(
       "Peripheral neuropathy and rash were already summarized",

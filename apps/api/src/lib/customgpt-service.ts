@@ -350,18 +350,17 @@ function normalizeCustomGptReference(
     return null;
   }
 
-  const explicitId =
-    firstPresentStringOrNumber(value, [
-      "citation_id",
-      "citationId",
-      "id",
-      "source_id",
-      "sourceId",
-      "document_id",
-      "documentId",
-      "page_id",
-      "pageId",
-    ]);
+  const explicitId = firstPresentStringOrNumber(value, [
+    "citation_id",
+    "citationId",
+    "id",
+    "source_id",
+    "sourceId",
+    "document_id",
+    "documentId",
+    "page_id",
+    "pageId",
+  ]);
   const title = firstPresentString(value, [
     "title",
     "page_title",
@@ -630,9 +629,7 @@ function inlineCitationNumbers(answer: string) {
 }
 
 function stripInlineCitationMarkers(answer: string) {
-  return answer
-    .replace(/\s*\[\d{1,3}\]/g, "")
-    .replace(/[ \t]{2,}/g, " ");
+  return answer.replace(/\s*\[\d{1,3}\]/g, "").replace(/[ \t]{2,}/g, " ");
 }
 
 function escapeRegExp(value: string) {
@@ -652,7 +649,10 @@ function stripControllerQuestionFromCustomGptAnswer(
     );
 
   if (selectedQuestion) {
-    cleaned = cleaned.replace(new RegExp(escapeRegExp(selectedQuestion), "gi"), "");
+    cleaned = cleaned.replace(
+      new RegExp(escapeRegExp(selectedQuestion), "gi"),
+      "",
+    );
   }
 
   if (responseMode === "answer_only" || responseMode === "answer_then_ask") {
@@ -754,7 +754,10 @@ function normalizeCitationMarkers(
     return answer;
   }
 
-  return addFallbackCitationMarkers(stripInlineCitationMarkers(answer), references);
+  return addFallbackCitationMarkers(
+    stripInlineCitationMarkers(answer),
+    references,
+  );
 }
 
 export async function listCustomGptSources(input: {
@@ -960,18 +963,25 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
 
   const sessionId =
     input.conversationId ?? (await createConversation(config.projectId));
+  const responseMode = input.responseMode ?? "answer_then_ask";
   const selectedSourceContext = clipText(
     input.selectedQuestionSourceContext,
     650,
   );
   const currentQuestion = clipText(input.currentQuestion, 280);
   const selectedNextQuestion = clipText(input.selectedNextQuestion, 420);
-  const surveyContext = clipText(input.surveyContext, 900);
+  // Source detours prioritize the recent exchange over background survey prose.
+  const surveyContext = clipText(
+    input.surveyContext,
+    responseMode === "answer_only" ? 500 : 900,
+  );
   const participantMessage = clipText(input.participantMessage, 500);
-  const recentInterviewerContext = clipText(input.recentInterviewerContext, 520);
-  const responseMode = input.responseMode ?? "answer_then_ask";
+  const recentInterviewerContext = clipText(
+    input.recentInterviewerContext,
+    520,
+  );
   const askedQuestions = input.askedQuestions
-    .slice(-4)
+    .slice(responseMode === "answer_only" ? -1 : -4)
     .map((question) => clipText(question, 120))
     .filter((question): question is string => Boolean(question))
     .join(" | ");
@@ -989,7 +999,9 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     "For safety or adverse-event turns, do not produce a full label-style safety inventory. Default to 2-4 focused bullets or one short paragraph about the specific adverse event, monitoring/management issue, resource, or operational concern raised. Group broad risks into categories instead of listing every common adverse reaction, serious adverse reaction, lab abnormality, and dose-modification cause.",
     "For drug-drug interaction or DDI questions, answer with the concrete source-supported interaction classes, mechanisms, affected co-medications or substrate classes, and labeled practical implications when available. Do not reduce DDI questions to generic dosing or safety commentary.",
     "Respect the active disease lane in the survey controller context. For broad follow-ups such as 'what's new,' 'what else is new,' or 'what information is new,' scope the source answer to the active disease lane unless the participant explicitly names another disease area or the source-context requirement asks for cross-disease breadth. Do not cite off-lane disease pages for broad questions.",
-    "If the participant answered adequately, acknowledge briefly and continue.",
+    responseMode === "answer_only"
+      ? "For follow-ups such as 'that', 'explain more', or 'more simply', use the most recent source exchange below, not the parked survey question. Simplify or restate that source explanation when requested."
+      : "If the participant answered adequately, acknowledge briefly and continue.",
     "Do not answer evidence requests with vague framing such as only saying a study is an anchor, flagship story, or key evidence. Give the actual useful study details.",
     "This is an HCP audience. For evidence questions, be concise but data-dense; bullets are fine. Include study names, design/phase if supported, disease setting and population, comparator or cohorts, endpoint(s), key numeric result(s), follow-up/timepoint when supported, safety/tolerability context when relevant, and caveats or limitations. If a detail is not in the approved source, say it is not available from the source.",
     "When a source-supported numeric result is available, give the exact value instead of only saying results favored the product, were strong, were positive, or were clinically meaningful.",
@@ -1009,9 +1021,11 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
     input.remainingSeconds <= 90
       ? "The timebox is nearly over. Be concise and move toward a final high-value wrap-up."
       : null,
-    currentQuestion
-      ? `Current survey question being answered: ${currentQuestion}`
-      : "Current survey question being answered: none.",
+    responseMode === "answer_only"
+      ? `PARKED survey question; DO NOT ANSWER or resume it in this source turn: ${currentQuestion ?? "none"}`
+      : currentQuestion
+        ? `Current survey question being answered: ${currentQuestion}`
+        : "Current survey question being answered: none.",
     selectedNextQuestion
       ? `Selected next survey question reserved for the survey controller; do not ask, restate, paraphrase, or answer it: ${selectedNextQuestion}`
       : "Selected next survey question reserved for the survey controller: none. Do not close the interview; the application handles closure.",
@@ -1019,7 +1033,9 @@ export async function askCustomGptForSurveyInterviewerTurn(input: {
       ? `Recently asked survey questions: ${askedQuestions}`
       : "Already asked survey questions: none.",
     recentInterviewerContext
-      ? `Recent interviewer source context already covered; avoid repeating this content: ${recentInterviewerContext}`
+      ? responseMode === "answer_only"
+        ? `Most recent source exchange (participant question and source answer): ${recentInterviewerContext}`
+        : `Recent interviewer source context already covered; avoid repeating this content: ${recentInterviewerContext}`
       : "Recent interviewer source context already covered: none.",
     `Seconds remaining: ${input.remainingSeconds}`,
     surveyContext ? `Survey controller context: ${surveyContext}` : null,
