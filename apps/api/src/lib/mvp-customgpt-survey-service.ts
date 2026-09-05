@@ -237,6 +237,8 @@ function persistenceSnapshot(session: MvpSurveySession) {
     adaptiveProbeQuestions: [...session.adaptiveProbeQuestions],
     completedReason: session.completedReason,
     moderatorState: structuredClone(session.moderatorState),
+    guide: structuredClone(session.guide),
+    fullGuide: structuredClone(session.fullGuide),
   };
 }
 
@@ -270,9 +272,17 @@ function restoreMvpSurveySession(input: {
     definition,
     input.session.surveyIntentSlug ?? undefined,
   );
-  const guide = guideForIntent(definition, surveyIntent);
-  const fullGuide = definition.guide;
+  const persistedGuide = input.session.guide?.length && input.session.guide.every(isMvpGuideQuestion)
+    ? structuredClone(input.session.guide)
+    : null;
+  const guide = persistedGuide ?? guideForIntent(definition, surveyIntent);
+  const fullGuide = persistedGuide
+    ? input.session.fullGuide?.length && input.session.fullGuide.every(isMvpGuideQuestion)
+      ? structuredClone(input.session.fullGuide)
+      : structuredClone(persistedGuide)
+    : definition.guide;
   const knownQuestionIds = new Set([
+    ...guide.map((question) => question.id),
     ...fullGuide.map((question) => question.id),
     ...input.session.adaptiveProbeQuestions
       .filter(isMvpGuideQuestion)

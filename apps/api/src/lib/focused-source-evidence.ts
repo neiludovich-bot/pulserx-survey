@@ -1,6 +1,7 @@
 import type { GroundedReference, ModeratorEvidenceSelectionInput } from "@interview/schemas";
 import type { ControlledRagChunk } from "./controlled-rag-source-packs";
 import { getOptionalOpenAIGateway } from "./model-gateway";
+import { sourceContentSearchTerms } from "./source-retrieval-query";
 
 type EvidenceAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 const QUERY_STOP_WORDS = new Set("a an and are as at be can could do does for from how i in is it me my of on or please show tell that the their there these this to us was we were what when where which with would you your".split(" "));
@@ -62,7 +63,7 @@ export async function selectFocusedSourceEvidence(input: {
   query: string;
   candidates: ControlledRagChunk[];
   fallbackSourceIds: string[];
-}): Promise<{ chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" }> {
+}): Promise<{ chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" | "unavailable" }> {
   const candidates = input.candidates.slice(0, 24);
   const selectionInput: ModeratorEvidenceSelectionInput = {
     surveySlug: input.surveySlug, query: input.query.slice(0, 4000),
@@ -77,6 +78,7 @@ export async function selectFocusedSourceEvidence(input: {
   };
   const gateway = getOptionalOpenAIGateway();
   if (gateway && candidates.length) {
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const selection = await gateway.selectModeratorEvidence(selectionInput);
       if (selection.result.selections.length > 3) throw new Error("Too many selected sources.");
@@ -96,13 +98,31 @@ export async function selectFocusedSourceEvidence(input: {
         });
         return { ...source, text: supportExcerpt, assets };
       });
+      if (!chunks.length) console.info({ event: "source_evidence_selection_empty", candidateCount: candidates.length });
       return { chunks, mode: "semantic" };
-    } catch {
-      // A failed selection cannot borrow evidence or assets. The bounded
-      // deterministic path remains available when the gateway is unavailable.
+    } catch (error) {
+      const record = error !== null && typeof error === "object" ? error as { name?: unknown; status?: unknown } : {};
+      const names = new Set(["Error", "ZodError", "APIError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "APIConnectionError", "APIConnectionTimeoutError", "BadRequestError", "InternalServerError"]);
+      console.warn({ event: "source_evidence_selection_failed", attempt,
+        category: typeof record.name === "string" && names.has(record.name) ? record.name : "Error",
+        status: typeof record.status === "number" ? record.status : null,
+        reason: "No validated evidence selection was available." });
     }
+    }
+    // A model failure is not permission to substitute a broad heuristic card.
+    return { chunks: [], mode: "unavailable" };
   }
-  const preferred = input.fallbackSourceIds.flatMap((id) => candidates.filter((chunk) => chunk.id === id));
+  const queryTerms = sourceContentSearchTerms(input.query, input.surveySlug);
+  const preferred = input.fallbackSourceIds.flatMap((id) => candidates.filter((chunk) => {
+    if (chunk.id !== id) return false;
+    const content = terms(chunk.text, input.surveySlug);
+    // Initialisms are derived from actual contiguous source words, not
+    // topic aliases or inherited document tags (for example, a three-word term).
+    const words = chunk.text.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+    const queryInitialisms = new Set(input.query.match(/\b[A-Z]{2,5}\b/g)?.map((term) => term.toLowerCase()) ?? []);
+    return queryTerms.some((term) => content.has(term) || content.has(term.replace(/s$/, "")) ||
+      queryInitialisms.has(term) && words.some((_word, index) => words.slice(index, index + term.length).map((word) => word[0]).join("") === term));
+  }));
   const selected = preferred.slice(0, 3);
   return { mode: "fallback", chunks: selected.map((chunk) => ({
     ...chunk, assets: fallbackAssets(chunk, input.query),

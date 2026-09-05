@@ -7,11 +7,23 @@ import {
 } from "@prisma/client";
 import {
   moderatorStateSchema,
+  mvpGuideQuestionDefinitionSchema,
+  groundedReferenceSchema,
   type GroundedReference,
   type MvpCustomGptSurveyMessage,
 } from "@interview/schemas";
+import { z } from "zod";
 import { prisma } from "./prisma";
 import type { MvpTurnRouteDecision } from "./mvp-turn-router";
+import type { MvpGuideQuestion } from "./mvp-brukinsa-guide";
+
+const persistedGuideSchema = z.array(mvpGuideQuestionDefinitionSchema.extend({
+  captureBeforeSourceContext: z.boolean().optional(),
+  surfacedReferences: z.array(groundedReferenceSchema).optional(),
+}).strict()).min(1).refine(
+  (questions) => new Set(questions.map((question) => question.id)).size === questions.length,
+  "A persisted guide cannot contain duplicate question IDs.",
+);
 
 export type MvpPersistenceSessionSnapshot = {
   sessionId: string;
@@ -36,6 +48,8 @@ export type MvpPersistenceSessionSnapshot = {
   answeredQuestionIds?: string[];
   answerEvidenceByQuestionId?: Record<string, string[]>;
   moderatorState?: ReturnType<typeof moderatorStateSchema.parse>;
+  guide?: MvpGuideQuestion[];
+  fullGuide?: MvpGuideQuestion[];
   adaptiveProbeQuestions: unknown[];
   completedReason: string | null;
 };
@@ -113,6 +127,8 @@ function metadataForSession(
     moderatorState: inputJson(moderatorStateSchema.parse(
       session.moderatorState ?? emptyModeratorState(),
     )),
+    ...(session.guide === undefined ? {} : { guide: inputJson(persistedGuideSchema.parse(session.guide)) }),
+    ...(session.fullGuide === undefined ? {} : { fullGuide: inputJson(persistedGuideSchema.parse(session.fullGuide)) }),
     adaptiveProbeQuestions: inputJson(session.adaptiveProbeQuestions),
     completedReason: session.completedReason,
   };
@@ -133,6 +149,11 @@ function moderatorStateFromMetadata(value: unknown) {
   // Older sessions have no moderator ledger. Malformed metadata cannot earn
   // reaction credit or invent a pending priority from the browser transcript.
   return parsed.success ? parsed.data : emptyModeratorState();
+}
+
+function guideFromMetadata(value: unknown): MvpGuideQuestion[] | undefined {
+  const parsed = persistedGuideSchema.safeParse(value);
+  return parsed.success ? parsed.data : undefined;
 }
 
 function stringArray(value: unknown): string[] {
@@ -528,6 +549,8 @@ export async function loadMvpSurveySessionSnapshot(sessionId: string) {
           metadata.answerEvidenceByQuestionId,
         ),
         moderatorState: moderatorStateFromMetadata(metadata.moderatorState),
+        guide: guideFromMetadata(metadata.guide),
+        fullGuide: guideFromMetadata(metadata.fullGuide),
         adaptiveProbeQuestions: Array.isArray(metadata.adaptiveProbeQuestions)
           ? metadata.adaptiveProbeQuestions
           : [],

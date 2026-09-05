@@ -10,6 +10,7 @@ import { classifyMvpTurnRoute, type MvpDisplayTopic } from "./mvp-turn-router";
 import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
 import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
+import { sourceContentSearchSql } from "./source-retrieval-query";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -1219,14 +1220,18 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   }
 
   try {
+    const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug);
+    if (!searchQuery) return [];
+    const matches = await prisma.$queryRaw<Array<{ id: string }>>(searchQuery);
+    if (!matches.length) return [];
     const chunks = await prisma.sourceChunk.findMany({
       where: {
+        id: { in: matches.map((match) => match.id) },
         surveySlug: input.surveySlug,
         sourceDocument: {
           status: "ACTIVE",
         },
       },
-      orderBy: [{ sourceDocument: { priority: "desc" } }, { position: "asc" }],
       take: 80,
       include: {
         sourceDocument: {
@@ -1258,7 +1263,8 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
         },
       },
     });
-    return chunks.map(
+    const matchOrder = new Map(matches.map((match, index) => [match.id, index]));
+    return chunks.sort((left, right) => (matchOrder.get(left.id) ?? 80) - (matchOrder.get(right.id) ?? 80)).map(
       (chunk) =>
         ({
           id: `db:${chunk.id}`,
@@ -1308,7 +1314,7 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
   // Preserve the approved catalog alongside retrieved library excerpts, so
   // keyword-poor paraphrases can still be resolved by semantic selection.
   const curatedIds = new Set(candidateChunks.filter((chunk) => !chunk.id.startsWith("db:")).map((chunk) => chunk.id));
-  const databaseIds = new Set(rankedCandidates.filter((chunk) => chunk.id.startsWith("db:")).slice(0, Math.max(0, 24 - curatedIds.size)).map((chunk) => chunk.id));
+  const databaseIds = new Set(activeDatabaseChunks.slice(0, Math.max(0, 24 - curatedIds.size)).map((chunk) => chunk.id));
   return rankedCandidates.filter((chunk) => curatedIds.has(chunk.id) || databaseIds.has(chunk.id)).slice(0, 24);
 }
 
@@ -1666,6 +1672,8 @@ export const controlledRagTestInternals = {
   orderChunksForEvidenceCard,
   rankAssetsForDisplay,
   referencesForChunks,
+  databaseChunks,
+  retrieveChunks,
   removeInternalSourceNarration,
   removeParticipantVoiceMirror,
   stripComposerFollowUpQuestions,

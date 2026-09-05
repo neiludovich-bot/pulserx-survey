@@ -8,13 +8,13 @@ import {
   submitMvpCustomGptSurveyTurn,
 } from "./mvp-customgpt-survey-service";
 
-const mocks = vi.hoisted(() => ({ plan: vi.fn(), phrase: vi.fn(), source: vi.fn(), persist: vi.fn() }));
+const mocks = vi.hoisted(() => ({ plan: vi.fn(), phrase: vi.fn(), source: vi.fn(), persist: vi.fn(), load: vi.fn() }));
 vi.mock("./model-gateway", () => ({
   getOptionalOpenAIGateway: () => ({ planModeratorTurn: mocks.plan, phraseModeratorTurn: mocks.phrase }),
 }));
 vi.mock("./source-answer-service", () => ({ askSourceProviderForSurveyInterviewerTurn: mocks.source }));
 vi.mock("./mvp-survey-persistence", () => ({
-  loadMvpSurveySessionSnapshot: vi.fn(async () => null),
+  loadMvpSurveySessionSnapshot: mocks.load,
   persistMvpSurveySessionStarted: vi.fn(async () => undefined),
   persistMvpSurveyTurnAudit: mocks.persist,
 }));
@@ -73,6 +73,8 @@ beforeEach(() => {
   });
   mocks.persist.mockReset();
   mocks.persist.mockResolvedValue(undefined);
+  mocks.load.mockReset();
+  mocks.load.mockResolvedValue(null);
   vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Controller integration must use mocked providers."); }));
 });
 
@@ -88,9 +90,11 @@ function auditFor(participantMessage: string) {
 }
 
 describe("moderator controller integration", () => {
-  it.each(["nubeqa", "brukinsa", "padcev"] as const)(
-    "captures %s priorities and exact synthetic reactions, preserves detours, and returns to the imported guide",
-    async (surveySlug) => {
+  it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((surveySlug) => [
+    { surveySlug, restart: false }, { surveySlug, restart: true },
+  ]))(
+    "captures $surveySlug priorities and synthetic reactions, preserves detours, and returns to the imported guide (restart=$restart)",
+    async ({ surveySlug, restart }) => {
       const started = startMvpCustomGptSurvey({ surveySlug, targetDurationSeconds: 600, guide });
       expect(started.currentQuestion).toBe(guide[0]);
       const turn = (content: string) => submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content });
@@ -109,8 +113,20 @@ describe("moderator controller integration", () => {
       expect(first.messages.at(-1)?.references).toHaveLength(1);
       expect(first.messages.at(-1)?.content).toContain(`${surveySlug.toUpperCase()} PFS source summary.`);
 
+      if (restart) {
+        expect(firstAudit.session.guide.map((question: { canonicalQuestion: string }) => question.canonicalQuestion)).toEqual(guide);
+        expect(firstAudit.session.fullGuide.map((question: { canonicalQuestion: string }) => question.canonicalQuestion)).toEqual(guide);
+        mocks.load.mockResolvedValueOnce({
+          session: structuredClone(firstAudit.session),
+          messages: structuredClone(first.messages),
+          turnCount: first.turnCount,
+        });
+        resetMvpCustomGptSurveySessions();
+      }
+
       const sourceQuestion = "What drug interactions should I consider?";
       const detour = await turn(sourceQuestion);
+      if (restart) expect(mocks.load).toHaveBeenCalledWith(started.sessionId);
       expect(detour.currentQuestion).toBe(first.currentQuestion);
       expect(detour.messages.at(-1)?.content).not.toContain(first.currentQuestion!);
       expect(auditFor(sourceQuestion).session.answeredQuestionIds).not.toContain(firstQuestionId);

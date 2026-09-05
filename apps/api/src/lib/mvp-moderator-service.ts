@@ -79,7 +79,7 @@ export async function runModeratorTurn(input: Input) {
       return answer.answer;
     } catch (error) { sourceReason = error instanceof Error ? error.message : "Evidence unavailable."; return null; }
   };
-  if (input.asksSourceQuestion && !input.isResumeCue) {
+  if ((input.asksSourceQuestion || plan.action === "answer_source") && !input.isResumeCue) {
     action = "answer_source";
     const answer = await source(input.participantMessage, previousActive?.sourceQuestion ?? null);
     content = answer ? `${answer}\n\nWhat else would you like to explore? Say "continue" when you're ready to return to the interview.` : 'I could not find supporting evidence for that question. You can clarify your question, or say "continue" to return to the interview.';

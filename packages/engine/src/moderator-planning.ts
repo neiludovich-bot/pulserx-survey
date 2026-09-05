@@ -120,6 +120,9 @@ export function validateModeratorPhrasing(input: ModeratorPhrasingInput, output:
     throw new Error("A reaction must contain exactly one question; a transition must contain none.");
   }
   if (parsed.action === "reaction") {
+    if (!result.text.endsWith("?") || /[\r\n]/.test(result.text)) {
+      throw new Error("A reaction must be a single question paragraph ending at its question mark.");
+    }
     const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").split(/\s+/).map((word) => word.replace(/s$/, ""));
     const genericWords = new Set(["a", "an", "and", "the", "with", "of", "in", "for", "on", "to", "at", "information", "data", "evidence"]);
     const anchors = [...new Set(words(parsed.priorityLabel).filter((word) => word.length > 1 && !genericWords.has(word)))];

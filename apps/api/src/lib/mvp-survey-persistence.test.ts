@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { guideFromQuestionStrings } from "./mvp-brukinsa-guide";
 import {
   loadMvpSurveySessionSnapshot,
   persistMvpSurveySessionStarted,
@@ -99,6 +100,12 @@ const moderatorState: NonNullable<MvpPersistenceSessionSnapshot["moderatorState"
   ],
   activePriorityId: "ddi",
 };
+
+const importedGuide = guideFromQuestionStrings([
+  "What factors matter most?",
+  "Which access barrier matters most in your setting?",
+  "What else would you like to add?",
+]);
 
 describe("MVP survey persistence", () => {
   const originalDatabaseUrl = process.env.DATABASE_URL;
@@ -270,6 +277,8 @@ describe("MVP survey persistence", () => {
     expect(restored?.session.answeredQuestionIds).toEqual([]);
     expect(restored?.session.answerEvidenceByQuestionId).toEqual({});
     expect(restored?.session.moderatorState).toEqual({ version: 1, priorities: [], activePriorityId: null });
+    expect(restored?.session.guide).toBeUndefined();
+    expect(restored?.session.fullGuide).toBeUndefined();
   });
 
   it.each(["nubeqa", "brukinsa", "padcev"])(
@@ -282,7 +291,8 @@ describe("MVP survey persistence", () => {
         reason: "The interaction evidence was presented and its reaction remains unanswered.",
       };
       await persistMvpSurveyTurnAudit({
-        session: { ...sessionSnapshot, surveySlug, sourceBrand: surveySlug.toUpperCase(), moderatorState },
+        session: { ...sessionSnapshot, surveySlug, sourceBrand: surveySlug.toUpperCase(), moderatorState,
+          guide: importedGuide, fullGuide: importedGuide },
         turn: {
           eventType: "turn_completed",
           participantMessage: "What about interactions?",
@@ -310,6 +320,8 @@ describe("MVP survey persistence", () => {
       });
       const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
       expect(restored?.session.moderatorState).toEqual(moderatorState);
+      expect(restored?.session.guide).toEqual(importedGuide);
+      expect(restored?.session.fullGuide).toEqual(importedGuide);
       expect(restored?.session.moderatorState?.priorities.find((priority) => priority.id === "ddi")?.reactionEvidence).toEqual([]);
       expect(restored?.session.moderatorState?.priorities.find((priority) => priority.id === "access")?.status).toBe("pending");
     },
@@ -336,6 +348,42 @@ describe("MVP survey persistence", () => {
     const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
     expect(restored?.session.moderatorState).toEqual({ version: 1, priorities: [], activePriorityId: null });
     expect(restored?.session.askedQuestionIds).toEqual(sessionSnapshot.askedQuestionIds);
+  });
+
+  it.each([
+    { invalidGuide: [] },
+    { invalidGuide: [importedGuide[0], { id: "missing_fields" }] },
+    { invalidGuide: [importedGuide[0], importedGuide[0]] },
+    { invalidGuide: [{ ...importedGuide[0], unexpected: "not an authored guide field" }] },
+  ])("rejects an invalid persisted guide as a whole rather than restoring a partial queue", async ({ invalidGuide }) => {
+    process.env.DATABASE_URL = "postgresql://example";
+    prismaMock.session.findUnique.mockResolvedValue({
+      id: sessionSnapshot.sessionId,
+      startedAt, createdAt: startedAt,
+      metadata: { runtime: "mvp-customgpt-survey", ...sessionSnapshot, guide: invalidGuide, fullGuide: invalidGuide },
+      study: { name: sessionSnapshot.studyName }, turns: [],
+    });
+    const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
+    expect(restored?.session.guide).toBeUndefined();
+    expect(restored?.session.fullGuide).toBeUndefined();
+  });
+
+  it("preserves authored source prerequisites and surfaced references in a guide snapshot", async () => {
+    process.env.DATABASE_URL = "postgresql://example";
+    const sourceGuide = [{
+      ...importedGuide[0],
+      captureBeforeSourceContext: true,
+      sourceContextRequirement: "Present the approved source context after capturing baseline priorities.",
+      surfacedReferences: [{ citationId: "approved-guide", title: "Approved source", url: "https://example.test/source", description: null, assets: [] }],
+    }];
+    await persistMvpSurveySessionStarted({
+      session: { ...sessionSnapshot, guide: sourceGuide, fullGuide: [...sourceGuide, importedGuide[1]] },
+      initialMessage: { id: "start", role: "interviewer", content: sourceGuide[0].canonicalQuestion, createdAt: startedAt.toISOString(), references: [] },
+      customGptEnabled: true, setupReason: null,
+    });
+    const metadata = prismaMock.session.upsert.mock.calls[0][0].create.metadata;
+    expect(metadata.guide).toEqual(sourceGuide);
+    expect(metadata.fullGuide).toEqual([...sourceGuide, importedGuide[1]]);
   });
 
   it("rejects malformed moderator state before any session or turn writes", async () => {

@@ -164,7 +164,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.source).not.toHaveBeenCalled();
   });
 
-  it("binds a generic simplification request to the active DDI source question after the PFS reaction", async () => {
+  it.each([true, false])("binds a planner-selected source followup to active DDI when upstream asksSourceQuestion is %s", async (asksSourceQuestion) => {
     const first = await presentAgenda(surveySlug);
     const reaction = "That evidence would increase my confidence in choosing it for appropriate patients.";
     mocks.plan.mockResolvedValueOnce({ result: planned({
@@ -184,7 +184,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     const followup = await runModeratorTurn(inputFor(surveySlug, {
       state: second!.state, currentQuestion: second!.question,
       participantMessage: "Can you explain that more simply?",
-      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered",
+      isPriorityQuestion: false, asksSourceQuestion, answerStatus: "not_answered",
       recentTurns: [{ role: "participant", content: reaction }, { role: "interviewer", content: second!.content! }],
     }));
 

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as modelGateway from "./model-gateway";
+import { CONTROLLED_RAG_CHUNKS } from "./controlled-rag-source-packs";
 import {
   askControlledRagForSurveyInterviewerTurn,
   controlledRagTestInternals,
@@ -70,6 +71,7 @@ describe("controlled RAG source provider", () => {
     });
     vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({
       composeControlledRagAnswer,
+      selectModeratorEvidence: vi.fn().mockResolvedValue({ result: { selections: [{ sourceId: "nubeqa-ddi-profile", supportExcerpt: CONTROLLED_RAG_CHUNKS.find((chunk) => chunk.id === "nubeqa-ddi-profile")!.text, assetIds: [] }], rationale: "The DDI text supports this question." } }),
     } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
 
     const result = await askControlledRagForSurveyInterviewerTurn({
@@ -92,7 +94,7 @@ describe("controlled RAG source provider", () => {
       surveyContext: parkedFactorsInput.surveyContext,
       selectedQuestionSourceContext: null,
       recentInterviewerContext: parkedFactorsInput.recentInterviewerContext,
-      clinicalEvidenceCard: expect.objectContaining({ topic: "nubeqa_safety_dosing" }),
+      clinicalEvidenceCard: null,
     }));
   });
 

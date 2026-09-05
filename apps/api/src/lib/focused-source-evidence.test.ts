@@ -11,7 +11,7 @@ function mockSelector(result: unknown) {
 }
 
 function source(surveySlug: ControlledRagChunk["surveySlug"], id: string): ControlledRagChunk {
-  return { surveySlug, id, title: "Trial evidence", description: "Approved trial evidence", url: `https://example.com/${id}`, text: "Progression-free survival evidence from this trial. Separate safety context is also present in this document.", tags: ["efficacy"], assets: [{
+  return { surveySlug, id, title: "Trial evidence", description: "Approved trial evidence", url: `https://example.com/${id}`, text: "Progression-free survival evidence from this trial. Separate safety context is also present in this document. Administration instructions are present.", tags: ["efficacy"], assets: [{
     title: "Progression-free survival curve", description: "Trial endpoint", url: `https://example.com/${id}.png`, assetKind: "CHART", tags: ["pfs"], priority: 1,
   }, {
     title: "Adverse reactions", description: "Other outcome", url: `https://example.com/${id}-safety.png`, assetKind: "CHART", tags: ["safety"], priority: 100,
@@ -61,14 +61,42 @@ describe("focused evidence selection", () => {
   it("rejects a source borrowing another source's asset even if the model returns it", async () => {
     mockSelector({ selections: [{ sourceId: "trial", assetIds: ["safety:asset:0"], supportExcerpt: "Progression-free survival evidence from this trial." }], rationale: "Invalid ownership fixture." });
     const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: "PFS", candidates: [source("nubeqa", "trial"), source("nubeqa", "safety")], fallbackSourceIds: ["trial"] });
-    expect(result.mode).toBe("fallback");
-    expect(result.chunks[0].assets?.map((asset) => asset.url)).toEqual(["https://example.com/trial.png"]);
+    expect(result.mode).toBe("unavailable");
+    expect(result.chunks).toEqual([]);
   });
 
   it("preserves an explicit unsupported selection rather than silently substituting another trial", async () => {
     mockSelector({ selections: [], rationale: "None of these sources supports the requested population." });
     const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: "A different trial population", candidates: [source("nubeqa", "trial")], fallbackSourceIds: ["trial"] });
     expect(result).toEqual({ mode: "semantic", chunks: [] });
+  });
+
+  it("does not replace a failed interaction selection with an unrelated efficacy card or expose raw errors", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const select = mockSelector(null).mockRejectedValue(Object.assign(new Error("Sensitive request/output content must not be logged"), { name: "ZodError" }));
+    const result = await selectFocusedSourceEvidence({ surveySlug: "padcev", query: "What drug-drug interactions are documented?", candidates: [source("padcev", "efficacy")], fallbackSourceIds: ["efficacy"] });
+    expect(result).toEqual({ mode: "unavailable", chunks: [] });
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(warn).toHaveBeenCalledWith(expect.objectContaining({ event: "source_evidence_selection_failed", category: "ZodError" }));
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("Sensitive request/output");
+  });
+
+  it("recovers on one retry when an invalid selection is followed by validated evidence", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const select = mockSelector({ selections: [{ sourceId: "missing", supportExcerpt: "Invented", assetIds: [] }], rationale: "Invalid fixture." });
+    select.mockResolvedValueOnce({ result: { selections: [{ sourceId: "missing", supportExcerpt: "Invented", assetIds: [] }], rationale: "Invalid fixture." } });
+    select.mockResolvedValueOnce({ result: { selections: [{ sourceId: "trial", supportExcerpt: "Progression-free survival evidence from this trial.", assetIds: [] }], rationale: "Validated evidence." } });
+    const result = await selectFocusedSourceEvidence({ surveySlug: "padcev", query: "Progression-free survival", candidates: [source("padcev", "trial")], fallbackSourceIds: [] });
+    expect(result.mode).toBe("semantic");
+    expect(result.chunks[0].id).toBe("trial");
+    expect(select).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not use inherited interaction tags when the fallback source text only discusses efficacy", async () => {
+    vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue(null);
+    const unrelated = { ...source("padcev", "efficacy"), tags: ["drug", "interactions", "DDI"] };
+    const result = await selectFocusedSourceEvidence({ surveySlug: "padcev", query: "What approved evidence about DDI is available for PADCEV?", candidates: [unrelated], fallbackSourceIds: [unrelated.id] });
+    expect(result.chunks).toEqual([]);
   });
 
   it("does not promote a high-priority unrelated chart when there is no relevant figure", async () => {

@@ -141,6 +141,16 @@ describe("moderator planning contract", () => {
     })).toThrow("source-answer action");
   });
 
+  it("allows the planner to recognize a clarification missed by the upstream router", () => {
+    const clarification = { ...presentedInput, participantMessage: "Can you explain that more simply?", asksSourceQuestion: false, answerStatus: "not_answered" as const };
+    const result = normalizeModeratorPlanModelResult(clarification, {
+      ...modelPlanBase, priorityMentions: [], action: "answer_source", selectedPriorityId: "pfs",
+    });
+    expect(result.action).toBe("answer_source");
+    expect(result.reactionStatus).toBe("not_answered");
+    expect(result.reactionEvidence).toEqual([]);
+  });
+
   it("does not credit a navigation cue as a reaction", () => {
     expect(() => validateModeratorPlan({ ...presentedInput, participantMessage: "continue", isResumeCue: true }, {
       ...plan, newPriorities: [], action: "resume_guide", reactionStatus: "answered", reactionEvidence: ["continue"],
@@ -188,6 +198,14 @@ describe("moderator planning contract", () => {
     expect(validateModeratorPhrasing({ ...phraseInput, action: "transition" }, { text: "Let's look at the interaction information you mentioned." }).text).not.toContain("?");
     expect(() => validateModeratorPhrasing(phraseInput, { text: "What comes to mind about this?" })).toThrow("explicitly name");
     expect(validateModeratorPhrasing({ ...phraseInput, priorityLabel: "Drug interactions" }, { text: "How does the drug interaction information fit into your assessment?" }).text).toContain("drug interaction");
+  });
+
+  it.each([
+    "How does the DDI information affect your assessment?\n\nNext let's look at DDI.",
+    "How does the DDI information affect your assessment? Next let's look at DDI.",
+    "On DDI:\nHow does this information affect your assessment?",
+  ])("rejects extra transition text or paragraphs in reaction wording: %s", (text) => {
+    expect(() => validateModeratorPhrasing({ brand: "NUBEQA", action: "reaction", priorityLabel: "DDI", participantMessage: "DDI", previousPriorityLabel: null }, { text })).toThrow("single question paragraph");
   });
 });
 
