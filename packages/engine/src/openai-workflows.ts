@@ -369,12 +369,21 @@ export class OpenAIResponsesGateway {
       }
     });
 
-    const debugPath = await this.debugStore?.save(trace);
+    let debugPath: string | void = undefined;
+    let debugError: string | null = null;
+    try {
+      debugPath = await this.debugStore?.save(trace);
+    } catch (error) {
+      // The caller persists the canonical decision. A diagnostic file write
+      // must not turn a valid model response into a failed research turn.
+      debugError = error instanceof Error ? error.message : "Debug trace storage failed.";
+    }
 
     return {
       result: response.output_parsed,
       trace,
-      debugPath
+      debugPath,
+      debugError,
     };
   }
 }

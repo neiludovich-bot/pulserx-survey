@@ -67,6 +67,28 @@ describe("moderator planning contract", () => {
     expect(normalizeModeratorPlanModelResult(input, modelPlan).newPriorities).toEqual(plan.newPriorities);
   });
 
+  it("retains initial priorities and their source queries when the model mistakenly credits a reaction", () => {
+    const normalized = normalizeModeratorPlanModelResult(input, {
+      ...modelPlan,
+      reactionStatus: "answered",
+      reactionEvidence: ["PFS and DDI"],
+    });
+    expect(normalized.newPriorities).toEqual(plan.newPriorities);
+    expect(normalized.newPriorities.map((priority) => priority.sourceQuestion)).toEqual([
+      "What PFS results are reported for NUBEQA?",
+      "What drug interactions are reported for NUBEQA?",
+    ]);
+    expect(normalized).toMatchObject({ reactionStatus: "not_answered", reactionEvidence: [], action: "present_priority" });
+  });
+
+  it("forces navigation to have no reaction credit or new priorities despite model mistakes", () => {
+    const normalized = normalizeModeratorPlanModelResult({ ...presentedInput, participantMessage: "continue", isResumeCue: true, asksSourceQuestion: true }, {
+      ...modelPlanBase, action: "answer_source", reactionStatus: "answered", reactionEvidence: ["continue"],
+      priorityMentions: [{ ...modelPlan.priorityMentions[0], participantEvidence: "continue" }],
+    });
+    expect(normalized).toMatchObject({ newPriorities: [], reactionStatus: "not_answered", reactionEvidence: [], action: "probe_reaction", selectedPriorityId: "pfs" });
+  });
+
   it.each([true, false])("does not reopen a rephrased DDI priority after a substantive PADCEV reaction (matched=%s)", (matched) => {
     const reaction = "I would review concomitant medicines before choosing it, so that interaction profile would affect my decision.";
     const ddiInput = structuredClone(presentedInput);
@@ -149,6 +171,38 @@ describe("moderator planning contract", () => {
     expect(result.action).toBe("answer_source");
     expect(result.reactionStatus).toBe("not_answered");
     expect(result.reactionEvidence).toEqual([]);
+  });
+
+  it.each(["pfs", "invented", null])("keeps a validated reaction when resume_guide has stale selected ID %s", (selectedPriorityId) => {
+    const normalized = normalizeModeratorPlanModelResult(presentedInput, {
+      ...modelPlanBase, priorityMentions: [], action: "resume_guide", selectedPriorityId,
+      reactionStatus: "answered", reactionEvidence: ["I would use it"],
+    });
+    expect(normalized).toMatchObject({ reactionStatus: "answered", reactionEvidence: ["I would use it"], action: "resume_guide", selectedPriorityId: null });
+  });
+
+  it("advances to a valid pending priority despite a malformed selection after a reaction", () => {
+    const pendingInput = structuredClone(presentedInput);
+    pendingInput.state.priorities.push({ ...pendingInput.state.priorities[0], id: "ddi", label: "DDI", status: "pending" });
+    const normalized = normalizeModeratorPlanModelResult(pendingInput, {
+      ...modelPlanBase, priorityMentions: [], action: "probe_reaction", selectedPriorityId: "invented",
+      reactionStatus: "answered", reactionEvidence: ["I would use it"],
+    });
+    expect(normalized).toMatchObject({ reactionStatus: "answered", action: "present_priority", selectedPriorityId: "ddi" });
+  });
+
+  it("discards invalid mention metadata independently from valid reaction evidence", () => {
+    const normalized = normalizeModeratorPlanModelResult(presentedInput, {
+      ...modelPlanBase, reactionStatus: "answered", reactionEvidence: ["I would use it"],
+      priorityMentions: [
+        { ...modelPlan.priorityMentions[0], participantEvidence: "I would use it", kind: "reaction_detail", existingPriorityId: "invented" },
+        { ...modelPlan.priorityMentions[0], participantEvidence: "not in the message" },
+      ],
+    });
+    expect(normalized).toMatchObject({ newPriorities: [], reactionStatus: "answered", action: "resume_guide" });
+    expect(() => normalizeModeratorPlanModelResult(presentedInput, {
+      ...modelPlanBase, priorityMentions: [], reactionStatus: "answered", reactionEvidence: ["Invented participant reaction"],
+    })).toThrow("exact excerpts");
   });
 
   it("does not credit a navigation cue as a reaction", () => {
@@ -251,6 +305,17 @@ describe("moderator structured gateway", () => {
   it("rejects a refusal or missing parsed output rather than advancing", async () => {
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse: vi.fn().mockResolvedValue({ status: "completed" }) });
     await expect(gateway.planModeratorTurn(input)).rejects.toThrow("no parsed output");
+  });
+
+  it("returns a valid model plan even when auxiliary debug-file storage fails", async () => {
+    const save = vi.fn().mockRejectedValue(new Error("EACCES: permission denied saving debug trace"));
+    const parse = vi.fn().mockResolvedValue({ output_parsed: modelPlan, model: "decision-model", status: "completed" });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, { save }, { parse });
+    const result = await gateway.planModeratorTurn(input);
+    expect(result.result.newPriorities.map((priority) => priority.label)).toEqual(["PFS", "Drug interactions"]);
+    expect(result.trace.callType).toBe("moderator_plan");
+    expect(result.debugPath).toBeUndefined();
+    expect(result.debugError).toContain("EACCES");
   });
 
   it.each([

@@ -21,16 +21,29 @@ function hasExplicitAdditionEvidence(evidence: string) {
 export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, output: unknown) {
   const parsed = moderatorPlanInputSchema.parse(input);
   const model = moderatorPlanModelResultSchema.parse(output);
+  const active = parsed.state.priorities.find((priority) => priority.id === parsed.state.activePriorityId && priority.status === "presented");
+  const reactionStatus = active && !parsed.isResumeCue ? model.reactionStatus : "not_answered";
+  const reactionEvidence = active && !parsed.isResumeCue ? model.reactionEvidence : [];
+  // Validate research evidence independently. A bad action/ID must not erase
+  // a genuine reaction, but invented reaction evidence must still fail closed.
+  validateModeratorPlan(parsed, {
+    newPriorities: [],
+    reactionStatus,
+    reactionEvidence,
+    action: parsed.asksSourceQuestion ? "answer_source" : "resume_guide",
+    selectedPriorityId: null,
+    rationale: model.rationale,
+  });
   const newPriorities: Array<{ label: string; participantEvidence: string; sourceQuestion: string }> = [];
   const labels = new Set(parsed.state.priorities.map((priority) => priority.label.toLowerCase().trim()));
-  for (const mention of model.priorityMentions) {
+  for (const mention of parsed.isResumeCue ? [] : model.priorityMentions) {
     if (!parsed.participantMessage.includes(mention.participantEvidence) ||
         (mention.additionEvidence !== null && !parsed.participantMessage.includes(mention.additionEvidence))) {
-      throw new Error("Moderator mentions require exact participant excerpts.");
+      continue;
     }
     if (mention.existingPriorityId !== null &&
         !parsed.state.priorities.some((priority) => priority.id === mention.existingPriorityId)) {
-      throw new Error("A priority mention refers to an unknown existing priority.");
+      continue;
     }
     if (mention.existingPriorityId !== null ||
         mention.kind === "existing_priority" || mention.kind === "reaction_detail") continue;
@@ -43,30 +56,29 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
     newPriorities.push({ label: mention.label, participantEvidence: mention.participantEvidence, sourceQuestion: mention.sourceQuestion });
   }
 
-  let action = model.action;
-  let selectedPriorityId = model.selectedPriorityId;
-  const selected = parsed.state.priorities.find((priority) => priority.id === selectedPriorityId);
-  // Discarding a duplicate mention must not discard a valid reaction. Resolve
-  // the resulting empty presentation choice using existing coverage state.
-  if ((action === "present_priority" && (selected ? selected.status !== "pending" : !newPriorities.length)) ||
-      (action === "probe_reaction" && model.reactionStatus === "answered")) {
-    const pending = parsed.state.priorities.find((priority) => priority.status === "pending");
-    const active = parsed.state.priorities.find((priority) => priority.id === parsed.state.activePriorityId && priority.status === "presented");
-    if (pending || newPriorities.length) {
-      action = "present_priority";
-      selectedPriorityId = pending?.id ?? null;
-    } else if (active && model.reactionStatus !== "answered" && (active.probeCount < 2 || parsed.isResumeCue)) {
-      action = "probe_reaction";
-      selectedPriorityId = active.id;
-    } else {
-      action = "resume_guide";
-      selectedPriorityId = null;
-    }
+  const selected = parsed.state.priorities.find((priority) => priority.id === model.selectedPriorityId);
+  const pending = selected?.status === "pending" ? selected : parsed.state.priorities.find((priority) => priority.status === "pending");
+  let action: typeof model.action;
+  let selectedPriorityId: string | null;
+  // The model supplies interpretation and a preference among valid pending
+  // priorities. The engine reconciles that preference with actual state.
+  if (!parsed.isResumeCue && (parsed.asksSourceQuestion || model.action === "answer_source")) {
+    action = "answer_source";
+    selectedPriorityId = active?.id ?? null;
+  } else if (active && reactionStatus !== "answered" && (active.probeCount < 2 || parsed.isResumeCue)) {
+    action = "probe_reaction";
+    selectedPriorityId = active.id;
+  } else if (pending || newPriorities.length) {
+    action = "present_priority";
+    selectedPriorityId = pending?.id ?? null;
+  } else {
+    action = "resume_guide";
+    selectedPriorityId = null;
   }
   return validateModeratorPlan(parsed, {
     newPriorities,
-    reactionStatus: model.reactionStatus,
-    reactionEvidence: model.reactionEvidence,
+    reactionStatus,
+    reactionEvidence,
     action,
     selectedPriorityId,
     rationale: model.rationale,
@@ -94,7 +106,7 @@ export function validateModeratorPlan(input: ModeratorPlanInput, output: unknown
   if (result.selectedPriorityId !== null && !selected) {
     throw new Error("The moderator selected an unknown priority ID.");
   }
-  if (parsed.asksSourceQuestion && result.action !== "answer_source") {
+  if (!parsed.isResumeCue && parsed.asksSourceQuestion && result.action !== "answer_source") {
     throw new Error("A participant source question must retain its source-answer action.");
   }
   if (result.action === "present_priority" &&
