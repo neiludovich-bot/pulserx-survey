@@ -113,6 +113,25 @@ export const CONTROLLED_RAG_CHUNKS = [
     text: "BRUKINSA HCP dosing and safety resources cover real-world medication-management topics including tablet formulation, dosing schedule, dose reduction or modification, drug-interaction considerations, hepatic impairment, and Important Safety Information topics such as hemorrhage, infections, cytopenias, second primary malignancies, cardiac arrhythmias, hepatotoxicity, embryo-fetal toxicity, and common adverse reactions or lab abnormalities.",
   },
   {
+    // Verified 2026-09-05 against the manufacturer's US PI, section 7.1,
+    // Table 17, PDF page 23. Keep interaction effects separate from general warnings.
+    id: "brukinsa-ddi-profile",
+    surveySlug: "brukinsa",
+    title: "BRUKINSA Prescribing Information: Drug Interactions",
+    url: "https://brukinsa.com/wp-content/uploads/brukinsa-prescribing-information.pdf#page=23",
+    description: "US prescribing information section 7.1, Table 17: effects of other medicines on zanubrutinib and labeled management.",
+    tags: ["brukinsa", "zanubrutinib", "drug interactions", "ddi", "cyp3a", "inhibitors", "inducers"],
+    text: "The BRUKINSA US prescribing information, section 7.1, describes effects of other drugs on zanubrutinib. Moderate or strong CYP3A inhibitors increase zanubrutinib exposure (Cmax and AUC), which may increase BRUKINSA toxicity risk; the label calls for reducing the BRUKINSA dose during coadministration. Moderate or strong CYP3A inducers lower zanubrutinib exposure (Cmax and AUC), potentially reducing BRUKINSA efficacy. The label advises avoiding strong and moderate CYP3A inducers. If a moderate inducer cannot be avoided, it specifies an increased BRUKINSA dose; consult section 2.3 for the applicable dosing instructions. Table 17 provides these interaction effects and management instructions, without incidence rates for individual adverse reactions attributable to these combinations.",
+    assets: [{
+      title: "BRUKINSA US PI: Drug Interactions, Table 17",
+      url: "https://brukinsa.com/wp-content/uploads/brukinsa-prescribing-information.pdf#page=23",
+      description: "Official prescribing information section 7.1 on CYP3A inhibitors and inducers.",
+      assetKind: "LINK",
+      tags: ["drug interactions", "cyp3a", "inhibitors", "inducers"],
+      priority: 90,
+    }],
+  },
+  {
     id: "brukinsa-resources",
     surveySlug: "brukinsa",
     title: "BRUKINSA Resources and myBeOne Support",

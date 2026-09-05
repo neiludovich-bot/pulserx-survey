@@ -1295,6 +1295,9 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
         }) satisfies ControlledRagChunk,
     );
   } catch {
+    // A failed library read is different from a successful query with no
+    // matches. Keep the fallback available without logging queries or secrets.
+    console.warn({ event: "source_library_retrieval_failed", surveySlug: input.surveySlug });
     return [];
   }
 }

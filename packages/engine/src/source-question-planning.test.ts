@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { zodTextFormat } from "openai/helpers/zod";
 import { sourceQuestionPlanInputSchema, sourceQuestionPlanSchema, type SourceQuestionPlan, type SourceQuestionPlanInput } from "../../schemas/src/source-question";
 import { moderatorEvidenceSelectionInputSchema } from "../../schemas/src/moderator";
-import { controlledRagCompositionInputSchema } from "../../schemas/src/index";
+import { controlledRagCompositionInputSchema, controlledRagContextualCompositionResultSchema } from "../../schemas/src/index";
 vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../prompts/src/index"));
 import { OpenAIResponsesGateway } from "./openai-workflows";
@@ -31,7 +31,7 @@ describe("typed source-question planning", () => {
     const parse = vi.fn()
       .mockResolvedValueOnce({ output_parsed: plan })
       .mockResolvedValueOnce({ output_parsed: { selections: [{ sourceId: "label", supportExcerpt: "Source evidence.", assetIds: [], evidenceRole: "contextual" }], rationale: "Contextual safety information." } })
-      .mockResolvedValueOnce({ output_parsed: { answerBody: "Source evidence. [1]", usedSourceIndexes: [1], limitations: [] } })
+      .mockResolvedValueOnce({ output_parsed: { practicalAnswer: "Source evidence. [1]", qualification: null, usedSourceIndexes: [1] } })
       .mockResolvedValueOnce({ output_parsed: { text: "How does the DDI information fit into your assessment?" } });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "analysis-model", decisionModel: "decision-model", phrasingModel: "phrasing-model", sourceModel }, undefined, { parse });
     const planned = await gateway.planSourceQuestion(input);
@@ -40,9 +40,9 @@ describe("typed source-question planning", () => {
     const phrased = await gateway.phraseModeratorTurn({ brand: "NUBEQA", action: "reaction", priorityLabel: "DDI", participantMessage: "DDI", previousPriorityLabel: null });
     expect(parse.mock.calls.map(([request]) => request.model)).toEqual(expected);
     expect(parse.mock.calls[2][0].text.format).toMatchObject({
-      name: "controlled_rag_composition_result_v2",
+      name: "controlled_rag_contextual_composition_result_v1",
       strict: true,
-      schema: { additionalProperties: false, required: ["answerBody", "usedSourceIndexes", "limitations"] },
+      schema: { additionalProperties: false, required: ["practicalAnswer", "qualification", "usedSourceIndexes"] },
     });
     expect([planned, selected, composed, phrased].map((call) => call.trace.request.model)).toEqual(expected);
     expect([planned, selected, composed, phrased].map((call) => call.trace.callType)).toEqual(["source_question_plan", "moderator_evidence", "source_composition", "moderator_phrasing"]);
@@ -103,5 +103,61 @@ describe("typed source-question planning", () => {
     const format = JSON.parse(JSON.stringify(zodTextFormat(sourceQuestionPlanSchema, "source_question_plan_v1")));
     expect(format).toMatchObject({ strict: true, schema: { additionalProperties: false } });
     expect([...format.schema.required].sort()).toEqual(Object.keys(format.schema.properties).sort());
+  });
+});
+
+describe("contextual composition contract", () => {
+  const compositionInput = controlledRagCompositionInputSchema.parse({
+    surveySlug: "nubeqa", participantMessage: input.participantMessage, sourceQuestionPlan: plan,
+    currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
+    sources: [
+      { index: 1, title: "Interaction", url: null, description: null, text: "Interaction guidance.", evidenceRole: "direct" },
+      { index: 2, title: "Safety", url: null, description: null, text: "General safety information.", evidenceRole: "contextual" },
+    ],
+  });
+  const typedAnswer = { practicalAnswer: "General safety information. [2]", qualification: "This is general safety information, distinct from interaction guidance. [1]", usedSourceIndexes: [2, 1] };
+  const gatewayFor = (parse: ReturnType<typeof vi.fn>) => new OpenAIResponsesGateway("test", { analysisModel: "analysis", decisionModel: "decision", phrasingModel: "phrasing", sourceModel: "source" }, undefined, { parse });
+
+  it.each([plan, { ...plan, answerApproach: "direct" as const }, null])("renders practical information before qualification and retains typed trace when plan is %j", async (sourceQuestionPlan) => {
+    const parse = vi.fn().mockResolvedValue({ output_parsed: typedAnswer });
+    const result = await gatewayFor(parse).composeControlledRagAnswer({ ...compositionInput, sourceQuestionPlan });
+    expect(result.result.answerBody).toBe(`${typedAnswer.practicalAnswer}\n\n${typedAnswer.qualification}`);
+    expect(result.result.usedSourceIndexes).toEqual([2, 1]);
+    expect(result.trace.response.raw).toMatchObject({ output_parsed: typedAnswer });
+    expect(parse.mock.calls[0][0]).toMatchObject({ model: "source", text: { format: { name: "controlled_rag_contextual_composition_result_v1", strict: true } } });
+    expect(parse).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    { practicalAnswer: "Interaction guidance. [1]", qualification: "General safety information. [2]", usedSourceIndexes: [1, 2] },
+    { practicalAnswer: "General safety information. [1,2]", qualification: null, usedSourceIndexes: [1, 2] },
+    { practicalAnswer: "General safety information. [2]", usedSourceIndexes: [2] },
+  ])("repairs a missing practical contextual citation or malformed typed output once", async (invalid) => {
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: invalid }).mockResolvedValueOnce({ output_parsed: typedAnswer });
+    const result = await gatewayFor(parse).composeControlledRagAnswer(compositionInput);
+    expect(result.result.answerBody.startsWith(typedAnswer.practicalAnswer)).toBe(true);
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(parse.mock.calls[1][0].metadata.composition_attempt).toBe("2");
+    expect("contextualCompositionAttempts" in result && result.contextualCompositionAttempts).toMatchObject([{ error: expect.any(String) }, { error: null }]);
+  });
+
+  it("fails after one unsuccessful repair without returning a direct-only answer", async () => {
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { practicalAnswer: "Interaction guidance. [1]", qualification: null, usedSourceIndexes: [1] } });
+    await expect(gatewayFor(parse).composeControlledRagAnswer(compositionInput)).rejects.toThrow("at least one supplied contextual source");
+    expect(parse).toHaveBeenCalledTimes(2);
+  });
+
+  it("uses the contextual contract for a contextual plan even without contextual source roles", async () => {
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { practicalAnswer: "Interaction guidance. [1]", qualification: null, usedSourceIndexes: [1] } });
+    const result = await gatewayFor(parse).composeControlledRagAnswer({ ...compositionInput, sources: [compositionInput.sources[0]] });
+    expect(result.result.answerBody).toBe("Interaction guidance. [1]");
+    expect(parse.mock.calls[0][0].text.format.name).toBe("controlled_rag_contextual_composition_result_v1");
+  });
+
+  it("serializes all contextual fields as required without defaults", () => {
+    const format = JSON.parse(JSON.stringify(zodTextFormat(controlledRagContextualCompositionResultSchema, "contextual")));
+    expect(format.schema.additionalProperties).toBe(false);
+    expect([...format.schema.required].sort()).toEqual(["practicalAnswer", "qualification", "usedSourceIndexes"]);
+    expect(controlledRagContextualCompositionResultSchema.safeParse({ ...typedAnswer, answerBody: "untyped" }).success).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 export * from "./moderator";
 export * from "./source-question";
+export * from "./source-composition";
 
 export const selectorSystemPrompt = {
   version: "v1",

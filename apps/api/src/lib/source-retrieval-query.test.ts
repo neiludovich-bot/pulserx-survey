@@ -50,13 +50,23 @@ describe("source library content retrieval", () => {
     mocks.findMany.mockResolvedValue([...ids].reverse().map((id) => ({ id, content: "Content-ranked source passage.", tags: id === "section-0" ? [] : ["drug", "interactions"], sourceDocument: { title: "Document", description: null, url: "https://example.com/document", tags: [], assets: [] } })));
     const chunks = await controlledRagTestInternals.retrieveChunks(input);
     expect(chunks[0].id).toBe("db:section-0");
-    expect(chunks.filter((chunk) => chunk.id.startsWith("db:")).map((chunk) => chunk.id).sort()).toEqual(ids.slice(0, 19).map((id) => `db:${id}`).sort());
+    expect(chunks.filter((chunk) => chunk.id.startsWith("db:")).map((chunk) => chunk.id).sort()).toEqual(ids.slice(0, 18).map((id) => `db:${id}`).sort());
   });
 
   it("does not load unrelated first pages when the content query has no matches", async () => {
     mocks.query.mockResolvedValue([]);
     expect(await controlledRagTestInternals.databaseChunks(input)).toEqual([]);
     expect(mocks.findMany).not.toHaveBeenCalled();
+  });
+
+  it("distinguishes library failure from no matches without logging error details", async () => {
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mocks.query.mockRejectedValue(new Error("Private query and database credentials"));
+      expect(await controlledRagTestInternals.databaseChunks(input)).toEqual([]);
+      expect(warning).toHaveBeenCalledExactlyOnceWith({ event: "source_library_retrieval_failed", surveySlug: "brukinsa" });
+      expect(mocks.findMany).not.toHaveBeenCalled();
+    } finally { warning.mockRestore(); }
   });
 
   it("presents the content-ranked passage first to the semantic selector despite broader PI metadata", async () => {

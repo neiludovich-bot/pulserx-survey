@@ -10,6 +10,7 @@ import {
   moderatorPhraserSystemPrompt,
   moderatorEvidenceSelectorSystemPrompt,
   sourceQuestionPlannerSystemPrompt,
+  contextualSourceCompositionSystemPrompt,
   phraserSystemPrompt
 } from "@interview/prompts";
 import {
@@ -18,6 +19,8 @@ import {
   controlledRagCompositionInputSchema,
   controlledRagCompositionResultSchema,
   controlledRagCompositionModelResultSchema,
+  controlledRagContextualCompositionResultSchema,
+  type ControlledRagContextualCompositionResult,
   decisionInputSchema,
   decisionResultSchema,
   mvpTurnRouteAnalysisInputSchema,
@@ -238,6 +241,10 @@ export class OpenAIResponsesGateway {
   async composeControlledRagAnswer(input: ControlledRagCompositionInput) {
     const parsed = controlledRagCompositionInputSchema.parse(input);
 
+    if (parsed.sourceQuestionPlan?.answerApproach === "contextual_explanation" || parsed.sources.some((source) => source.evidenceRole === "contextual")) {
+      return this.composeContextualSourceAnswer(parsed);
+    }
+
     return this.runStructuredCall<ControlledRagCompositionResult>({
       callType: "source_composition",
       model: this.config.sourceModel ?? this.config.phrasingModel,
@@ -279,6 +286,54 @@ export class OpenAIResponsesGateway {
         survey_slug: parsed.surveySlug
       }
     });
+  }
+
+  private async composeContextualSourceAnswer(input: ControlledRagCompositionInput) {
+    const contextualIndexes = input.sources.filter((source) => source.evidenceRole === "contextual").map((source) => source.index);
+    const attempts: Array<{ trace?: OpenAIDebugTrace; error: string | null }> = [];
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      let trace: OpenAIDebugTrace | undefined;
+      try {
+        const call = await this.runStructuredCall<ControlledRagContextualCompositionResult>({
+          callType: "source_composition",
+          model: this.config.sourceModel ?? this.config.phrasingModel,
+          promptVersion: contextualSourceCompositionSystemPrompt.version,
+          schemaName: "controlled_rag_contextual_composition_result_v1",
+          schema: controlledRagContextualCompositionResultSchema,
+          instructions: [
+            ...contextualSourceCompositionSystemPrompt.instructions,
+            ...(attempt === 2 ? contextualSourceCompositionSystemPrompt.repairInstructions : []),
+          ],
+          input,
+          metadata: { survey_slug: input.surveySlug, composition_attempt: String(attempt) },
+        });
+        trace = call.trace;
+        const result = controlledRagContextualCompositionResultSchema.parse(call.result);
+        const answerBody = [result.practicalAnswer, result.qualification].filter(Boolean).join("\n\n");
+        const citations = [...answerBody.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1]));
+        const practicalCitations = [...result.practicalAnswer.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1]));
+        const sourceIndexes = new Set(input.sources.map((source) => source.index));
+        if (/\[[\d\s,–-]+\]/.test(answerBody.replace(/\[\d+\]/g, "")) ||
+            citations.some((index) => !sourceIndexes.has(index)) ||
+            new Set(result.usedSourceIndexes).size !== result.usedSourceIndexes.length ||
+            result.usedSourceIndexes.some((index) => !citations.includes(index)) ||
+            citations.some((index) => !result.usedSourceIndexes.includes(index))) {
+          throw new Error("Contextual composition requires individual citations matching its supplied and used source indexes.");
+        }
+        if (contextualIndexes.length && !contextualIndexes.some((index) => practicalCitations.includes(index))) {
+          throw new Error("Practical answer must cite at least one supplied contextual source.");
+        }
+        if (answerBody.includes("?")) throw new Error("Contextual composition cannot append a question.");
+        attempts.push({ trace, error: null });
+        return { ...call, result: controlledRagCompositionResultSchema.parse({ answerBody, usedSourceIndexes: result.usedSourceIndexes, limitations: [] }), contextualCompositionAttempts: attempts };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Contextual composition validation failed.";
+        attempts.push({ trace, error: message });
+        const recoverable = trace || (error instanceof Error && (error.name === "ZodError" || message.includes("returned no parsed output")));
+        if (!recoverable || attempt === 2) throw error;
+      }
+    }
+    throw new Error("Contextual composition did not produce a validated answer.");
   }
 
   async planSourceQuestion(input: SourceQuestionPlanInput) {

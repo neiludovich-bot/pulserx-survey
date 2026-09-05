@@ -228,6 +228,14 @@ export const mvpTurnRouteAnalysisResultSchema = z.object({
   }
 });
 
+export const controlledRagContextualCompositionResultSchema = z.object({
+  practicalAnswer: z.string().trim().min(1).max(2000),
+  qualification: z.string().trim().min(1).max(500).nullable(),
+  usedSourceIndexes: z.array(z.number().int().min(1).max(8)).min(1).max(8),
+}).strict();
+
+export type ControlledRagContextualCompositionResult = z.infer<typeof controlledRagContextualCompositionResultSchema>;
+
 export const controlledRagCompositionModelResultSchema = controlledRagCompositionResultSchema.extend({
   limitations: controlledRagCompositionResultSchema.shape.limitations.removeDefault(),
 }).strict();
