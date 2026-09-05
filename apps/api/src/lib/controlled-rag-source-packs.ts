@@ -16,6 +16,22 @@ export type ControlledRagChunk = {
   }>;
 };
 
+// Verified 2026-09-05 against NUBEQA US PI section 6.1, Table 3 (ARANOTE):
+// https://dailymed.nlm.nih.gov/dailymed/fda/fdaDrugXsl.cfm?setid=1a7cb212-56e4-4b9d-a73d-bfee7fe4735e
+export const NUBEQA_ARANOTE_UTI_FACTS = [
+  "In ARANOTE, urinary tract infection occurred in 12% of patients receiving NUBEQA plus ADT versus 8% receiving placebo plus ADT across all grades.",
+  "Grade 3 or 4 urinary tract infection occurred in 1.8% with NUBEQA plus ADT versus 0.5% with placebo plus ADT.",
+  "These ARANOTE mCSPC safety results use N=445 for NUBEQA and N=221 for placebo; both groups received ADT, without docetaxel.",
+];
+
+// Verified 2026-09-05 against https://www.nubeqahcp.com/safety/ddi-profile
+// and NUBEQA US PI sections 7.1 and 7.2. Keep interaction direction explicit.
+export const NUBEQA_DDI_FACTS = [
+  "Combined P-gp and strong or moderate CYP3A4 inducers decrease darolutamide exposure and should be avoided. Combined P-gp and strong CYP3A4 inhibitors increase darolutamide exposure; the label calls for more frequent monitoring for NUBEQA adverse reactions and dosage modification as needed.",
+  "NUBEQA inhibits BCRP, OATP1B1, and OATP1B3 transporters and can increase exposure to their substrates. The label advises avoiding BCRP substrates where possible; if used together, monitor for adverse reactions and consider substrate dose reduction. OATP1B1/OATP1B3 substrates also warrant monitoring and possible dose reduction.",
+  "These are interaction classes and label considerations, not a statement that every concomitant medicine interacts. Review the prescribing information of the specific concomitant medicine.",
+];
+
 export const CONTROLLED_RAG_CHUNKS = [
   {
     id: "brukinsa-cll-sequoia",
@@ -390,6 +406,40 @@ export const CONTROLLED_RAG_CHUNKS = [
         priority: 82,
       },
     ],
+  },
+  {
+    id: "nubeqa-aranote-uti",
+    surveySlug: "nubeqa",
+    title: "NUBEQA ARANOTE Urinary Tract Infection Rates",
+    url: "https://www.nubeqahcp.com/safety/mcspc",
+    description: "ARANOTE urinary tract infection adverse reactions by treatment arm and severity, matching the HCP chart and US PI Table 3.",
+    tags: ["nubeqa", "darolutamide", "aranote", "mcspc", "safety", "urinary tract infection", "uti", "all grades", "grade 3 or 4", "adverse reactions"],
+    text: NUBEQA_ARANOTE_UTI_FACTS.join(" "),
+    assets: [{
+      title: "ARANOTE urinary tract infection: all grades and Grades 3-4",
+      url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57896/files/2025-06/mcspc-all-grades-3-and-4-ar_0.svg",
+      description: "ARANOTE urinary tract infection: NUBEQA plus ADT vs placebo plus ADT, 12% vs 8% all grades and 1.8% vs 0.5% Grade 3 or 4 (N=445 vs N=221).",
+      assetKind: "CHART",
+      tags: ["safety", "aranote", "urinary tract infection", "uti", "adverse reactions", "mcspc"],
+      priority: 100,
+    }],
+  },
+  {
+    id: "nubeqa-ddi-profile",
+    surveySlug: "nubeqa",
+    title: "NUBEQA Drug-Drug Interaction (DDI) Profile",
+    url: "https://www.nubeqahcp.com/safety/ddi-profile",
+    description: "Dedicated NUBEQA drug interaction classes and mechanisms, separate from adverse-reaction incidence and dosing charts.",
+    tags: ["nubeqa", "darolutamide", "ddi", "drug interactions", "drug interaction", "cyp3a4", "p-gp", "bcrp", "oatp1b1", "oatp1b3", "inducers", "inhibitors", "substrates"],
+    text: NUBEQA_DDI_FACTS.join(" "),
+    assets: [{
+      title: "Drug interactions of NUBEQA",
+      url: "https://www.nubeqahcp.com/sites/g/files/vrxlpx57896/files/2025-11/drug-interactions-of-nubeqa_1.svg",
+      description: "Drug interaction classes: effects of concomitant medicines on NUBEQA and effects of NUBEQA on BCRP and OATP transporter substrates.",
+      assetKind: "CHART",
+      tags: ["ddi", "drug interactions", "cyp3a4", "p-gp", "bcrp", "oatp1b1", "oatp1b3"],
+      priority: 100,
+    }],
   },
   {
     id: "nubeqa-guidelines-resources",

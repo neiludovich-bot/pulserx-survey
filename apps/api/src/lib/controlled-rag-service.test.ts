@@ -34,7 +34,7 @@ describe("controlled RAG source provider", () => {
     });
 
     expect(result.enabled).toBe(true);
-    expect(result.references[0]?.title).toContain("Safety, Dosing, and DDI");
+    expect(result.references[0]?.url).toBe("https://www.nubeqahcp.com/safety/ddi-profile");
     expect(result.answer).toContain("CYP3A4");
     expect(result.answer).not.toContain("For nmCRPC, ARAMIS frames");
     expect(result.answer).not.toContain("top factors");
@@ -58,7 +58,7 @@ describe("controlled RAG source provider", () => {
       recentInterviewerContext: "participant: Can you explain that more simply?\ninterviewer: Some medicines affect NUBEQA exposure through CYP3A4. NUBEQA also affects BCRP substrates. [1]",
     });
 
-    expect(result.references[0]?.title).toContain("Safety, Dosing, and DDI");
+    expect(result.references[0]?.url).toBe("https://www.nubeqahcp.com/safety/ddi-profile");
     expect(result.answer).toContain("CYP3A4");
     expect(result.answer).not.toContain("For nmCRPC, ARAMIS frames");
   });
@@ -567,7 +567,7 @@ describe("controlled RAG source provider", () => {
     );
   });
 
-  it("keeps the NUBEQA safety card first for actual safety, dosing, or DDI asks", async () => {
+  it("keeps the dedicated NUBEQA DDI card first for drug interaction asks", async () => {
     const result = await askControlledRagForSurveyInterviewerTurn({
       surveySlug: "nubeqa",
       participantMessage:
@@ -582,7 +582,7 @@ describe("controlled RAG source provider", () => {
     });
 
     expect(result.enabled).toBe(true);
-    expect(result.references[0]?.title).toContain("Safety, Dosing, and DDI");
+    expect(result.references[0]?.url).toBe("https://www.nubeqahcp.com/safety/ddi-profile");
     expect(result.answer).toContain("CYP3A4");
     expect(result.answer).toContain("BCRP");
   });

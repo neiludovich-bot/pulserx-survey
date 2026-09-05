@@ -1,12 +1,15 @@
 import type { GroundedReference } from "@interview/schemas";
 import {
   CONTROLLED_RAG_CHUNKS,
+  NUBEQA_ARANOTE_UTI_FACTS,
+  NUBEQA_DDI_FACTS,
   type ControlledRagChunk,
 } from "./controlled-rag-source-packs";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { classifyMvpTurnRoute, type MvpDisplayTopic } from "./mvp-turn-router";
 import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
+import { focusSourceReferenceAssets } from "./source-asset-focus";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -421,6 +424,17 @@ function asksAboutNubeqaDrugInteractions(input: ControlledRagSurveyTurnInput) {
   ]);
 }
 
+function focusedNubeqaEvidenceId(input: ControlledRagSurveyTurnInput) {
+  if (input.surveySlug !== "nubeqa") return null;
+  const participant = normalizeText(input.participantMessage);
+  if (
+    /\b(?:uti|utis|urinary tract infections?)\b/.test(participant) &&
+    !/\b(?:aramis|arasens|nmcrpc)\b/.test(participant) &&
+    (!/\bdocetaxel\b/.test(participant) || /\bwithout docetaxel\b/.test(participant))
+  ) return "nubeqa-aranote-uti";
+  return asksAboutNubeqaDrugInteractions(input) ? "nubeqa-ddi-profile" : null;
+}
+
 function buildClinicalEvidenceCard(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
@@ -429,6 +443,27 @@ function buildClinicalEvidenceCard(
   const sourceContext = normalizeText(input.selectedQuestionSourceContext ?? "");
   const selectedQuestion = normalizeText(input.selectedNextQuestion ?? "");
   const participant = normalizeText(input.participantMessage);
+  const focusedEvidenceId = focusedNubeqaEvidenceId(input);
+  if (focusedEvidenceId && chunks.some((chunk) => chunk.id === focusedEvidenceId)) {
+    const uti = focusedEvidenceId === "nubeqa-aranote-uti";
+    return {
+      id: focusedEvidenceId,
+      title: uti ? "NUBEQA ARANOTE Urinary Tract Infection Rates" : "NUBEQA Drug-Drug Interaction (DDI) Profile",
+      topic: "nubeqa_safety_dosing",
+      clinicianBrief: uti
+        ? "Report the ARANOTE urinary tract infection rates by treatment arm and severity."
+        : "Explain the specific drug interaction classes and direction of the interaction.",
+      keyFacts: uti ? [...NUBEQA_ARANOTE_UTI_FACTS] : [...NUBEQA_DDI_FACTS],
+      caveats: uti
+        ? ["These are ARANOTE trial rates, not estimates of an individual patient's risk or rates from ARAMIS or ARASENS."]
+        : [],
+      answerDirective: uti
+        ? "Give the all-grade and Grade 3 or 4 urinary tract infection percentages for both ARANOTE arms. The exact incidence is in this approved source; do not say it is unavailable. Do not confuse Grade 3 or 4 incidence with the separate serious-adverse-reaction category."
+        : "Answer the DDI question from these interaction facts, not from general adverse-reaction incidence or dose-modification tables.",
+      preferredSourceIds: [focusedEvidenceId],
+      preferredAssetTags: uti ? ["urinary tract infection", "uti", "aranote"] : ["ddi", "drug interactions", "bcrp", "cyp3a4"],
+    };
+  }
   const asksSpecificNubeqaDrugInteractions =
     asksAboutNubeqaDrugInteractions(input);
   const topicLooksBroad =
@@ -1311,6 +1346,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
 async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
   const queryTokenGroups = retrievalTokenGroups(input);
   const displayTopic = displayTopicForTurn(input);
+  const focusedEvidenceId = focusedNubeqaEvidenceId(input);
   const activeDatabaseChunks = await databaseChunks(input);
   const candidateChunks = [
     ...activeDatabaseChunks,
@@ -1324,7 +1360,10 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
       chunk,
       score:
         scoreChunk(chunk, queryTokenGroups) +
-        displayTopicChunkScore(chunk, displayTopic),
+        displayTopicChunkScore(chunk, displayTopic) +
+        // An exact, trial-scoped question must retain its vetted fact card
+        // even when the broader display topic is ARANOTE efficacy or dosing.
+        (chunk.id === focusedEvidenceId ? 6000 : 0),
     }))
     .filter((match) => match.score > 0)
     .sort((left, right) => right.score - left.score)
@@ -1720,7 +1759,10 @@ export async function askControlledRagForSurveyInterviewerTurn(
   }
 
   const turnAssets = await retrieveTurnAssets(retrievalInput, chunks, evidenceCard);
-  const references = referencesForChunks(chunks, turnAssets, queryTokens);
+  const references = focusSourceReferenceAssets(
+    referencesForChunks(chunks, turnAssets, queryTokens),
+    retrievalQuery,
+  );
   const responseMode = input.responseMode ?? "answer_then_ask";
   const composedAnswer = stripComposerFollowUpQuestions(
     await composeSourceAnswer(compositionInput, chunks, evidenceCard, retrievalQuery),

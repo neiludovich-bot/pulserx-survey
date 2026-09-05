@@ -48,6 +48,7 @@ import {
 } from "./mvp-survey-persistence";
 import {
   classifyMvpTurnRouteHybrid,
+  type MvpHybridTurnRouteDecision,
   type MvpRouteAnalysisCandidate,
 } from "./mvp-openai-turn-router";
 import {
@@ -2770,7 +2771,7 @@ function ensureReturnToSurvey(answer: string, selectedQuestion: string | null) {
 
   if (
     !selectedQuestion ||
-    answerProbablyContainsQuestion(sourceAnswer, selectedQuestion)
+    (sourceAnswer.includes("?") && answerProbablyContainsQuestion(sourceAnswer, selectedQuestion))
   ) {
     return sourceAnswer;
   }
@@ -3162,109 +3163,41 @@ export async function submitMvpCustomGptSurveyTurn(
   const sequenceBase = turnSequenceBase(session);
 
   const fixedFlow = isFixedFlowSurvey(session);
-  if (
-    !fixedFlow &&
+  const requestedResumeQuestion = !fixedFlow &&
     session.pendingReturnQuestionId &&
     contentLooksLikeReturnToSurveyCue(input.content)
-  ) {
-    const pendingQuestion = questionById(
-      session,
-      session.pendingReturnQuestionId,
-    );
-    session.pendingReturnQuestionId = null;
-
-    if (
-      pendingQuestion &&
-      !session.answeredQuestionIds.includes(pendingQuestion.id) &&
-      questionAllowedByDiseaseLane(session, pendingQuestion, input.content)
-    ) {
-      const assistantContent =
-        participantFacingQuestionText(
-          session,
-          pendingQuestion,
-          input.content,
-        ) ?? pendingQuestion.canonicalQuestion;
-      const references = surfacedReferencesForQuestion(pendingQuestion);
-
-      session.messages.push(
-        createMessage("interviewer", assistantContent, references),
-      );
-      session.queuedQuestionIds = session.queuedQuestionIds.filter(
-        (questionId) => questionId !== pendingQuestion.id,
-      );
-      session.excursionQuestionIds = session.excursionQuestionIds.filter(
-        (questionId) => questionId !== pendingQuestion.id,
-      );
-      session.askedQuestionIds.push(pendingQuestion.id);
-      session.currentQuestionId = pendingQuestion.id;
-
-      void appendMvpAuditEvent(session, {
-        eventType: "turn_completed",
-        participantMessage: input.content,
-        currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
-        surveyIntentSlug: session.surveyIntent?.slug ?? null,
-        selectedQuestionId: pendingQuestion.id,
-        selectedQuestion: pendingQuestion.canonicalQuestion,
-        actualAskedQuestionId: pendingQuestion.id,
-        actualAskedQuestion: pendingQuestion.canonicalQuestion,
-        currentQuestionAfter: questionText(currentQuestion(session)),
-        sourceContextRequirement: null,
-        activeDiseaseAreas: [...session.activeDiseaseAreas],
-        primaryDiseaseArea: session.primaryDiseaseArea,
-        queuedQuestionIds: [...session.queuedQuestionIds],
-        needsCustomGpt: false,
-        customGptStatus: "not_needed",
-        customGptReason: null,
-        droppedReferences: [],
-        assistantMessage: assistantContent,
-        references: references.map((reference) => ({
-          citationId: reference.citationId,
-          title: reference.title,
-          url: reference.url,
-        })),
-        nextAction: "ask",
-        remainingSeconds: remainingSeconds(session),
-        completedReason: session.completedReason,
-      });
-      await persistMvpSurveyTurnAudit({
-        session: persistenceSnapshot(session),
-        turn: {
-          eventType: "turn_completed",
-          participantMessage: input.content,
-          assistantMessage: assistantContent,
-          sequenceBase,
-          currentQuestionBefore:
-            currentQuestionBefore?.canonicalQuestion ?? null,
-          selectedQuestionId: pendingQuestion.id,
-          selectedQuestion: pendingQuestion.canonicalQuestion,
-          actualAskedQuestionId: pendingQuestion.id,
-          actualAskedQuestion: pendingQuestion.canonicalQuestion,
-          currentQuestionAfter: questionText(currentQuestion(session)),
-          sourceContextRequirement: null,
-          needsCustomGpt: false,
-          customGptStatus: "not_needed",
-          customGptReason: null,
-          droppedReferences: [],
-          references: references.map((reference) => ({
-            citationId: reference.citationId,
-            title: reference.title,
-            url: reference.url,
-          })),
-          nextAction: "ask",
-          remainingSeconds: remainingSeconds(session),
-          completedReason: session.completedReason,
-        },
-      });
-
-      return responseForSession(session, "ask");
-    }
-  }
+    ? questionById(session, session.pendingReturnQuestionId)
+    : null;
+  const resumeQuestion = requestedResumeQuestion &&
+    !session.answeredQuestionIds.includes(requestedResumeQuestion.id) &&
+    questionAllowedByDiseaseLane(session, requestedResumeQuestion, input.content)
+    ? requestedResumeQuestion
+    : null;
 
   const participantRequestedStop =
     !fixedFlow && contentLooksLikeSurveyStop(input.content);
   // Interpret answers and participant questions independently, before answer
   // rejection or research selection. Medical terms alone are not requests.
-  const participantAnalysis = !fixedFlow && !participantRequestedStop
+  const participantAnalysis: MvpHybridTurnRouteDecision | null = resumeQuestion
+    ? {
+        answerStatus: "not_answered",
+        answerEvidence: [],
+        asksSourceQuestion: false,
+        decision: {
+          kind: "planned_answer",
+          topic: null,
+          needsSource: false,
+          isOutOfScope: false,
+          isUnanticipated: false,
+          sourceDirective: null,
+          rationale: "The participant requested navigation back to the parked research question; no research answer was supplied.",
+        },
+        provider: "deterministic",
+        suggestedQuestionIds: [],
+        modelResult: null,
+        error: null,
+      }
+    : !fixedFlow && !participantRequestedStop
     ? await classifyMvpTurnRouteHybrid({
         surveySlug: session.surveySlug,
         sourceBrand: session.sourceBrand,
@@ -3285,7 +3218,7 @@ export async function submitMvpCustomGptSurveyTurn(
   const interpretedTurnIsValid = participantAnalysis &&
     !transcriptLooksNonEnglishOrGarbled(input.content) &&
     (participantAnalysis.answerStatus !== "not_answered" || participantAnalysis.asksSourceQuestion);
-  const answerQuality = fixedFlow || participantRequestedStop || interpretedTurnIsValid
+  const answerQuality = fixedFlow || resumeQuestion || participantRequestedStop || interpretedTurnIsValid
     ? { accepted: true as const }
     : currentAnswerQuality(session, input.content);
   if (!answerQuality.accepted) {
@@ -3420,8 +3353,10 @@ export async function submitMvpCustomGptSurveyTurn(
     return responseForSession(session, nextAction);
   }
 
-  queuePriorityFollowUps(session, currentQuestionBefore, input.content);
-  queueExplicitIntentExcursions(session, input.content);
+  if (!resumeQuestion) {
+    queuePriorityFollowUps(session, currentQuestionBefore, input.content);
+    queueExplicitIntentExcursions(session, input.content);
+  }
 
   const hasQueuedFollowUp = hasDequeuableQueuedQuestion(session, input.content);
   const participantRequestsContinuation = contentRequestsSurveyContinuation(input.content);
@@ -3518,14 +3453,14 @@ export async function submitMvpCustomGptSurveyTurn(
     preSelectionRouteAnalysis.answerStatus !== "answered" &&
     !session.answeredQuestionIds.includes(currentQuestionBefore!.id) &&
     !contentLooksLikeReturnToSurveyCue(input.content);
-  const selectedQuestion = shouldReturnToCurrentQuestion ||
+  const selectedQuestion = resumeQuestion ?? (shouldReturnToCurrentQuestion ||
     (currentQuestionBefore?.close && participantRequestsContinuation)
     ? currentQuestionBefore
     : parkedQuestion &&
         !session.answeredQuestionIds.includes(parkedQuestion.id) &&
         questionAllowedByDiseaseLane(session, parkedQuestion, input.content)
       ? parkedQuestion
-      : selectNextQuestion(session, input.content, participantSourceDetour);
+      : selectNextQuestion(session, input.content, participantSourceDetour));
   const questionSourceContextRequirement = participantSourceDetour
     ? null
     : sourceContextForQuestion(selectedQuestion);
@@ -3603,6 +3538,7 @@ export async function submitMvpCustomGptSurveyTurn(
       : (selectedQuestionText ?? "Thanks, let's continue.");
     customGptStatus = "not_needed";
     nextAction = "ask";
+    if (resumeQuestion) references = surfacedReferencesForQuestion(resumeQuestion);
   } else if (missingReason) {
     assistantContent = fallbackInterviewerTurn({
       selectedQuestion: selectedQuestionText,
@@ -3698,11 +3634,23 @@ export async function submitMvpCustomGptSurveyTurn(
     }
   }
 
+  if (resumeQuestion && needsCustomGpt && customGptStatus !== "success" && !session.completedReason) {
+    // Do not solicit a reaction until its required evidence is available.
+    actualAskedQuestion = null;
+    assistantContent = 'I could not retrieve the source context needed before that question. Say "continue" to try again.';
+  }
+
   session.messages.push(
     createMessage("interviewer", assistantContent, references),
   );
 
   if (actualAskedQuestion && !session.completedReason) {
+    if (resumeQuestion && (!needsCustomGpt || customGptStatus === "success")) {
+      session.pendingReturnQuestionId = null;
+      session.excursionQuestionIds = session.excursionQuestionIds.filter(
+        (questionId) => questionId !== actualAskedQuestion.id,
+      );
+    }
     session.queuedQuestionIds = session.queuedQuestionIds.filter(
       (questionId) => questionId !== actualAskedQuestion.id,
     );

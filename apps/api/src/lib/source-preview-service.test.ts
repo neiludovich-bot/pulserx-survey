@@ -7,6 +7,31 @@ afterEach(() => {
 });
 
 describe("source preview service", () => {
+  it("preserves selected interaction evidence without adding page-wide adverse-reaction charts", async () => {
+    const fetchMock = vi.fn(async () => new Response('<html><img src="/adverse-reactions.svg" alt="ARANOTE adverse reactions chart"></html>', { headers: { "content-type": "text/html" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    const preview = await previewSourceImages({
+      url: "https://example.com/safety",
+      title: "Drug interactions",
+      assets: [{ title: "Drug interactions", url: "https://example.com/ddi.svg", description: "Interaction diagram", assetKind: "CHART", tags: ["ddi"], priority: 80 }],
+    });
+    expect(preview.images.map((image) => image.url)).toEqual(["https://example.com/ddi.svg"]);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows an explicit source link when no relevant visual was selected", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const preview = await previewSourceImages({
+      url: "https://example.com/safety",
+      title: "Safety reference",
+      assets: [{ title: "Safety reference", url: "https://example.com/safety", description: "Source information", assetKind: "LINK", tags: [], priority: 1 }],
+    });
+    expect(preview.images).toEqual([]);
+    expect(preview.documents[0]?.url).toBe("https://example.com/safety");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("ranks SEQUOIA efficacy chart images above generic site artwork", async () => {
     vi.stubGlobal(
       "fetch",

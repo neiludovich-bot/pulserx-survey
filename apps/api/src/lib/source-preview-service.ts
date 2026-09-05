@@ -788,13 +788,7 @@ function extractTitle(html: string, fallbackTitle?: string) {
 export async function previewSourceImages(
   input: MvpCustomGptSourcePreviewRequest,
 ) {
-  const curatedAssetSignature = (input.assets ?? [])
-    .map(
-      (asset) =>
-        `${asset.url}::${asset.assetKind}::${asset.priority}::${asset.title}`,
-    )
-    .join("|");
-  const cacheKey = `${input.url}::${curatedAssetSignature}`;
+  const cacheKey = JSON.stringify({ url: input.url, title: input.title, assets: input.assets ?? [] });
   const cached = sourcePreviewCache.get(cacheKey);
   if (cached) {
     return cached;
@@ -804,6 +798,20 @@ export async function previewSourceImages(
   assertPreviewUrlAllowed(url);
   const inputImages = curatedImages(input.assets ?? []);
   const inputDocuments = curatedDocuments(input.assets ?? []);
+
+  // The turn selected these assets for a particular question. Page-wide
+  // scraping would undo that selection (for example, DDI -> adverse events).
+  if (inputImages.length || inputDocuments.length) {
+    const result = mvpCustomGptSourcePreviewResponseSchema.parse({
+      sourceUrl: url.toString(),
+      title: input.title ?? null,
+      images: inputImages,
+      documents: inputDocuments,
+      reason: null,
+    });
+    sourcePreviewCache.set(cacheKey, result);
+    return result;
+  }
 
   try {
     const controller = new AbortController();
