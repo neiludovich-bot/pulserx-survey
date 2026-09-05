@@ -107,6 +107,26 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("retains the failed practical question while retrieving fresh support for repeated clarification", async () => {
+    const first = await presentAgenda(surveySlug);
+    const oldPacket = first.state.priorities[0].evidencePacket;
+    const pending = "What does that mean for what to monitor in practical terms?";
+    const failure = { enabled: false, answer: null, references: [], reason: "Grounding rejected", sourceOutcome: { version: 1, status: "grounding_rejected", attempts: [] } };
+    mocks.source.mockResolvedValueOnce(failure);
+    const failed = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: pending, isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    mocks.source.mockResolvedValueOnce(failure);
+    const stillFailed = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(failed!.state), participantMessage: "Can you explain that more simply?", isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ participantMessage: "Can you explain that more simply?", sourceTopicContext: expect.stringContaining(pending), evidencePacket: undefined });
+    expect(stillFailed?.state.sourceDiscussion).toMatchObject({ status: "failed", pendingQuestion: pending, evidencePacket: oldPacket });
+    const newPacket = evidenceFor(surveySlug, "practical");
+    mocks.source.mockResolvedValueOnce({ enabled: true, answer: "Supported practical explanation.", references: first.references, evidencePacket: newPacket });
+    const clarified = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(stillFailed!.state), participantMessage: "Even more simply please.", isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ participantMessage: "Even more simply please.", sourceTopicContext: expect.stringContaining(pending), evidencePacket: undefined });
+    expect(clarified?.state.sourceDiscussion).toMatchObject({ status: "open", query: pending, evidencePacket: newPacket });
+    expect(clarified?.state.sourceDiscussion?.pendingQuestion).toBeUndefined();
+    expect(first.state.priorities[0].evidencePacket).toEqual(oldPacket);
+  });
+
   it("credits a separate mixed-turn reaction even when upstream says not_answered, then resumes the next priority", async () => {
     const first = await presentAgenda(surveySlug);
     const reaction = "It's something I need to track but not terribly concerning.";

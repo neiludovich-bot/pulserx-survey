@@ -14,12 +14,25 @@ export function sourceRequestForTurn(state: ModeratorState, content: string) {
     : content;
 }
 
-export function beginSourceDiscussion(state: ModeratorState, question: string, returnTarget: ReturnTarget | null) {
+export function sourceDiscussionContextForTurn(discussion: Discussion | undefined, clarifiesPriorAnswer: boolean) {
+  const pendingQuestion = clarifiesPriorAnswer && discussion?.status === "failed" ? discussion.pendingQuestion : undefined;
+  return {
+    sourceTopicContext: pendingQuestion
+      ? `Previously discussed source topic: ${discussion!.query}\nUnanswered participant question: ${pendingQuestion}`
+      : discussion?.query ?? null,
+    // Keep the last successful packet in canonical state, but retrieve support
+    // for the unanswered question instead of simplifying that older packet.
+    evidencePacket: pendingQuestion ? undefined : discussion?.evidencePacket,
+    pendingQuestion,
+  };
+}
+
+export function beginSourceDiscussion(state: ModeratorState, question: string, returnTarget: ReturnTarget | null, pendingQuestion?: string) {
   const previous = state.sourceDiscussion;
   state.sourceDiscussion = {
     ...previous,
     query: previous?.query ?? question,
-    pendingQuestion: question,
+    pendingQuestion: pendingQuestion ?? question,
     status: "open",
     returnTarget: returnTarget ?? previous?.returnTarget ?? null,
     navigationHintShown: previous?.navigationHintShown ?? false,
@@ -35,6 +48,7 @@ export function completeSourceDiscussion(state: ModeratorState, query: string, e
     ...discussion, query, status: "open", failure: null,
     ...(evidencePacket ? { evidencePacket: structuredClone(evidencePacket) } : {}),
   };
+  if (!evidencePacket) delete state.sourceDiscussion.evidencePacket;
   delete state.sourceDiscussion.pendingQuestion;
 }
 

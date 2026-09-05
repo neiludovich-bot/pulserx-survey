@@ -101,6 +101,24 @@ describe("moderator evidence packet persistence contract", () => {
 });
 
 describe("moderator planning contract", () => {
+  it("uses the moderator's paired request and reaction when upstream quoted the whole mixed turn", () => {
+    const reaction = "It's something I need to track but not terribly concerning.";
+    const question = "So someone on those medications is at risk for what adverse reactions";
+    const message = `${reaction} ${question}`;
+    const normalized = normalizeModeratorPlanModelResult({ ...presentedInput, participantMessage: message, answerStatus: "not_answered", asksSourceQuestion: true, sourceRequest: request(message) }, {
+      ...modelPlanBase, sourceRequest: request(question), priorityMentions: [], action: "answer_source", reactionStatus: "answered", reactionEvidence: [reaction],
+    });
+    expect(normalized).toMatchObject({ sourceRequest: request(question), reactionStatus: "answered", reactionEvidence: [reaction] });
+  });
+
+  it.each([null, request("An invented participant question")])("retains upstream request provenance when the moderator request is absent or invalid", (modelRequest) => {
+    const question = "Can you explain that more simply?";
+    const normalized = normalizeModeratorPlanModelResult({ ...presentedInput, participantMessage: question, answerStatus: "not_answered", asksSourceQuestion: true, sourceRequest: request(question) }, {
+      ...modelPlanBase, sourceRequest: modelRequest, priorityMentions: [], action: "answer_source", reactionStatus: "answered", reactionEvidence: [question],
+    });
+    expect(normalized).toMatchObject({ sourceRequest: request(question), action: "answer_source", reactionStatus: "not_answered", reactionEvidence: [] });
+  });
+
   it("retains an independently stated reaction when the upstream guide interpretation says not answered", () => {
     const reaction = "It's something I need to track but not terribly concerning.";
     const question = "So someone on those medications is at risk for what adverse reactions";

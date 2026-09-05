@@ -39,7 +39,13 @@ function hasExplicitAdditionEvidence(evidence: string) {
 export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, output: unknown) {
   const parsed = moderatorPlanInputSchema.parse(input);
   const model = moderatorPlanModelResultSchema.parse(output);
-  const sourceRequest = parsed.isResumeCue ? null : parsed.sourceRequest ?? model.sourceRequest;
+  const validModelRequest = model.sourceRequest && parsed.participantMessage.includes(model.sourceRequest.participantEvidence) ? model.sourceRequest : null;
+  if (model.sourceRequest && !validModelRequest && !parsed.sourceRequest && !parsed.isResumeCue) {
+    throw new Error("Source requests require an exact excerpt of the current participant message.");
+  }
+  // The moderator's request and reaction excerpts were interpreted together.
+  // A broad upstream quote must not swallow its separate reaction evidence.
+  const sourceRequest = parsed.isResumeCue ? null : validModelRequest ?? parsed.sourceRequest;
   if (sourceRequest && !parsed.participantMessage.includes(sourceRequest.participantEvidence)) {
     throw new Error("Source requests require an exact excerpt of the current participant message.");
   }

@@ -30,6 +30,33 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
+  it.each([true, false])("clarifies a failed practical question without losing it or reusing older evidence across reloads (replacement packet=%s)", async (hasReplacementPacket) => {
+    const sessionId = startAtFamiliarity("nubeqa");
+    mocks.source.mockResolvedValue(success("nubeqa"));
+    const original = await submitMvpCustomGptSurveyTurn({ sessionId, content: "What drug interactions are described?" });
+    const oldPacket = mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion.evidencePacket;
+    rehydrate(original);
+    const pending = "What does that mean for what to monitor in practical terms?";
+    const failure = { ...success("nubeqa"), enabled: false, answer: null, reason: "Grounding rejected", sourceOutcome: { version: 1, status: "grounding_rejected", attempts: [] } };
+    mocks.source.mockResolvedValueOnce(failure);
+    const failed = await submitMvpCustomGptSurveyTurn({ sessionId, content: pending });
+    rehydrate(failed);
+    mocks.source.mockResolvedValueOnce(failure);
+    const stillFailed = await submitMvpCustomGptSurveyTurn({ sessionId, content: "Can you explain that more simply?" });
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ participantMessage: "Can you explain that more simply?", evidencePacket: undefined, sourceTopicContext: expect.stringContaining(pending) });
+    expect(mocks.source.mock.calls.at(-1)![0].sourceTopicContext).toContain("What drug interactions are described?");
+    expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion).toMatchObject({ status: "failed", pendingQuestion: pending, evidencePacket: oldPacket });
+    rehydrate(stillFailed);
+    const newPacket = { sources: [{ ...oldPacket.sources[0], id: "practical-evidence", text: "Exact evidence supporting the practical question." }] };
+    mocks.source.mockResolvedValueOnce({ ...success("nubeqa"), evidencePacket: hasReplacementPacket ? newPacket : null });
+    await submitMvpCustomGptSurveyTurn({ sessionId, content: "Even more simply please." });
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ participantMessage: "Even more simply please.", evidencePacket: undefined, sourceTopicContext: expect.stringContaining(pending) });
+    const completed = mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion;
+    expect(completed).toMatchObject({ status: "open", query: pending });
+    expect(completed.evidencePacket).toEqual(hasReplacementPacket ? newPacket : undefined);
+    expect(completed.pendingQuestion).toBeUndefined();
+  });
+
   it.each([{ brand: "nubeqa" as const, questionId: "familiarity", answered: true }, { brand: "brukinsa" as const, questionId: "role", answered: false }].flatMap((scenario) => [false, true].map((phrasingFails) => ({ ...scenario, phrasingFails }))))("recovers a source request outside an agenda while retaining $questionId coverage (answered=$answered, phrasing failure=$phrasingFails)", async ({ brand, questionId, answered, phrasingFails }) => {
     const started = startMvpCustomGptSurvey({ surveySlug: brand, targetDurationSeconds: 600 });
     const snapshot = mocks.started.mock.calls.at(-1)![0].session;

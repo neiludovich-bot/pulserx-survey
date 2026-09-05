@@ -4,7 +4,7 @@ import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSche
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 import { isReferentialClarification } from "./controlled-rag-service";
-import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, withSourceNavigationHint } from "./mvp-source-discussion";
+import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, withSourceNavigationHint } from "./mvp-source-discussion";
 import { presentationFor } from "./mvp-presentation";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
@@ -126,15 +126,16 @@ export async function runModeratorTurn(input: Input) {
   if ((sourceRequested || retryRequested) && !input.isResumeCue && !retryPendingPresentation) {
     action = "answer_source";
     const discussion = state.sourceDiscussion;
-    const sourceTopic = discussion?.query ?? previousActive?.sourceQuestion ?? null;
-    const retainedPacket = discussion ? discussion.evidencePacket : previousActive?.evidencePacket;
+    const discussionContext = sourceDiscussionContextForTurn(discussion, isReferentialClarification(input.participantMessage));
+    const sourceTopic = discussionContext.sourceTopicContext ?? previousActive?.sourceQuestion ?? null;
+    const retainedPacket = discussion ? discussionContext.evidencePacket : previousActive?.evidencePacket;
     const request = sourceRequestForTurn(state, input.participantMessage);
     if (!discussion && sourceTopic) state.sourceDiscussion = { query: sourceTopic, ...(retainedPacket ? { evidencePacket: structuredClone(retainedPacket) } : {}) };
-    beginSourceDiscussion(state, request, previousActive ? { kind: "priority", id: previousActive.id } : null);
+    beginSourceDiscussion(state, request, previousActive ? { kind: "priority", id: previousActive.id } : null, discussionContext.pendingQuestion);
     if (retainedPacket && !state.sourceDiscussion!.evidencePacket) state.sourceDiscussion!.evidencePacket = structuredClone(retainedPacket);
     const answer = await source(request, sourceTopic, retainedPacket);
     if (answer) {
-      completeSourceDiscussion(state, sourcePlanning.plan?.interpretedQuestion ?? (isReferentialClarification(request) && sourceTopic ? sourceTopic : request), sourceEvidencePacket);
+      completeSourceDiscussion(state, sourcePlanning.plan?.interpretedQuestion ?? discussionContext.pendingQuestion ?? (isReferentialClarification(request) && sourceTopic ? sourceTopic : request), sourceEvidencePacket);
     } else failSourceDiscussion(state, sourceDiscussionFailure(sourcePlanning.outcome, sourceReason ?? "Source answer unavailable."));
     content = withSourceNavigationHint(state, answer ?? "I couldn't produce a supported answer to that question. I've kept our place in the interview.");
   } else {

@@ -17,7 +17,7 @@ import {
   mvpCustomGptSurveyVoiceTurnResponseSchema,
 } from "@interview/schemas";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
-import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, withSourceNavigationHint } from "./mvp-source-discussion";
+import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, withSourceNavigationHint } from "./mvp-source-discussion";
 import { isReferentialClarification } from "./controlled-rag-service";
 import { applyParticipantUnderstanding, presentationFor } from "./mvp-presentation";
 import { getOptionalOpenAIGateway } from "./model-gateway";
@@ -3663,10 +3663,11 @@ export async function submitMvpCustomGptSurveyTurn(
   const sourceResponseMode = shouldPauseAfterSourceAnswer
     ? ("answer_only" as const)
     : ("answer_then_ask" as const);
+  const priorSourceContext = sourceDiscussionContextForTurn(discussionBefore, isReferentialClarification(sourceRequestContent));
   if (sourceResponseMode === "answer_only" && !hardTimeboxExpired(session)) {
     const returnTarget = selectedQuestion && !session.answeredQuestionIds.includes(selectedQuestion.id)
       ? { kind: "guide" as const, id: selectedQuestion.id } : null;
-    beginSourceDiscussion(session.moderatorState, sourceRequestContent, returnTarget);
+    beginSourceDiscussion(session.moderatorState, sourceRequestContent, returnTarget, priorSourceContext.pendingQuestion);
     if (returnTarget) session.pendingReturnQuestionId = returnTarget.id;
     actualAskedQuestion = null;
   }
@@ -3717,8 +3718,8 @@ export async function submitMvpCustomGptSurveyTurn(
         surveySlug: sourceSurveySlug as "brukinsa" | "padcev" | "nubeqa",
         projectId: session.projectId,
         participantMessage: sourceRequestContent,
-        sourceTopicContext: discussionBefore?.query ?? null,
-        evidencePacket: discussionBefore?.evidencePacket,
+        sourceTopicContext: priorSourceContext.sourceTopicContext,
+        evidencePacket: priorSourceContext.evidencePacket,
         surveyContext: surveyContext(
           session,
           selectedQuestion,
@@ -3780,7 +3781,7 @@ export async function submitMvpCustomGptSurveyTurn(
         references = filtered.references;
         droppedReferences = filtered.droppedReferences;
         if (sourceResponseMode === "answer_only") {
-          completeSourceDiscussion(session.moderatorState, sourceTurn.sourceQuestionPlan?.interpretedQuestion ??
+          completeSourceDiscussion(session.moderatorState, sourceTurn.sourceQuestionPlan?.interpretedQuestion ?? priorSourceContext.pendingQuestion ??
             (isReferentialClarification(sourceRequestContent) && discussionBefore?.query ? discussionBefore.query : sourceRequestContent), sourceTurn.evidencePacket);
           assistantContent = withSourceNavigationHint(session.moderatorState, assistantContent);
         }
