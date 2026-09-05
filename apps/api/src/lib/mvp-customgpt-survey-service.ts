@@ -21,6 +21,7 @@ import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, 
 import { isReferentialClarification } from "./controlled-rag-service";
 import { applyParticipantUnderstanding, presentationFor } from "./mvp-presentation";
 import { getOptionalOpenAIGateway } from "./model-gateway";
+import { logSyntheticModeratorDecision } from "./synthetic-moderator-diagnostics";
 import { env } from "../env";
 import {
   BRUKINSA_HCP_MVP_GUIDE,
@@ -3304,6 +3305,7 @@ export async function submitMvpCustomGptSurveyTurn(
     /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
   if (!fixedFlow && discussionBefore?.returnTarget?.kind !== "guide" && session.surveySlug !== "data" && !participantRequestedStop && !hardTimeboxExpired(session) && participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
       ((currentQuestionBefore && !currentQuestionBefore.close && currentQuestionBefore.id !== "intro_consent") || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
+    logSyntheticModeratorDecision({ studyName: session.studyName, surveySlug: session.surveySlug, phase: "before_moderator", turnSequence: sequenceBase, participantMessage: input.content, route: participantAnalysis, state: session.moderatorState });
     const moderator = await runModeratorTurn({
       state: session.moderatorState,
       brand: session.sourceBrand,
@@ -3319,6 +3321,7 @@ export async function submitMvpCustomGptSurveyTurn(
       projectId: session.projectId,
       surveyContext: `Study: ${session.studyName}\nApproved ${session.sourceBrand} market research evidence. Active disease areas: ${session.activeDiseaseAreas.join(", ") || "not yet specified"}. Do not infer a treatment setting when the participant has not supplied it.`,
     });
+    logSyntheticModeratorDecision({ studyName: session.studyName, surveySlug: session.surveySlug, phase: "after_moderator", turnSequence: sequenceBase, participantMessage: input.content, route: participantAnalysis, state: moderator?.state ?? session.moderatorState, moderatorDecision: moderator?.decision });
     if (moderator?.recoveredSourceRequest) {
       moderatorDecision = moderator.decision;
       participantAnalysis = { ...participantAnalysis, sourceRequest: moderator.recoveredSourceRequest, asksSourceQuestion: true,

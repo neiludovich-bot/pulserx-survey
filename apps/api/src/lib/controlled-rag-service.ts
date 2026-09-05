@@ -14,6 +14,7 @@ import { sourceContentSearchSql } from "./source-retrieval-query";
 import { planSourceQuestion } from "./source-question-planner";
 import { sourceTurnOutcome } from "./source-turn-outcome";
 import { logSyntheticGroundingDiagnostics } from "./synthetic-grounding-diagnostics";
+import { sourcePresentationForTurn } from "./source-presentation";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -1615,7 +1616,13 @@ async function composeSourceAnswer(
     });
 
     const usedIndexes = composition.result.usedSourceIndexes ?? chunks.map((_chunk, index) => index + 1);
-    const body = normalizeSourceCitationMarkers(cleanClinicalAnswer(composition.result.answerBody), chunks.length);
+    // Match the engine's reviewed text, including independently cited limitations.
+    // Legacy narration cleanup can change scope or remove a reviewed qualifier.
+    const reviewedText = [
+      composition.result.answerBody,
+      composition.result.limitations?.length ? composition.result.limitations.join("\n") : null,
+    ].filter(Boolean).join("\n\n");
+    const body = normalizeSourceCitationMarkers(reviewedText.trim(), chunks.length);
     if (!usedIndexes.length || usedIndexes.some((index) => index < 1 || index > chunks.length) ||
       [...body.matchAll(/\[(\d+)\]/g)].some((match) => !usedIndexes.includes(Number(match[1])))) {
       throw new Error("Composer cited evidence outside its selected sources.");
@@ -1641,6 +1648,7 @@ async function composeSourceAnswer(
 export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
+  input = { ...input, presentationPlan: sourcePresentationForTurn(input.presentationPlan, input.participantMessage, input.recentTurns) };
   const original = sourceTurnInputs(input);
   const parsedPacket = moderatorEvidencePacketSchema.safeParse(input.evidencePacket);
   const retained = parsedPacket.success && parsedPacket.data.sources.every((source) => source.surveySlug === input.surveySlug)

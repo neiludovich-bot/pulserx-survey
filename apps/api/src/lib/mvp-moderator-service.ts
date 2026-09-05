@@ -94,19 +94,21 @@ export async function runModeratorTurn(input: Input) {
   const sourcePlanning: { plan: SourceQuestionPlan | null; grounding: SourceAnswerGroundingAudit | null; outcome?: import("@interview/schemas").SourceTurnOutcome } = { plan: null, grounding: null };
   const creditOriginalAnswer = !previousActive && input.answerStatus === "answered" && plan.newPriorities.length > 0;
   const phrase = async (kind: "reaction" | "transition", label: string) => {
+    const targetPriority = state.priorities.find((priority) => priority.id === state.activePriorityId);
+    const probeIntent = targetPriority?.probeCount ? "clarification" as const : state.understanding?.productFamiliarity === "low" ? "first_impression" as const : "implication" as const;
     try {
       if (!gateway) throw new Error("No phrasing model");
       const text = (await gateway.phraseModeratorTurn({ brand: input.brand, action: kind, priorityLabel: label, participantMessage: input.participantMessage, previousPriorityLabel: previousActive?.label ?? null,
-        understanding: state.understanding, presentationPlan: presentationFor(state, "reaction_setup"), selectedObjective: input.currentQuestion?.slice(0, 1000),
-        evidenceSummary: (sourceEvidencePacket ?? previousActive?.evidencePacket)?.sources.map((source) => source.text).join("\n").slice(0, 6000),
-        reactionEvidence: previousActive?.reactionEvidence.slice(-16) ?? [],
+        understanding: state.understanding, presentationPlan: presentationFor(state, "reaction_setup"), selectedObjective: kind === "transition" ? `Introduce the next selected priority: ${label}.` : targetPriority?.probeCount ? `Clarify the participant's reaction to the evidence presented for ${label}.` : `Capture the participant's initial reaction to the evidence just presented for ${label}.`,
+        evidenceSummary: (sourceEvidencePacket ?? targetPriority?.evidencePacket)?.sources.map((source) => source.text).join("\n").slice(0, 6000),
+        reactionEvidence: targetPriority?.reactionEvidence.slice(-16) ?? [],
         recentQuestionTexts: input.recentTurns.filter((turn) => turn.role === "interviewer").flatMap((turn) => turn.content.split(/\n+/).filter((line) => line.includes("?"))).slice(-8).map((line) => line.slice(0, 1000)),
-        probeIntent: state.understanding?.productFamiliarity === "low" ? "information_need" : previousActive?.probeCount ? "clarification" : "implication",
+        probeIntent,
       })).result.text;
       if (kind === "reaction" && (text.match(/\?/g)?.length !== 1)) throw new Error("A reaction prompt must contain one question.");
       return text;
     } catch {
-      return kind === "reaction" ? state.understanding?.productFamiliarity === "low" ? `What would you want clarified about ${label} before forming a view?` : `How does this information about ${label} affect your assessment of ${input.brand}?` : `You also mentioned ${label}. Let's look at that next.`;
+      return kind === "reaction" ? probeIntent === "first_impression" ? `What is your initial reaction to this information about ${label}?` : `How does this information about ${label} affect your assessment of ${input.brand}?` : `You also mentioned ${label}. Let's look at that next.`;
     }
   };
   const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket) => {

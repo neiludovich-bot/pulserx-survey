@@ -107,6 +107,42 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("does not pass the previous priority's evidence to phrasing when the next answer has no packet", async () => {
+    const first = await presentAgenda(surveySlug);
+    expect(first.state.priorities[0].evidencePacket).toBeDefined();
+    const reaction = "The efficacy results would be one part of my assessment.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [reaction] }) });
+    mocks.source.mockResolvedValueOnce({ enabled: true, provider: "controlled_rag", answer: "A cited DDI source answer without an evidence packet.", references: [{ citationId: "ddi-source", title: "DDI source", url: "https://example.test/ddi", description: null, assets: [] }], evidencePacket: null });
+    mocks.phrase.mockClear();
+    const next = await runModeratorTurn(inputFor(surveySlug, { state: first.state, currentQuestion: first.question, participantMessage: reaction, isPriorityQuestion: false, sourceRequest: null }));
+    expect(next?.state.priorities[0].status).toBe("reacted");
+    expect(next?.state.priorities[1]).toMatchObject({ label: "DDI", status: "presented" });
+    expect(next?.state.priorities[1].evidencePacket).toBeUndefined();
+    expect(mocks.phrase).toHaveBeenCalledTimes(2);
+    for (const [input] of mocks.phrase.mock.calls) {
+      expect(input.priorityLabel).toBe("DDI");
+      expect(input.evidenceSummary).toBeUndefined();
+    }
+  });
+
+  it.each([false, true])("uses low familiarity for brief first impressions, retaining reactions and moving to the next priority (phrasing failure=%s)", async (phrasingFails) => {
+    const state = emptyModeratorState();
+    state.understanding = { version: 1, productFamiliarity: "low", preferredDepth: "brief", participantEvidence: ["Not very familiar"] };
+    mocks.plan.mockResolvedValueOnce({ result: initialPlan(surveySlug) });
+    if (phrasingFails) mocks.phrase.mockRejectedValue(new Error("Phrasing unavailable"));
+    else mocks.phrase.mockImplementation(async (input: ModeratorPhrasingInput) => ({ result: { text: input.action === "reaction" ? `What is your initial reaction to this information about ${input.priorityLabel}?` : "Let's consider the next priority." } }));
+    const first = await runModeratorTurn(inputFor(surveySlug, { state }));
+    expect(first?.question).toBe("What is your initial reaction to this information about PFS?");
+    expect(mocks.phrase.mock.calls.at(-1)![0]).toMatchObject({ probeIntent: "first_impression", selectedObjective: expect.stringContaining("initial reaction"), presentationPlan: { depth: "brief" }, reactionEvidence: [] });
+    const reaction = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first!.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [reaction] }) });
+    const next = await runModeratorTurn(inputFor(surveySlug, { state: first!.state, currentQuestion: first!.question, participantMessage: reaction, isPriorityQuestion: false, sourceRequest: null }));
+    expect(next?.state.priorities[0]).toMatchObject({ status: "reacted", reactionEvidence: [reaction] });
+    expect(next?.question).toBe("What is your initial reaction to this information about DDI?");
+    expect(next?.state.sourceDiscussion).toBeUndefined();
+    expect(mocks.phrase.mock.calls.at(-1)![0]).toMatchObject({ probeIntent: "first_impression", reactionEvidence: [] });
+  });
+
   it("retains the failed practical question while retrieving fresh support for repeated clarification", async () => {
     const first = await presentAgenda(surveySlug);
     const oldPacket = first.state.priorities[0].evidencePacket;

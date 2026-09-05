@@ -261,8 +261,14 @@ export const sourceGroundingViolationSchema = z.object({
   reason: z.string().min(1).max(600),
 }).strict();
 
+// Review/repair must accommodate both existing composer output shapes without truncation.
+export const sourceAnswerDraftSchema = z.object({
+  practicalAnswer: z.string().min(1).max(2600),
+  qualification: z.string().min(1).max(1000).nullable(),
+}).strict();
+
 export const sourceGroundingReviewInputSchema = z.object({
-  draft: controlledRagContextualCompositionResultSchema.pick({ practicalAnswer: true, qualification: true }),
+  draft: sourceAnswerDraftSchema,
   sources: z.array(z.object({ index: z.number().int().min(1).max(8), text: z.string().min(1).max(1800) }).strict()).min(1).max(8),
 }).strict();
 
@@ -274,7 +280,7 @@ export const sourceGroundingReviewResultSchema = z.object({
 
 export const contextualSourceCompositionInputSchema = controlledRagCompositionInputSchema.extend({
   groundingViolations: z.array(sourceGroundingViolationSchema).max(16),
-  previousDraft: controlledRagContextualCompositionResultSchema.pick({ practicalAnswer: true, qualification: true }).nullable().optional(),
+  previousDraft: sourceAnswerDraftSchema.nullable().optional(),
 }).strict();
 
 export type SourceGroundingReviewResult = z.infer<typeof sourceGroundingReviewResultSchema>;

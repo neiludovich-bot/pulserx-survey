@@ -55,7 +55,7 @@ describe("typed source-question planning", () => {
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "analysis-model", decisionModel: "decision-model", phrasingModel: "phrasing-model" }, undefined, { parse });
     const result = await gateway.planSourceQuestion(input);
     expect(result.result).toEqual(plan);
-    expect(result.trace).toMatchObject({ callType: "source_question_plan", promptVersion: "v2", request: { input } });
+    expect(result.trace).toMatchObject({ callType: "source_question_plan", promptVersion: "v3", request: { input } });
     const request = parse.mock.calls[0][0];
     expect(request).toMatchObject({ model: "analysis-model", text: { format: { name: "source_question_plan_v1", strict: true } } });
     expect(JSON.parse(request.input[0].content[0].text)).toEqual(input);
@@ -63,6 +63,7 @@ describe("typed source-question planning", () => {
   });
 
   it.each([
+    { participantMessage: "It's something I need to track but not terribly concerning. So someone on those medications is at risk for what adverse reactions", sourceTopicContext: input.sourceTopicContext, answerApproach: "contextual_explanation", usesSourceContext: true },
     { participantMessage: "Only which adverse events were attributed to this interaction, not general safety", sourceTopicContext: input.sourceTopicContext, answerApproach: "direct", usesSourceContext: true },
     { participantMessage: "What were the EV-302 overall survival results?", sourceTopicContext: input.sourceTopicContext, answerApproach: "direct", usesSourceContext: false },
     { participantMessage: "Which one?", sourceTopicContext: null, answerApproach: "clarify", usesSourceContext: false },
@@ -220,7 +221,7 @@ describe("contextual composition contract", () => {
     expect(contextualSourceCompositionInputSchema.parse(legacy)).not.toHaveProperty("previousDraft");
     expect(contextualSourceCompositionInputSchema.parse({ ...legacy, previousDraft: null }).previousDraft).toBeNull();
     expect(contextualSourceCompositionInputSchema.safeParse({ ...legacy, previousDraft: { practicalAnswer: "Draft", qualification: null, inventedSource: "not evidence" } }).success).toBe(false);
-    expect(contextualSourceCompositionInputSchema.safeParse({ ...legacy, previousDraft: { practicalAnswer: "x".repeat(2001), qualification: null } }).success).toBe(false);
+    expect(contextualSourceCompositionInputSchema.safeParse({ ...legacy, previousDraft: { practicalAnswer: "x".repeat(2601), qualification: null } }).success).toBe(false);
   });
 
   it.each([

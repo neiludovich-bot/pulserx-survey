@@ -134,7 +134,7 @@ const moderatorPhrasingContextSchema = z.object({
   evidenceSummary: z.string().max(6000).optional(),
   reactionEvidence: z.array(evidenceExcerptSchema).max(16).optional(),
   recentQuestionTexts: z.array(z.string().min(1).max(1000)).max(8).optional(),
-  probeIntent: z.enum(["clarification", "implication", "information_need"]).optional(),
+  probeIntent: z.enum(["clarification", "implication", "information_need", "first_impression"]).optional(),
 }).strict();
 
 const moderatorPriorityPhrasingInputSchema = moderatorPhrasingContextSchema.extend({

@@ -47,6 +47,32 @@ describe("controlled RAG source provider", () => {
     expect(result.answer).not.toContain("invented monitoring instruction");
   });
 
+  it("renders reviewed limitations verbatim and retains sources cited only by those limitations", async () => {
+    vi.stubEnv("NODE_ENV", "production");
+    const answerBody = "Synthetic supported guidance. [1]";
+    const limitations = [
+      "This guidance applies only during the specified coadministration. [2]",
+      "The provided source snippets do not include a comparison for the other population. [2]",
+    ];
+    const audit = { version: 1, status: "supported", attempt: 1, model: "fixture-source-model", responseId: "fixture-review" };
+    const compose = vi.fn().mockResolvedValue({
+      result: { answerBody, limitations, usedSourceIndexes: [1, 2] }, groundingReview: audit,
+    });
+    vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({ composeControlledRagAnswer: compose } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
+    const sources = [answerBody, limitations.join("\n")].map((text, index) => ({
+      id: `synthetic-reviewed-${index}`, surveySlug: "nubeqa" as const, title: `Synthetic source ${index + 1}`,
+      url: `https://example.test/reviewed-${index}`, description: "", tags: [], assets: [], text, evidenceRole: "direct" as const,
+    }));
+    const result = await askControlledRagForSurveyInterviewerTurn({ ...parkedFactorsInput, evidencePacket: { sources } });
+
+    expect(result.enabled).toBe(true);
+    expect(result.answer).toBe([answerBody, limitations.join("\n")].join("\n\n"));
+    expect(result.sourceAnswerGrounding).toEqual(audit);
+    expect(result.references.map((reference) => reference.url)).toEqual(sources.map((source) => source.url));
+    expect(result.evidencePacket?.sources.map((source) => source.id)).toEqual(sources.map((source) => source.id));
+    expect(compose).toHaveBeenCalledOnce();
+  });
+
   it.each([
     "Can you explain that more simply?",
     "Even more simply please.",

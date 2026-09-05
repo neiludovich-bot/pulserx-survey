@@ -23,6 +23,7 @@ export const presentationPlanSchema = z.object({
   depth: explanationDepthSchema,
   maxFacts: z.number().int().min(1).max(8),
   maxTopics: z.number().int().min(1).max(3),
+  maxWords: z.number().int().min(20).max(500).optional(),
   askReadiness: z.boolean(),
 }).strict().superRefine((plan, context) => {
   if (plan.depth === "brief" && (plan.maxFacts > 3 || plan.maxTopics > 1)) {

@@ -66,7 +66,8 @@ describe("presentation and understanding contracts", () => {
   });
 
   it("passes presentation constraints to composition without allowing it to select a research question", async () => {
-    const parse = vi.fn().mockResolvedValue({ output_parsed: { answerBody: "The selected source describes the product's role. [1]", usedSourceIndexes: [1] } });
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { answerBody: "The selected source describes the product's role. [1]", usedSourceIndexes: [1], limitations: [] } })
+      .mockResolvedValueOnce({ output_parsed: { version: 1, supported: true, unsupportedClaims: [] } });
     await gateway(parse).composeControlledRagAnswer({
       surveySlug: "nubeqa", participantMessage: "Give me a brief introduction.", presentationPlan: brief,
       resolvedSourceQuestion: "Basic product role", surveyContext: "", currentQuestion: null, selectedNextQuestion: null,
@@ -94,6 +95,14 @@ describe("presentation and understanding contracts", () => {
     expect(JSON.parse(parse.mock.calls[0][0].input[0].content[0].text)).toEqual(rich);
   });
 
+  it("keeps a selected first impression distinct from an information need for low familiarity", async () => {
+    const input = { brand: "NUBEQA", action: "reaction" as const, priorityLabel: "PFS", participantMessage: "PFS and DDI", previousPriorityLabel: null, understanding, presentationPlan: { ...brief, purpose: "reaction_setup" as const }, selectedObjective: "Capture the participant's initial reaction to the evidence just presented for PFS.", probeIntent: "first_impression" as const, reactionEvidence: [] };
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { text: "What is your initial reaction to this information about PFS?" } });
+    await gateway(parse).phraseModeratorTurn(input);
+    expect(JSON.parse(parse.mock.calls[0][0].input[0].content[0].text)).toEqual(input);
+    expect(parse.mock.calls[0][0].instructions).toContain("Use information_need only when that is the explicitly selected probeIntent");
+  });
+
   it("keeps source outcomes typed and bounded without raw medical or participant content fields", () => {
     expect(sourceTurnOutcomeSchema.parse({ version: 1, status: "success" })).toEqual({ version: 1, status: "success", attempts: [] });
     const attempt = { stage: "grounding", code: "unsupported_claim", responseId: null, model: "test" };
@@ -115,7 +124,7 @@ describe("presentation and understanding contracts", () => {
     const request = parse.mock.calls[0][0];
     expect(JSON.parse(request.input[0].content[0].text)).toEqual(input);
     expect(result.result).toEqual({ text });
-    expect(result.trace).toMatchObject({ callType: "moderator_phrasing", promptVersion: "v5", response: { id: "guide-resume-response" } });
+    expect(result.trace).toMatchObject({ callType: "moderator_phrasing", promptVersion: "v6", response: { id: "guide-resume-response" } });
     expect(request.metadata).toMatchObject({ action: "guide_resume", selected_question_id: "decision_framework" });
     expect(request.text.format.schema.additionalProperties).toBe(false);
     expect(request.text.format.schema.required).toEqual(["text"]);

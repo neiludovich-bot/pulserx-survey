@@ -272,7 +272,7 @@ describe("shared persisted source detours", () => {
     const state = mocks.persist.mock.calls.at(-1)![0].session.moderatorState;
     expect(state.priorities.map((p: { label: string; status: string }) => [p.label, p.status])).toEqual([["PFS", "presented"], ["DDI", "pending"]]);
     expect(mocks.source).toHaveBeenCalledTimes(1);
-    expect(mocks.phrase.mock.calls.at(-1)![0]).toMatchObject({ understanding: { productFamiliarity: "low" }, probeIntent: "information_need", presentationPlan: { depth: "brief" } });
+    expect(mocks.phrase.mock.calls.at(-1)![0]).toMatchObject({ understanding: { productFamiliarity: "low" }, probeIntent: "first_impression", presentationPlan: { depth: "brief" } });
   });
 
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("uses low familiarity to ask %s information needs and keeps the brief presentation preference", async (brand) => {
