@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sourceQuestionPlanSchema, sourceQuestionRecentTurnsSchema } from "./source-question";
+import { moderatorEvidenceRoleSchema } from "./moderator";
 export * from "./moderator";
 export * from "./source-question";
 
@@ -101,6 +102,7 @@ export const phrasingResultSchema = z.object({
 });
 
 export const controlledRagCompositionSourceSchema = z.object({
+  evidenceRole: moderatorEvidenceRoleSchema.optional(),
   index: z.number().int().min(1).max(8),
   title: z.string().min(1),
   url: z.string().min(1).nullable(),

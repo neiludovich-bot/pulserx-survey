@@ -72,8 +72,8 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     mocks.query.mockResolvedValue([{ id: data.ddi.id.slice(3) }, { id: data.safety.id.slice(3) }]);
     mocks.findMany.mockResolvedValue(databaseRows([data.ddi, data.safety]));
     mocks.select.mockResolvedValue({ result: { selections: [
-      { sourceId: data.ddi.id, supportExcerpt: data.ddi.text, assetIds: [] },
-      { sourceId: data.safety.id, supportExcerpt: data.safety.text, assetIds: [] },
+      { sourceId: data.ddi.id, supportExcerpt: data.ddi.text, assetIds: [], evidenceRole: "direct" },
+      { sourceId: data.safety.id, supportExcerpt: data.safety.text, assetIds: [], evidenceRole: "contextual" },
     ], rationale: "Use exact original interaction and general safety excerpts with an explicit causation boundary." } });
     return data;
   }
@@ -84,15 +84,17 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     expect(mocks.plan).toHaveBeenCalledWith(expect.objectContaining({ participantMessage: screenshotQuestion, sourceTopicContext: input.sourceTopicContext, recentTurns }));
     expect(mocks.plan.mock.invocationCallOrder[0]).toBeLessThan(mocks.query.mock.invocationCallOrder[0]);
     expect(sqlValues().some((values) => /general/.test(values) && /safety/.test(values))).toBe(true);
-    expect(mocks.select).toHaveBeenCalledWith(expect.objectContaining({ sourceQuestionPlan: plan }));
+    expect(mocks.select).toHaveBeenCalledOnce();
+    expect(mocks.select).toHaveBeenCalledWith(expect.objectContaining({ sourceQuestionPlan: plan, evidenceFocus: "all" }));
     expect(JSON.stringify(mocks.select.mock.calls[0][0].candidates)).not.toContain(generatedAnswer);
     expect(mocks.compose).toHaveBeenCalledWith(expect.objectContaining({
       participantMessage: screenshotQuestion, sourceQuestionPlan: plan, recentTurns,
       clinicalEvidenceCard: null,
-      sources: [expect.objectContaining({ text: ddi.text }), expect.objectContaining({ text: safety.text })],
+      sources: [expect.objectContaining({ text: ddi.text, evidenceRole: "direct" }), expect.objectContaining({ text: safety.text, evidenceRole: "contextual" })],
     }));
     expect(JSON.stringify(mocks.compose.mock.calls[0][0].sources)).not.toContain(generatedAnswer);
     expect(result.evidencePacket?.sources.map((source) => source.text)).toEqual([ddi.text, safety.text]);
+    expect(result.evidencePacket?.sources.map((source) => source.evidenceRole)).toEqual(["direct", "contextual"]);
     expect(result.sourceQuestionPlan).toEqual(plan);
     expect(result.references.map((reference) => reference.citationId)).toEqual([`rag:${ddi.id}`, `rag:${safety.id}`]);
   });
@@ -103,6 +105,41 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     const candidates = mocks.select.mock.calls[0][0].candidates as Array<{ id: string; text: string }>;
     expect(candidates.filter((candidate) => candidate.id === ddi.id)).toEqual([expect.objectContaining({ text: ddi.text })]);
     expect(mocks.compose.mock.calls[0][0].sources[0].text).toContain("Additional original safety facts omitted");
+  });
+
+  it("recovers an actual general warning when both initial passages only repeat DDI evidence", async () => {
+    const { input, plan, ddi, safety } = setup();
+    const repeatedDdi = "Original interaction monitoring excerpt repeated in the broad source.";
+    const broadSource = { ...safety, text: `${repeatedDdi} ${safety.text}` };
+    mocks.findMany.mockResolvedValue(databaseRows([ddi, broadSource]));
+    mocks.select.mockReset()
+      .mockResolvedValueOnce({ result: { selections: [
+        { sourceId: ddi.id, supportExcerpt: ddi.text, assetIds: [], evidenceRole: "direct" },
+        { sourceId: safety.id, supportExcerpt: repeatedDdi, assetIds: [], evidenceRole: "direct" },
+      ], rationale: "Both first-pass excerpts describe only the interaction instruction." } })
+      .mockResolvedValueOnce({ result: { selections: [
+        { sourceId: safety.id, supportExcerpt: safety.text, assetIds: [], evidenceRole: "contextual" },
+      ], rationale: "This different exact passage supplies the missing general safety context." } });
+    const result = await askControlledRagForSurveyInterviewerTurn(input);
+    expect(mocks.select).toHaveBeenCalledTimes(2);
+    const first = mocks.select.mock.calls[0][0];
+    const recovery = mocks.select.mock.calls[1][0];
+    expect(recovery).toMatchObject({ evidenceFocus: "contextual", query: plan.retrievalQueries.slice(1).join("\n"), sourceQuestionPlan: plan });
+    expect(recovery.candidates).toEqual(first.candidates);
+    expect(recovery.candidates.find((candidate: { id: string }) => candidate.id === safety.id).text).toBe(broadSource.text);
+    const composedSources = mocks.compose.mock.calls[0][0].sources;
+    expect(composedSources).toHaveLength(2);
+    expect(composedSources).toEqual([
+      expect.objectContaining({ text: ddi.text, evidenceRole: "direct" }),
+      expect.objectContaining({ text: safety.text, evidenceRole: "contextual" }),
+    ]);
+    expect(JSON.stringify(composedSources)).not.toContain(repeatedDdi);
+    expect(JSON.stringify(composedSources)).not.toContain(generatedAnswer);
+    expect(result.evidencePacket?.sources.map(({ id, text, evidenceRole }) => ({ id, text, evidenceRole }))).toEqual([
+      { id: ddi.id, text: ddi.text, evidenceRole: "direct" },
+      { id: safety.id, text: safety.text, evidenceRole: "contextual" },
+    ]);
+    expect(new Set(result.references.map((reference) => reference.citationId)).size).toBe(2);
   });
 
   it("does not broaden a direct causal question into general safety context", async () => {
@@ -117,6 +154,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     mocks.compose.mockResolvedValue({ result: { answerBody: "The interaction source does not establish specific causal adverse reactions. [1]", usedSourceIndexes: [1] } });
     await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: question });
     expect(sqlValues()).toHaveLength(1);
+    expect(mocks.select).toHaveBeenCalledOnce();
     expect(sqlValues()[0]).not.toContain("general");
     expect(mocks.compose.mock.calls[0][0].sourceQuestionPlan).toEqual(direct);
     expect(mocks.compose.mock.calls[0][0].sources).toHaveLength(1);

@@ -3,9 +3,11 @@ import { sourceQuestionPlanSchema } from "./source-question";
 
 const evidenceExcerptSchema = z.string().min(1).max(4000);
 const answerStatusSchema = z.enum(["answered", "partial", "not_answered"]);
+export const moderatorEvidenceRoleSchema = z.enum(["direct", "contextual"]);
 
 export const moderatorEvidencePacketSchema = z.object({
   sources: z.array(z.object({
+    evidenceRole: moderatorEvidenceRoleSchema.optional(),
     id: z.string().min(1),
     surveySlug: z.enum(["brukinsa", "padcev", "nubeqa"]),
     title: z.string().min(1),
@@ -124,6 +126,7 @@ export const moderatorPhrasingResultSchema = z.object({
 export const moderatorEvidenceSelectionInputSchema = z.object({
   surveySlug: z.enum(["nubeqa", "brukinsa", "padcev"]),
   query: z.string().min(1).max(4000),
+  evidenceFocus: z.enum(["all", "contextual"]).default("all"),
   sourceTopicContext: z.string().min(1).max(6000).nullable().default(null),
   priorSourceIds: z.array(z.string().min(1)).max(3).default([]),
   sourceQuestionPlan: sourceQuestionPlanSchema.nullable().optional(),
@@ -145,13 +148,21 @@ export const moderatorEvidenceSelectionInputSchema = z.object({
   }).strict()).max(24),
 }).strict();
 
-export const moderatorEvidenceSelectionResultSchema = z.object({
-  selections: z.array(z.object({
+const moderatorEvidenceSelectionSchema = z.object({
     sourceId: z.string().min(1),
     supportExcerpt: z.string().min(1).max(1500),
     assetIds: z.array(z.string().min(1)).max(6),
-  }).strict()).max(3),
+    evidenceRole: moderatorEvidenceRoleSchema.default("direct"),
+  }).strict();
+
+export const moderatorEvidenceSelectionResultSchema = z.object({
+  selections: z.array(moderatorEvidenceSelectionSchema).max(3),
   rationale: z.string().min(1).max(1000),
+}).strict();
+
+// Model output requires the role; only application/legacy inputs receive a default.
+export const moderatorEvidenceSelectionModelResultSchema = moderatorEvidenceSelectionResultSchema.extend({
+  selections: z.array(moderatorEvidenceSelectionSchema.extend({ evidenceRole: moderatorEvidenceRoleSchema })).max(3),
 }).strict();
 
 export type ModeratorPriority = z.infer<typeof moderatorPrioritySchema>;

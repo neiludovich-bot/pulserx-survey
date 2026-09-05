@@ -1598,6 +1598,7 @@ async function composeSourceAnswer(
         description: null,
         tags: [],
         text: compact(chunk.text, 1500),
+        evidenceRole: chunk.evidenceRole ?? "direct",
       })),
     });
 

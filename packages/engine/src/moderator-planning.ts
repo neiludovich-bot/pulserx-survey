@@ -154,6 +154,9 @@ export function validateModeratorEvidenceSelection(input: ModeratorEvidenceSelec
   const selectedSourceIds = new Set<string>();
   const selectedAssetIds = new Set<string>();
   for (const selection of result.selections) {
+    if (parsed.evidenceFocus === "contextual" && selection.evidenceRole !== "contextual") {
+      throw new Error("A contextual evidence search cannot select direct evidence.");
+    }
     const source = parsed.candidates.find((candidate) => candidate.id === selection.sourceId);
     if (!source || selectedSourceIds.has(selection.sourceId)) {
       throw new Error("Evidence selection must use distinct submitted source IDs.");

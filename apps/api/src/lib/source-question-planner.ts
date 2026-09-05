@@ -8,8 +8,12 @@ export async function planSourceQuestion(input: SourceQuestionPlanInput): Promis
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       return sourceQuestionPlanSchema.parse((await gateway.planSourceQuestion(input)).result);
-    } catch {
-      console.warn({ event: "source_question_planning_failed", attempt });
+    } catch (error) {
+      const record = error && typeof error === "object" ? error as { name?: unknown; status?: unknown } : {};
+      const known = new Set(["Error", "ZodError", "APIError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "APIConnectionError", "APIConnectionTimeoutError", "BadRequestError", "InternalServerError"]);
+      console.warn({ event: "source_question_planning_failed", attempt,
+        category: typeof record.name === "string" && known.has(record.name) ? record.name : "Error",
+        status: typeof record.status === "number" ? record.status : null });
     }
   }
   // An unavailable interpretation does not authorize an invented medical answer.

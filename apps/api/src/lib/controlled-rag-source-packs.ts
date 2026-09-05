@@ -6,6 +6,7 @@ export type ControlledRagChunk = {
   description: string;
   tags: string[];
   text: string;
+  evidenceRole?: "direct" | "contextual";
   assets?: Array<{
     title: string;
     url: string;

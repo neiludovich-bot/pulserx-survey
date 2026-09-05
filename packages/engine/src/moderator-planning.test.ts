@@ -5,6 +5,7 @@ import {
   moderatorPlanModelResultSchema,
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionResultSchema,
+  moderatorEvidenceSelectionModelResultSchema,
   moderatorEvidenceSelectionInputSchema,
   moderatorEvidencePacketSchema,
   type ModeratorEvidencePacket,
@@ -368,6 +369,31 @@ describe("moderator evidence ID validation", () => {
     expect(validateModeratorEvidenceSelection(evidenceInput, { selections: [], rationale: "The requested specific drug is not covered." }).selections).toEqual([]);
   });
 
+  it("defaults legacy evidence to direct and preserves contextual roles only for valid excerpts", () => {
+    const selection = { sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [] };
+    expect(moderatorEvidenceSelectionResultSchema.parse({ selections: [selection], rationale: "legacy" }).selections[0].evidenceRole).toBe("direct");
+    expect(() => validateModeratorEvidenceSelection({ ...evidenceInput, evidenceFocus: "contextual" }, { selections: [selection], rationale: "direct is insufficient" })).toThrow("cannot select direct");
+    const contextualInput = { ...evidenceInput, evidenceFocus: "contextual" as const, candidates: [{ ...evidenceInput.candidates[0], text: "A named warning with supporting details." }] };
+    const result = validateModeratorEvidenceSelection(contextualInput, { selections: [{ ...selection, supportExcerpt: "A named warning with supporting details.", evidenceRole: "contextual" }], rationale: "Distinct safety detail" });
+    expect(result.selections[0].evidenceRole).toBe("contextual");
+    expect(() => validateModeratorEvidenceSelection(contextualInput, { selections: [{ ...selection, supportExcerpt: "Invented warning", evidenceRole: "contextual" }], rationale: "invalid" })).toThrow("exact supporting excerpt");
+  });
+
+  it("requires model evidence roles without serializing a default into strict output", async () => {
+    const output = { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [], evidenceRole: "direct" }], rationale: "Direct support" };
+    const parse = vi.fn().mockResolvedValue({ output_parsed: output });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    expect((await gateway.selectModeratorEvidence(evidenceInput)).result).toEqual(output);
+    const format = parse.mock.calls[0][0].text.format;
+    expect(format.name).toBe("moderator_evidence_selection_result_v3");
+    const selectionSchema = format.schema.properties.selections.items;
+    expect(selectionSchema.required).toContain("evidenceRole");
+    expect(selectionSchema.properties.evidenceRole).not.toHaveProperty("default");
+    expect(moderatorEvidenceSelectionModelResultSchema.safeParse({ ...output, selections: [{ ...output.selections[0], evidenceRole: undefined }] }).success).toBe(false);
+    const packet = { sources: [{ ...evidencePacket.sources[0], evidenceRole: "contextual" }] };
+    expect(moderatorEvidencePacketSchema.parse(packet).sources[0].evidenceRole).toBe("contextual");
+  });
+
   it("rejects unknown sources, repeated sources, and assets attached to a different source", () => {
     for (const selections of [
       [{ sourceId: "missing", supportExcerpt: "Interaction information", assetIds: [] }],
@@ -427,7 +453,7 @@ describe("moderator structured gateway", () => {
   it.each([
     ["moderator_plan_v2", moderatorPlanModelResultSchema],
     ["moderator_phrasing", moderatorPhrasingResultSchema],
-    ["moderator_evidence", moderatorEvidenceSelectionResultSchema],
+    ["moderator_evidence", moderatorEvidenceSelectionModelResultSchema],
   ] as const)("serializes %s through the installed OpenAI strict-schema helper", (name, schema) => {
     const format = zodTextFormat(schema, name);
     const json = JSON.parse(JSON.stringify(format));

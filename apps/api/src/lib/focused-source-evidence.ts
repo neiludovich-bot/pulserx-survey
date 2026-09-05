@@ -66,6 +66,7 @@ export async function selectFocusedSourceEvidence(input: {
   sourceTopicContext?: string | null;
   priorSourceIds?: string[];
   sourceQuestionPlan?: SourceQuestionPlan | null;
+  evidenceFocus?: "all" | "contextual";
 }): Promise<{ chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" | "unavailable" }> {
   const candidates = input.candidates.slice(0, 24);
   const selectionInput: ModeratorEvidenceSelectionInput = {
@@ -73,6 +74,7 @@ export async function selectFocusedSourceEvidence(input: {
     sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null,
     priorSourceIds: input.priorSourceIds ?? [],
     sourceQuestionPlan: input.sourceQuestionPlan ?? null,
+    evidenceFocus: input.evidenceFocus ?? "all",
     candidates: candidates.map((chunk) => ({
       id: chunk.id, title: chunk.title, url: chunk.url, description: chunk.description,
       text: chunk.text.slice(0, 12000), tags: chunk.tags,
@@ -89,7 +91,7 @@ export async function selectFocusedSourceEvidence(input: {
       const selection = await gateway.selectModeratorEvidence(selectionInput);
       if (selection.result.selections.length > 3) throw new Error("Too many selected sources.");
       const seen = new Set<string>();
-      const chunks = selection.result.selections.map(({ sourceId, assetIds, supportExcerpt }) => {
+      const chunks = selection.result.selections.map(({ sourceId, assetIds, supportExcerpt, evidenceRole }) => {
         const sourceIndex = candidates.findIndex((chunk) => chunk.id === sourceId);
         const source = candidates[sourceIndex];
         if (!source || seen.has(sourceId)) throw new Error("Invalid evidence source selection.");
@@ -102,8 +104,20 @@ export async function selectFocusedSourceEvidence(input: {
           if (!asset) throw new Error("Selected asset does not belong to its evidence source.");
           return asset;
         });
-        return { ...source, text: supportExcerpt, assets };
+        return { ...source, text: supportExcerpt, assets, ...(evidenceRole ? { evidenceRole } : {}) };
       });
+      if (input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation" &&
+          !chunks.some((chunk) => chunk.evidenceRole === "contextual") && input.sourceQuestionPlan.retrievalQueries.length > 1) {
+        // The original relation and the useful background are different evidence
+        // needs. One focused recovery prevents duplicate direct passages from
+        // crowding out the complementary answer, without inventing any facts.
+        const focused = await selectFocusedSourceEvidence({ ...input, evidenceFocus: "contextual",
+          query: input.sourceQuestionPlan.retrievalQueries.slice(1).join("\n"), fallbackSourceIds: [] });
+        const context = focused.chunks.filter((chunk) => chunk.evidenceRole === "contextual").slice(0, 2);
+        if (context.length) return { mode: "semantic", chunks: [
+          ...chunks.filter((chunk) => !context.some((other) => other.id === chunk.id)).slice(0, 3 - context.length), ...context,
+        ] };
+      }
       if (!chunks.length) console.info({ event: "source_evidence_selection_empty", candidateCount: candidates.length });
       return { chunks, mode: "semantic" };
     } catch (error) {
