@@ -5,9 +5,10 @@ import {
   TurnRole,
   type Prisma,
 } from "@prisma/client";
-import type {
-  GroundedReference,
-  MvpCustomGptSurveyMessage,
+import {
+  moderatorStateSchema,
+  type GroundedReference,
+  type MvpCustomGptSurveyMessage,
 } from "@interview/schemas";
 import { prisma } from "./prisma";
 import type { MvpTurnRouteDecision } from "./mvp-turn-router";
@@ -34,6 +35,7 @@ export type MvpPersistenceSessionSnapshot = {
   askedQuestionIds: string[];
   answeredQuestionIds?: string[];
   answerEvidenceByQuestionId?: Record<string, string[]>;
+  moderatorState?: ReturnType<typeof moderatorStateSchema.parse>;
   adaptiveProbeQuestions: unknown[];
   completedReason: string | null;
 };
@@ -52,6 +54,7 @@ type MvpTurnAuditInput = {
   sourceContextRequirement?: string | null;
   turnRouteDecision?: MvpTurnRouteDecision | null;
   turnRouteAnalysis?: Record<string, unknown> | null;
+  moderatorDecision?: unknown;
   needsCustomGpt?: boolean;
   customGptStatus?: string | null;
   customGptReason?: string | null;
@@ -107,6 +110,9 @@ function metadataForSession(
     answerEvidenceByQuestionId: answerEvidenceFromMetadata(
       session.answerEvidenceByQuestionId,
     ),
+    moderatorState: inputJson(moderatorStateSchema.parse(
+      session.moderatorState ?? emptyModeratorState(),
+    )),
     adaptiveProbeQuestions: inputJson(session.adaptiveProbeQuestions),
     completedReason: session.completedReason,
   };
@@ -116,6 +122,17 @@ function jsonRecord(value: Prisma.JsonValue | null | undefined) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Prisma.JsonObject)
     : {};
+}
+
+function emptyModeratorState() {
+  return moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
+}
+
+function moderatorStateFromMetadata(value: unknown) {
+  const parsed = moderatorStateSchema.safeParse(value);
+  // Older sessions have no moderator ledger. Malformed metadata cannot earn
+  // reaction credit or invent a pending priority from the browser transcript.
+  return parsed.success ? parsed.data : emptyModeratorState();
 }
 
 function stringArray(value: unknown): string[] {
@@ -226,6 +243,7 @@ export async function persistMvpSurveySessionStarted(input: {
   }
 
   try {
+    const sessionMetadata = metadataForSession(input.session);
     const study = await ensureMvpStudy(input.session);
     await prisma.$transaction([
       prisma.session.upsert({
@@ -236,7 +254,7 @@ export async function persistMvpSurveySessionStarted(input: {
           status: SessionStatus.ACTIVE,
           startedAt: input.session.startedAt,
           metadata: {
-            ...metadataForSession(input.session),
+            ...sessionMetadata,
             customGptEnabled: input.customGptEnabled,
             setupReason: input.setupReason,
           },
@@ -246,7 +264,7 @@ export async function persistMvpSurveySessionStarted(input: {
           status: SessionStatus.ACTIVE,
           startedAt: input.session.startedAt,
           metadata: {
-            ...metadataForSession(input.session),
+            ...sessionMetadata,
             customGptEnabled: input.customGptEnabled,
             setupReason: input.setupReason,
           },
@@ -299,6 +317,7 @@ export async function persistMvpSurveyTurnAudit(input: {
   }
 
   try {
+    const sessionMetadata = metadataForSession(input.session);
     const study = await ensureMvpStudy(input.session);
     const sessionStatus = input.session.completedReason
       ? SessionStatus.COMPLETED
@@ -335,6 +354,7 @@ export async function persistMvpSurveyTurnAudit(input: {
       sourceResponseMode: input.turn.sourceResponseMode ?? null,
       references: inputJson(input.turn.references ?? []),
       droppedReferences: inputJson(input.turn.droppedReferences ?? []),
+      moderatorDecision: inputJson(input.turn.moderatorDecision ?? null),
     } as Prisma.InputJsonObject;
 
     await prisma.$transaction([
@@ -346,12 +366,12 @@ export async function persistMvpSurveyTurnAudit(input: {
           status: sessionStatus,
           startedAt: input.session.startedAt,
           completedAt: input.session.completedReason ? new Date() : null,
-          metadata: metadataForSession(input.session),
+          metadata: sessionMetadata,
         },
         update: {
           status: sessionStatus,
           completedAt: input.session.completedReason ? new Date() : null,
-          metadata: metadataForSession(input.session),
+          metadata: sessionMetadata,
         },
       }),
       prisma.turn.upsert({
@@ -507,6 +527,7 @@ export async function loadMvpSurveySessionSnapshot(sessionId: string) {
         answerEvidenceByQuestionId: answerEvidenceFromMetadata(
           metadata.answerEvidenceByQuestionId,
         ),
+        moderatorState: moderatorStateFromMetadata(metadata.moderatorState),
         adaptiveProbeQuestions: Array.isArray(metadata.adaptiveProbeQuestions)
           ? metadata.adaptiveProbeQuestions
           : [],

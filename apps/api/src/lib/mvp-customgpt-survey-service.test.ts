@@ -587,7 +587,7 @@ describe("MVP CustomGPT survey service", () => {
         title: "BRUKINSA HCP SEQUOIA detail",
         url: "https://example.com/sequoia",
         description: null,
-        assets: [],
+        assets: [{ title: "BRUKINSA HCP SEQUOIA detail", url: "https://example.com/sequoia", description: null, assetKind: "LINK", tags: [], priority: 0 }],
       },
     ]);
 
@@ -889,7 +889,7 @@ describe("MVP CustomGPT survey service", () => {
         title: "BRUKINSA CLL Study Design | HCPs",
         url: "https://brukinsahcp.com/cll/study-design/",
         description: null,
-        assets: [],
+        assets: [{ title: "BRUKINSA CLL Study Design | HCPs", url: "https://brukinsahcp.com/cll/study-design/", description: null, assetKind: "LINK", tags: [], priority: 0 }],
       },
     ]);
     expect(next.messages.at(-1)?.content).toContain("[1]");

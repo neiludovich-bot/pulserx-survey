@@ -1,3 +1,5 @@
+export * from "./moderator";
+
 export const selectorSystemPrompt = {
   version: "v1",
   instructions: [

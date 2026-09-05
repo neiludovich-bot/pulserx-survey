@@ -6,6 +6,9 @@ import {
   analysisSystemPrompt,
   decisionSystemPrompt,
   mvpTurnRouterSystemPrompt,
+  moderatorPlannerSystemPrompt,
+  moderatorPhraserSystemPrompt,
+  moderatorEvidenceSelectorSystemPrompt,
   phraserSystemPrompt
 } from "@interview/prompts";
 import {
@@ -17,6 +20,18 @@ import {
   decisionResultSchema,
   mvpTurnRouteAnalysisInputSchema,
   mvpTurnRouteAnalysisResultSchema,
+  moderatorPlanInputSchema,
+  moderatorPlanResultSchema,
+  moderatorPhrasingInputSchema,
+  moderatorPhrasingResultSchema,
+  moderatorEvidenceSelectionInputSchema,
+  moderatorEvidenceSelectionResultSchema,
+  type ModeratorPlanInput,
+  type ModeratorPlanResult,
+  type ModeratorPhrasingInput,
+  type ModeratorPhrasingResult,
+  type ModeratorEvidenceSelectionInput,
+  type ModeratorEvidenceSelectionResult,
   openAIDebugTraceSchema,
   phrasingInputSchema,
   phrasingResultSchema,
@@ -33,6 +48,7 @@ import {
   type PhrasingResult
 } from "@interview/schemas";
 import type { CompiledStudy } from "./study-compiler";
+import { validateModeratorPlan, validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
 import {
   buildDecisionCandidates,
   commitSelection,
@@ -45,6 +61,9 @@ type CallType =
   | "decision"
   | "phrasing"
   | "source_composition"
+  | "moderator_plan"
+  | "moderator_phrasing"
+  | "moderator_evidence"
   | "turn_route";
 
 type ModelConfig = {
@@ -245,6 +264,51 @@ export class OpenAIResponsesGateway {
         survey_slug: parsed.surveySlug
       }
     });
+  }
+
+  async planModeratorTurn(input: ModeratorPlanInput) {
+    const parsed = moderatorPlanInputSchema.parse(input);
+    const call = await this.runStructuredCall<ModeratorPlanResult>({
+      callType: "moderator_plan",
+      model: this.config.decisionModel,
+      promptVersion: moderatorPlannerSystemPrompt.version,
+      schemaName: "moderator_plan_result_v1",
+      schema: moderatorPlanResultSchema,
+      instructions: moderatorPlannerSystemPrompt.instructions,
+      input: parsed,
+      metadata: { brand: parsed.brand },
+    });
+    return { ...call, result: validateModeratorPlan(parsed, call.result) };
+  }
+
+  async phraseModeratorTurn(input: ModeratorPhrasingInput) {
+    const parsed = moderatorPhrasingInputSchema.parse(input);
+    const call = await this.runStructuredCall<ModeratorPhrasingResult>({
+      callType: "moderator_phrasing",
+      model: this.config.phrasingModel,
+      promptVersion: moderatorPhraserSystemPrompt.version,
+      schemaName: "moderator_phrasing_result_v1",
+      schema: moderatorPhrasingResultSchema,
+      instructions: moderatorPhraserSystemPrompt.instructions,
+      input: parsed,
+      metadata: { brand: parsed.brand, action: parsed.action },
+    });
+    return { ...call, result: validateModeratorPhrasing(parsed, call.result) };
+  }
+
+  async selectModeratorEvidence(input: ModeratorEvidenceSelectionInput) {
+    const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
+    const call = await this.runStructuredCall<ModeratorEvidenceSelectionResult>({
+      callType: "moderator_evidence",
+      model: this.config.analysisModel,
+      promptVersion: moderatorEvidenceSelectorSystemPrompt.version,
+      schemaName: "moderator_evidence_selection_result_v1",
+      schema: moderatorEvidenceSelectionResultSchema,
+      instructions: moderatorEvidenceSelectorSystemPrompt.instructions,
+      input: parsed,
+      metadata: { survey_slug: parsed.surveySlug },
+    });
+    return { ...call, result: validateModeratorEvidenceSelection(parsed, call.result) };
   }
 
   private async runStructuredCall<TOutput>({

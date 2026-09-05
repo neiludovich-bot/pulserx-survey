@@ -3,6 +3,7 @@ import type { GroundedReference } from "@interview/schemas";
 import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
 import { askCustomGptForSurveyInterviewerTurn } from "./customgpt-service";
 import type { CustomGptReference } from "./customgpt-service";
+import { withExplicitSourceAssets } from "./focused-source-evidence";
 
 export type SourceAnswerProviderInput = {
   surveySlug: "brukinsa" | "padcev" | "nubeqa";
@@ -40,7 +41,7 @@ export type SourceAnswerProviderResult = {
 function groundedReferences(
   references: Array<CustomGptReference | GroundedReference>,
 ): GroundedReference[] {
-  return references.map((reference, index) => ({
+  return references.map((reference, index) => withExplicitSourceAssets({
     citationId: reference.citationId || `source:${index + 1}`,
     title: reference.title ?? null,
     url: reference.url ?? null,

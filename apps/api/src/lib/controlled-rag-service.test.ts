@@ -90,7 +90,7 @@ describe("controlled RAG source provider", () => {
       currentQuestion: null,
       selectedNextQuestion: null,
       surveyContext: parkedFactorsInput.surveyContext,
-      selectedQuestionSourceContext: parkedFactorsInput.selectedQuestionSourceContext,
+      selectedQuestionSourceContext: null,
       recentInterviewerContext: parkedFactorsInput.recentInterviewerContext,
       clinicalEvidenceCard: expect.objectContaining({ topic: "nubeqa_safety_dosing" }),
     }));
@@ -154,6 +154,7 @@ describe("controlled RAG source provider", () => {
 
   it("prioritizes an explicit EV-302 response-endpoint ask over the active safety lane", async () => {
     const result = await askControlledRagForSurveyInterviewerTurn({
+      responseMode: "answer_only",
       surveySlug: "padcev",
       participantMessage:
         "What did EV-302 show for response rate and complete response?",
@@ -292,7 +293,7 @@ describe("controlled RAG source provider", () => {
     expect(ranked[0]?.title).toContain("EV-302");
   });
 
-  it("fills PDF-only citations with the turn's most relevant visual assets", () => {
+  it("keeps PDF-only citations tied to their own source instead of borrowing turn visuals", () => {
     const references = controlledRagTestInternals.referencesForChunks(
       [
         {
@@ -347,9 +348,8 @@ describe("controlled RAG source provider", () => {
       ["neuropathy", "management", "checklist"],
     );
 
-    expect(references[1]?.assets?.[0]?.title).toContain(
-      "Peripheral Neuropathy Visual",
-    );
+    expect(references[1]?.assets?.[0]?.title).toContain("Monitoring Checklist");
+    expect(references[1]?.assets?.some((asset) => asset.url.includes("neuropathy-guide"))).toBe(false);
     expect(references[1]?.assets?.some((asset) => asset.assetKind === "PDF")).toBe(
       true,
     );
@@ -548,6 +548,7 @@ describe("controlled RAG source provider", () => {
 
   it("moves NUBEQA source order off the safety card for ARANOTE evidence asks", async () => {
     const result = await askControlledRagForSurveyInterviewerTurn({
+      responseMode: "answer_only",
       surveySlug: "nubeqa",
       participantMessage: "What does ARANOTE show for rPFS without docetaxel?",
       surveyContext:
@@ -569,6 +570,7 @@ describe("controlled RAG source provider", () => {
 
   it("keeps the dedicated NUBEQA DDI card first for drug interaction asks", async () => {
     const result = await askControlledRagForSurveyInterviewerTurn({
+      responseMode: "answer_only",
       surveySlug: "nubeqa",
       participantMessage:
         "What are the known drug-drug interactions with NUBEQA?",

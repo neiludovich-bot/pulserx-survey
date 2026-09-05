@@ -1,4 +1,5 @@
 import { z } from "zod";
+export * from "./moderator";
 
 export const interviewTurnSchema = z.object({
   role: z.enum(["system", "interviewer", "participant"]),
@@ -542,6 +543,9 @@ export const openAIDebugTraceSchema = z.object({
     "phrasing",
     "source_composition",
     "turn_route",
+    "moderator_plan",
+    "moderator_phrasing",
+    "moderator_evidence",
   ]),
   promptVersion: z.string().min(1),
   requestedAt: z.string().datetime(),

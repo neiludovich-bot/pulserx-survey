@@ -9,7 +9,7 @@ import { getOptionalOpenAIGateway } from "./model-gateway";
 import { classifyMvpTurnRoute, type MvpDisplayTopic } from "./mvp-turn-router";
 import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
-import { focusSourceReferenceAssets } from "./source-asset-focus";
+import { alignCitedSourceReferences, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -127,7 +127,8 @@ function isReferentialClarification(message: string) {
 
 function sourceTurnInputs(input: ControlledRagSurveyTurnInput) {
   if (input.responseMode !== "answer_only") {
-    return { retrievalQuery: input.participantMessage, retrievalInput: input, compositionInput: input };
+    const retrievalQuery = [input.selectedQuestionSourceContext, input.selectedNextQuestion].filter(Boolean).join("\n") || input.participantMessage;
+    return { retrievalQuery, retrievalInput: { ...input, participantMessage: retrievalQuery, currentQuestion: null }, compositionInput: input };
   }
 
   // The research question is parked during a source discussion. Keep lane
@@ -137,6 +138,7 @@ function sourceTurnInputs(input: ControlledRagSurveyTurnInput) {
     ...input,
     currentQuestion: null,
     selectedNextQuestion: null,
+    selectedQuestionSourceContext: null,
     surveyContext: input.surveyContext.split("\n").filter((line) =>
       !/^(?:Current question|Selected next question|Parked survey question to resume after a source-answer pause|Upcoming unasked guide preview):/i.test(line.trim()),
     ).join("\n"),
@@ -210,6 +212,9 @@ function scoreChunk(
 }
 
 function retrievalTokenGroups(input: ControlledRagSurveyTurnInput) {
+  if (input.responseMode === "answer_only") {
+    return [{ tokens: tokens(input.participantMessage), weight: 10 }];
+  }
   return [
     { tokens: tokens(input.participantMessage), weight: 10 },
     { tokens: tokens(input.selectedQuestionSourceContext ?? ""), weight: 3 },
@@ -310,7 +315,7 @@ function citationMarkerForCard(
     );
   });
 
-  return `[${(index >= 0 ? index : fallbackIndex) + 1}]`;
+  return `[${(index >= 0 ? index : Math.min(fallbackIndex, chunks.length - 1)) + 1}]`;
 }
 
 function citationMarkerForCardFact(
@@ -1217,53 +1222,6 @@ function rankAssets(assets: ControlledRagAsset[], queryTokens: string[]) {
     .map(({ asset }) => asset);
 }
 
-function mergeRankedAssets(
-  queryTokens: string[],
-  ...assetGroups: Array<ControlledRagAsset[] | undefined>
-) {
-  return rankAssets(
-    assetGroups.flatMap((assets) => assets ?? []),
-    queryTokens,
-  );
-}
-
-function isDisplayVisualAsset(asset: ControlledRagAsset) {
-  return ["CHART", "TABLE", "IMAGE"].includes(asset.assetKind);
-}
-
-function dedupeAssetsPreservingOrder(
-  ...assetGroups: Array<ControlledRagAsset[] | undefined>
-) {
-  const seen = new Set<string>();
-  const deduped: ControlledRagAsset[] = [];
-
-  for (const asset of assetGroups.flatMap((assets) => assets ?? [])) {
-    if (seen.has(asset.url)) {
-      continue;
-    }
-    seen.add(asset.url);
-    deduped.push(asset);
-  }
-
-  return deduped.slice(0, 8);
-}
-
-function referenceAssetsForChunk(
-  chunkAssets: ControlledRagAsset[] | undefined,
-  turnAssets: ControlledRagAsset[],
-  queryTokens: string[],
-) {
-  const ownAssets = rankAssets(chunkAssets ?? [], queryTokens);
-  const ownHasVisual = ownAssets.some(isDisplayVisualAsset);
-  const turnVisuals = turnAssets.filter(isDisplayVisualAsset);
-
-  if (ownHasVisual) {
-    return dedupeAssetsPreservingOrder(ownAssets, turnAssets);
-  }
-
-  return dedupeAssetsPreservingOrder(turnVisuals, ownAssets, turnAssets);
-}
-
 async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   if (!process.env.DATABASE_URL) {
     return [];
@@ -1309,14 +1267,6 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
         },
       },
     });
-    const query = [
-      input.participantMessage,
-      input.selectedNextQuestion,
-      input.selectedQuestionSourceContext,
-      input.currentQuestion,
-    ].join(" ");
-    const queryTokens = tokens(query);
-
     return chunks.map(
       (chunk) =>
         ({
@@ -1329,13 +1279,10 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
             new Set([...chunk.tags, ...chunk.sourceDocument.tags]),
           ),
           text: chunk.content,
-          assets: rankAssets(
-            chunk.sourceDocument.assets.map((asset) => ({
+          assets: chunk.sourceDocument.assets.map((asset) => ({
               ...asset,
               assetKind: asset.assetKind,
             })),
-            queryTokens,
-          ),
         }) satisfies ControlledRagChunk,
     );
   } catch {
@@ -1355,7 +1302,7 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
     ),
   ];
 
-  return candidateChunks
+  const rankedCandidates = candidateChunks
     .map((chunk) => ({
       chunk,
       score:
@@ -1365,107 +1312,29 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
         // even when the broader display topic is ARANOTE efficacy or dosing.
         (chunk.id === focusedEvidenceId ? 6000 : 0),
     }))
-    .filter((match) => match.score > 0)
     .sort((left, right) => right.score - left.score)
-    .slice(0, 4)
     .map((match) => match.chunk);
-}
-
-async function retrieveTurnAssets(
-  input: ControlledRagSurveyTurnInput,
-  chunks: ControlledRagChunk[],
-  evidenceCard: ClinicalEvidenceCard | null,
-) {
-  if (!process.env.DATABASE_URL) {
-    return [];
-  }
-
-  const query = [
-    input.participantMessage,
-    input.selectedNextQuestion,
-    input.selectedQuestionSourceContext,
-    input.currentQuestion,
-    evidenceCard?.title,
-    evidenceCard?.clinicianBrief,
-    evidenceCard?.keyFacts.join(" "),
-    evidenceCard?.preferredAssetTags.join(" "),
-    chunks.map((chunk) => `${chunk.title} ${chunk.tags.join(" ")}`).join(" "),
-  ].join(" ");
-  const queryTokens = tokens(query);
-  const displayTopic = displayTopicForTurn(input);
-
-  try {
-    const assets = await prisma.sourceAsset.findMany({
-      where: {
-        surveySlug: input.surveySlug,
-        sourceDocument: {
-          status: "ACTIVE",
-        },
-      },
-      orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
-      take: 120,
-      select: {
-        title: true,
-        description: true,
-        assetKind: true,
-        url: true,
-        tags: true,
-        priority: true,
-        sourceDocument: {
-          select: {
-            title: true,
-            description: true,
-            url: true,
-            tags: true,
-          },
-        },
-      },
-    });
-
-    const mappedAssets = assets.map((asset) => ({
-      title: asset.title,
-      description: [
-        asset.description,
-        asset.sourceDocument.description,
-        asset.sourceDocument.title,
-      ]
-        .filter(Boolean)
-        .join(" "),
-      assetKind: asset.assetKind,
-      url: asset.url,
-      tags: Array.from(
-        new Set([
-          ...asset.tags,
-          ...asset.sourceDocument.tags,
-          asset.sourceDocument.title,
-        ]),
-      ),
-      priority: asset.priority,
-    }));
-
-    return rankAssetsForDisplay(mappedAssets, queryTokens, displayTopic);
-  } catch {
-    return [];
-  }
+  // Preserve the approved catalog alongside retrieved library excerpts, so
+  // keyword-poor paraphrases can still be resolved by semantic selection.
+  const curatedIds = new Set(candidateChunks.filter((chunk) => !chunk.id.startsWith("db:")).map((chunk) => chunk.id));
+  const databaseIds = new Set(rankedCandidates.filter((chunk) => chunk.id.startsWith("db:")).slice(0, Math.max(0, 24 - curatedIds.size)).map((chunk) => chunk.id));
+  return rankedCandidates.filter((chunk) => curatedIds.has(chunk.id) || databaseIds.has(chunk.id)).slice(0, 24);
 }
 
 function referencesForChunks(
   chunks: ControlledRagChunk[],
-  turnAssets: ControlledRagAsset[],
-  queryTokens: string[],
+  _turnAssets: ControlledRagAsset[] = [],
+  _queryTokens: string[] = [],
 ) {
   return chunks.map(
-    (chunk, index) =>
-      ({
+    (chunk) =>
+      withExplicitSourceAssets({
         citationId: `rag:${chunk.id}`,
         title: chunk.title,
         url: chunk.url,
         description: chunk.description,
-        assets:
-          index === 0
-            ? mergeRankedAssets(queryTokens, chunk.assets, turnAssets)
-            : referenceAssetsForChunk(chunk.assets, turnAssets, queryTokens),
-      }) satisfies GroundedReference,
+        assets: chunk.assets ?? [],
+      }),
   );
 }
 
@@ -1565,12 +1434,12 @@ function fallbackSourceAnswer(
   return [alreadyCovered, sourceSummary(chunks)].join("").trim();
 }
 
-function ensureCitationMarker(answer: string, chunks: ControlledRagChunk[]) {
+function ensureCitationMarker(answer: string, chunks: ControlledRagChunk[], firstSourceIndex = 1) {
   if (/\[\d+\]/.test(answer) || chunks.length === 0) {
     return answer;
   }
 
-  return `${answer.trimEnd()} [1]`;
+  return `${answer.trimEnd()} [${firstSourceIndex}]`;
 }
 
 function lowerFirstPlainWord(value: string) {
@@ -1713,9 +1582,16 @@ async function composeSourceAnswer(
       })),
     });
 
+    const usedIndexes = composition.result.usedSourceIndexes ?? chunks.map((_chunk, index) => index + 1);
+    const body = cleanClinicalAnswer(composition.result.answerBody);
+    if (!usedIndexes.length || usedIndexes.some((index) => index < 1 || index > chunks.length) ||
+      [...body.matchAll(/\[(\d+)\]/g)].some((match) => !usedIndexes.includes(Number(match[1])))) {
+      throw new Error("Composer cited evidence outside its selected sources.");
+    }
     return ensureCitationMarker(
-      cleanClinicalAnswer(composition.result.answerBody),
+      body,
       chunks,
+      usedIndexes[0],
     );
   } catch {
     return cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard));
@@ -1728,23 +1604,26 @@ export async function askControlledRagForSurveyInterviewerTurn(
   const { retrievalQuery, retrievalInput, compositionInput } = sourceTurnInputs(input);
   const retrievedChunks = await retrieveChunks(retrievalInput);
   const initialEvidenceCard = buildClinicalEvidenceCard(retrievalInput, retrievedChunks);
-  const chunks = orderChunksForEvidenceCard(
+  const orderedCandidates = orderChunksForEvidenceCard(
     retrievedChunks,
     initialEvidenceCard,
   );
-  const evidenceCard = buildClinicalEvidenceCard(retrievalInput, chunks);
-  const queryTokens = tokens(
-    [
-      retrievalInput.participantMessage,
-      retrievalInput.selectedNextQuestion,
-      retrievalInput.selectedQuestionSourceContext,
-      retrievalInput.currentQuestion,
-      evidenceCard?.title,
-      evidenceCard?.clinicianBrief,
-      evidenceCard?.keyFacts.join(" "),
-      evidenceCard?.preferredAssetTags.join(" "),
-    ].join(" "),
+  const fallbackMatches = orderedCandidates.filter((chunk) =>
+    scoreChunk(chunk, retrievalTokenGroups(retrievalInput)) + displayTopicChunkScore(chunk, displayTopicForTurn(retrievalInput)) + (chunk.id === focusedNubeqaEvidenceId(retrievalInput) ? 6000 : 0) > 0,
   );
+  const preferredFallbackIds = (initialEvidenceCard?.preferredSourceIds ?? []).filter((id) => fallbackMatches.some((chunk) => chunk.id === id));
+  const selection = await selectFocusedSourceEvidence({
+    surveySlug: input.surveySlug,
+    query: retrievalQuery,
+    candidates: orderedCandidates,
+    fallbackSourceIds: preferredFallbackIds.length ? preferredFallbackIds : fallbackMatches.slice(0, 1).map((chunk) => chunk.id),
+  });
+  const chunks = selection.chunks;
+  // Semantic selection owns the evidence scope. Do not reintroduce a broad
+  // topic card containing facts from sources that the selector did not choose.
+  const evidenceCard = selection.mode === "fallback"
+    ? buildClinicalEvidenceCard(retrievalInput, chunks)
+    : null;
 
   if (chunks.length === 0) {
     return {
@@ -1758,19 +1637,21 @@ export async function askControlledRagForSurveyInterviewerTurn(
     };
   }
 
-  const turnAssets = await retrieveTurnAssets(retrievalInput, chunks, evidenceCard);
-  const references = focusSourceReferenceAssets(
-    referencesForChunks(chunks, turnAssets, queryTokens),
-    retrievalQuery,
-  );
+  const references = referencesForChunks(chunks);
   const responseMode = input.responseMode ?? "answer_then_ask";
   const composedAnswer = stripComposerFollowUpQuestions(
     await composeSourceAnswer(compositionInput, chunks, evidenceCard, retrievalQuery),
     input.selectedNextQuestion,
     responseMode,
   );
+  let cited: ReturnType<typeof alignCitedSourceReferences>;
+  try {
+    cited = alignCitedSourceReferences(composedAnswer, references);
+  } catch {
+    cited = alignCitedSourceReferences(fallbackSourceAnswer(compositionInput, chunks, evidenceCard), references);
+  }
   const answer = [
-    composedAnswer,
+    cited.answer,
     selectedQuestionLead(input.selectedNextQuestion, responseMode),
   ]
     .join("")
@@ -1779,8 +1660,8 @@ export async function askControlledRagForSurveyInterviewerTurn(
   return {
     enabled: true,
     answer,
-    references,
-    citationIds: references.map((reference) => reference.citationId),
+    references: cited.references,
+    citationIds: cited.references.map((reference) => reference.citationId),
     conversationId: null,
     reason: null,
   };

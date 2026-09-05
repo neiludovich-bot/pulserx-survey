@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import {
+  type ModeratorState,
   type GroundedReference,
   type MvpCustomGptSurveyMessage,
   type MvpCustomGptSurveyResponse,
@@ -15,6 +16,7 @@ import {
   mvpCustomGptSurveyVoiceTranscribeResponseSchema,
   mvpCustomGptSurveyVoiceTurnResponseSchema,
 } from "@interview/schemas";
+import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
 import { env } from "../env";
 import {
   BRUKINSA_HCP_MVP_GUIDE,
@@ -111,6 +113,7 @@ type MvpSurveySession = {
   messages: MvpCustomGptSurveyMessage[];
   turnCount: number;
   completedReason: string | null;
+  moderatorState: ModeratorState;
 };
 
 const sessions = new Map<string, MvpSurveySession>();
@@ -233,6 +236,7 @@ function persistenceSnapshot(session: MvpSurveySession) {
     answerEvidenceByQuestionId: structuredClone(session.answerEvidenceByQuestionId),
     adaptiveProbeQuestions: [...session.adaptiveProbeQuestions],
     completedReason: session.completedReason,
+    moderatorState: structuredClone(session.moderatorState),
   };
 }
 
@@ -313,6 +317,7 @@ function restoreMvpSurveySession(input: {
     ),
     currentQuestionId,
     pendingReturnQuestionId,
+    moderatorState: input.session.moderatorState ?? emptyModeratorState(),
     activeDiseaseAreas: input.session.activeDiseaseAreas.filter(
       (area): area is DiseaseArea =>
         area === "cll" ||
@@ -3097,6 +3102,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     answerEvidenceByQuestionId: {},
     currentQuestionId: firstQuestion.id,
     pendingReturnQuestionId: null,
+    moderatorState: emptyModeratorState(),
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
@@ -3178,7 +3184,7 @@ export async function submitMvpCustomGptSurveyTurn(
     !fixedFlow && contentLooksLikeSurveyStop(input.content);
   // Interpret answers and participant questions independently, before answer
   // rejection or research selection. Medical terms alone are not requests.
-  const participantAnalysis: MvpHybridTurnRouteDecision | null = resumeQuestion
+  let participantAnalysis: MvpHybridTurnRouteDecision | null = resumeQuestion
     ? {
         answerStatus: "not_answered",
         answerEvidence: [],
@@ -3215,10 +3221,79 @@ export async function submitMvpCustomGptSurveyTurn(
         candidateQuestions: routeAnalysisCandidates(session, input.content),
       })
     : null;
+  let moderatorCompleted = false;
+  let moderatorDecision: Record<string, unknown> | null = null;
+  const isPriorityQuestion = Boolean(currentQuestionBefore &&
+    !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id) &&
+    !currentQuestionBefore.id.startsWith("moderator-reaction:") &&
+    /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
+  if (!fixedFlow && session.surveySlug !== "data" && !participantRequestedStop && !hardTimeboxExpired(session) && participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
+      ((currentQuestionBefore && !currentQuestionBefore.close && !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id)) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
+    const moderator = await runModeratorTurn({
+      state: session.moderatorState,
+      brand: session.sourceBrand,
+      surveySlug: session.surveySlug,
+      participantMessage: input.content,
+      currentQuestion: questionText(currentQuestionBefore),
+      recentTurns: session.messages.slice(0, -1).slice(-12).map((m) => ({ role: m.role, content: m.content.slice(0, 12000) })),
+      isPriorityQuestion,
+      asksSourceQuestion: participantAnalysis.asksSourceQuestion,
+      answerStatus: participantAnalysis.answerStatus,
+      isResumeCue: contentLooksLikeReturnToSurveyCue(input.content),
+      projectId: session.projectId,
+      surveyContext: `Approved ${session.sourceBrand} market research evidence. Active disease areas: ${session.activeDiseaseAreas.join(", ") || "not yet specified"}. Do not infer a treatment setting when the participant has not supplied it.`,
+    });
+    if (moderator) {
+      session.moderatorState = moderator.state;
+      moderatorDecision = moderator.decision;
+      if (moderator.creditOriginalAnswer && currentQuestionBefore) {
+        if (!session.answeredQuestionIds.includes(currentQuestionBefore.id)) session.answeredQuestionIds.push(currentQuestionBefore.id);
+        session.answerEvidenceByQuestionId[currentQuestionBefore.id] = [...new Set([...(session.answerEvidenceByQuestionId[currentQuestionBefore.id] ?? []), ...participantAnalysis.answerEvidence])];
+      }
+      if (currentQuestionBefore?.id.startsWith("moderator-reaction:")) {
+        const priority = session.moderatorState.priorities.find((p) => `moderator-reaction:${p.id}` === currentQuestionBefore.id);
+        if (priority?.status === "reacted") {
+          if (!session.answeredQuestionIds.includes(currentQuestionBefore.id)) session.answeredQuestionIds.push(currentQuestionBefore.id);
+          session.answerEvidenceByQuestionId[currentQuestionBefore.id] = priority.reactionEvidence;
+        }
+      }
+      if (moderator.content) {
+        let actualQuestionId: string | null = null;
+        if (moderator.question && session.moderatorState.activePriorityId) {
+          actualQuestionId = `moderator-reaction:${session.moderatorState.activePriorityId}`;
+          const question: MvpGuideQuestion = {
+            id: actualQuestionId, module: "Participant priority reaction", objective: "Capture the participant's reaction and practical implications of the evidence just presented.",
+            canonicalQuestion: moderator.question, sourceContextRequirement: null, routeKeywords: [], completionSignals: ["participant explains their reaction or its practical implications"], adaptiveProbes: [], analyzableOutputs: ["priority_reaction"],
+          };
+          session.adaptiveProbeQuestions = session.adaptiveProbeQuestions.filter((q) => q.id !== actualQuestionId);
+          session.adaptiveProbeQuestions.push(question);
+          session.currentQuestionId = actualQuestionId;
+          if (!session.askedQuestionIds.includes(actualQuestionId)) session.askedQuestionIds.push(actualQuestionId);
+        }
+        session.pendingReturnQuestionId = null;
+        session.messages.push(createMessage("interviewer", moderator.content, moderator.references));
+        const nextAction = moderator.sourceUsed && moderator.question ? "answer_then_ask" as const : "ask" as const;
+        const audit = {
+          eventType: "turn_completed" as const, participantMessage: input.content, assistantMessage: moderator.content, sequenceBase,
+          currentQuestionBefore: questionText(currentQuestionBefore), currentQuestionAfter: questionText(currentQuestion(session)),
+          actualAskedQuestionId: actualQuestionId, actualAskedQuestion: moderator.question,
+          moderatorDecision, nextAction, remainingSeconds: remainingSeconds(session),
+          needsCustomGpt: moderator.sourceUsed,
+          references: moderator.references.map((r) => ({ citationId: r.citationId, title: r.title, url: r.url })),
+        };
+        void appendMvpAuditEvent(session, audit);
+        await persistMvpSurveyTurnAudit({ session: persistenceSnapshot(session), turn: audit });
+        return responseForSession(session, nextAction);
+      }
+      moderatorCompleted = true;
+      session.pendingReturnQuestionId = null;
+      participantAnalysis = { ...participantAnalysis, answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: false, suggestedQuestionIds: [], decision: { kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false, sourceDirective: null, rationale: "Participant priorities have been discussed; resume the research guide." } };
+    }
+  }
   const interpretedTurnIsValid = participantAnalysis &&
     !transcriptLooksNonEnglishOrGarbled(input.content) &&
     (participantAnalysis.answerStatus !== "not_answered" || participantAnalysis.asksSourceQuestion);
-  const answerQuality = fixedFlow || resumeQuestion || participantRequestedStop || interpretedTurnIsValid
+  const answerQuality = fixedFlow || moderatorCompleted || resumeQuestion || participantRequestedStop || interpretedTurnIsValid
     ? { accepted: true as const }
     : currentAnswerQuality(session, input.content);
   if (!answerQuality.accepted) {
@@ -3640,6 +3715,7 @@ export async function submitMvpCustomGptSurveyTurn(
     assistantContent = 'I could not retrieve the source context needed before that question. Say "continue" to try again.';
   }
 
+  if (moderatorCompleted && !session.completedReason) assistantContent = `We've finished discussing the priorities you raised. Let's return to the interview.\n\n${assistantContent}`;
   session.messages.push(
     createMessage("interviewer", assistantContent, references),
   );
@@ -3736,6 +3812,7 @@ export async function submitMvpCustomGptSurveyTurn(
       customGptReason,
       sourceProvider,
       sourceProviderShadow,
+      moderatorDecision,
       sourceResponseMode: needsCustomGpt ? sourceResponseMode : null,
       droppedReferences: droppedReferences.map((reference) => ({
         citationId: reference.citationId,

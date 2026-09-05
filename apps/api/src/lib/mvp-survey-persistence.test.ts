@@ -3,6 +3,7 @@ import {
   loadMvpSurveySessionSnapshot,
   persistMvpSurveySessionStarted,
   persistMvpSurveyTurnAudit,
+  type MvpPersistenceSessionSnapshot,
 } from "./mvp-survey-persistence";
 
 const prismaMock = vi.hoisted(() => ({
@@ -50,6 +51,53 @@ const sessionSnapshot = {
   askedQuestionIds: ["safety_management_workflow"],
   adaptiveProbeQuestions: [],
   completedReason: null,
+};
+
+const moderatorState: NonNullable<MvpPersistenceSessionSnapshot["moderatorState"]> = {
+  version: 1,
+  priorities: [
+    {
+      id: "pfs",
+      label: "Progression-free survival",
+      participantEvidence: "PFS and DDI matter most.",
+      status: "reacted",
+      sourceQuestion: "What progression-free survival evidence is available?",
+      reactionEvidence: ["The follow-up is still too short for me."],
+      referenceIds: ["pfs-source"],
+      probeCount: 0,
+    },
+    {
+      id: "ddi",
+      label: "Drug interactions",
+      participantEvidence: "PFS and DDI matter most.",
+      status: "presented",
+      sourceQuestion: "What drug interactions are documented?",
+      reactionEvidence: [],
+      referenceIds: ["ddi-source"],
+      probeCount: 0,
+    },
+    {
+      id: "access",
+      label: "Access",
+      participantEvidence: "Access is another concern.",
+      status: "pending",
+      sourceQuestion: "What access resources are available?",
+      reactionEvidence: [],
+      referenceIds: [],
+      probeCount: 0,
+    },
+    {
+      id: "dosing",
+      label: "Dosing",
+      participantEvidence: "We can skip dosing.",
+      status: "skipped",
+      sourceQuestion: "What dosing information is available?",
+      reactionEvidence: [],
+      referenceIds: [],
+      probeCount: 0,
+    },
+  ],
+  activePriorityId: "ddi",
 };
 
 describe("MVP survey persistence", () => {
@@ -179,6 +227,7 @@ describe("MVP survey persistence", () => {
     expect(startedMetadata).toMatchObject({
       answeredQuestionIds: [],
       answerEvidenceByQuestionId: {},
+      moderatorState: { version: 1, priorities: [], activePriorityId: null },
     });
     const persistedMetadata =
       prismaMock.session.upsert.mock.calls[1][0].update.metadata;
@@ -220,6 +269,96 @@ describe("MVP survey persistence", () => {
     ]);
     expect(restored?.session.answeredQuestionIds).toEqual([]);
     expect(restored?.session.answerEvidenceByQuestionId).toEqual({});
+    expect(restored?.session.moderatorState).toEqual({ version: 1, priorities: [], activePriorityId: null });
+  });
+
+  it.each(["nubeqa", "brukinsa", "padcev"])(
+    "round-trips moderator priorities and decision trace for %s without deriving reaction credit",
+    async (surveySlug) => {
+      process.env.DATABASE_URL = "postgresql://example";
+      const moderatorDecision = {
+        action: "ask_reaction",
+        priorityId: "ddi",
+        reason: "The interaction evidence was presented and its reaction remains unanswered.",
+      };
+      await persistMvpSurveyTurnAudit({
+        session: { ...sessionSnapshot, surveySlug, sourceBrand: surveySlug.toUpperCase(), moderatorState },
+        turn: {
+          eventType: "turn_completed",
+          participantMessage: "What about interactions?",
+          assistantMessage: "What is your reaction to that interaction information?",
+          sequenceBase: 3,
+          currentQuestionBefore: sessionSnapshot.currentQuestion,
+          nextAction: "ask",
+          remainingSeconds: 450,
+          moderatorDecision,
+        },
+      });
+      const written = prismaMock.session.upsert.mock.calls[0][0];
+      expect(written.create.metadata.moderatorState).toEqual(moderatorState);
+      expect(written.update.metadata.moderatorState).toEqual(moderatorState);
+      expect(prismaMock.decision.create.mock.calls[0][0].data.output.moderatorDecision).toEqual(moderatorDecision);
+      expect(prismaMock.turn.upsert.mock.calls[1][0].create.payload.moderatorDecision).toEqual(moderatorDecision);
+
+      prismaMock.session.findUnique.mockResolvedValue({
+        id: sessionSnapshot.sessionId,
+        startedAt,
+        createdAt: startedAt,
+        metadata: written.update.metadata,
+        study: { name: sessionSnapshot.studyName },
+        turns: [],
+      });
+      const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
+      expect(restored?.session.moderatorState).toEqual(moderatorState);
+      expect(restored?.session.moderatorState?.priorities.find((priority) => priority.id === "ddi")?.reactionEvidence).toEqual([]);
+      expect(restored?.session.moderatorState?.priorities.find((priority) => priority.id === "access")?.status).toBe("pending");
+    },
+  );
+
+  it.each([
+    null,
+    "invalid",
+    { version: 2, priorities: [], activePriorityId: null },
+    { version: 1, priorities: [{ id: "ddi", status: "reacted" }], activePriorityId: "ddi" },
+    { version: 1, priorities: [], activePriorityId: null, untrustedCredit: true },
+    { ...moderatorState, activePriorityId: "missing-priority" },
+    { ...moderatorState, priorities: [...moderatorState.priorities, moderatorState.priorities[0]] },
+  ])("defaults invalid moderator metadata without fabricating priorities or reactions", async (invalidState) => {
+    process.env.DATABASE_URL = "postgresql://example";
+    prismaMock.session.findUnique.mockResolvedValue({
+      id: sessionSnapshot.sessionId,
+      startedAt,
+      createdAt: startedAt,
+      metadata: { runtime: "mvp-customgpt-survey", ...sessionSnapshot, moderatorState: invalidState },
+      study: { name: sessionSnapshot.studyName },
+      turns: [],
+    });
+    const restored = await loadMvpSurveySessionSnapshot(sessionSnapshot.sessionId);
+    expect(restored?.session.moderatorState).toEqual({ version: 1, priorities: [], activePriorityId: null });
+    expect(restored?.session.askedQuestionIds).toEqual(sessionSnapshot.askedQuestionIds);
+  });
+
+  it("rejects malformed moderator state before any session or turn writes", async () => {
+    process.env.DATABASE_URL = "postgresql://example";
+    await persistMvpSurveyTurnAudit({
+      session: {
+        ...sessionSnapshot,
+        moderatorState: { version: 99, priorities: [], activePriorityId: null } as unknown as NonNullable<MvpPersistenceSessionSnapshot["moderatorState"]>,
+      },
+      turn: {
+        eventType: "turn_completed",
+        participantMessage: "My reaction",
+        assistantMessage: "Next question",
+        sequenceBase: 1,
+        currentQuestionBefore: sessionSnapshot.currentQuestion,
+        nextAction: "ask",
+        remainingSeconds: 500,
+      },
+    });
+    expect(prismaMock.study.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.session.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.turn.upsert).not.toHaveBeenCalled();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
   });
 
   it.each([
