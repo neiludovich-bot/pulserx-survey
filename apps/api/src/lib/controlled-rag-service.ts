@@ -1553,6 +1553,8 @@ function cleanClinicalAnswer(answer: string) {
   ).trim();
 }
 
+const SOURCE_EXPLANATION_UNAVAILABLE = "I couldn't verify a clear explanation from the cited information. You can open the sources below, ask a follow-up, or continue the survey.";
+
 async function composeSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
@@ -1562,9 +1564,10 @@ async function composeSourceAnswer(
   const gateway = getOptionalOpenAIGateway();
   const fallbackInput = { ...input, participantMessage: retrievalQuery };
 
-  if (!gateway || process.env.NODE_ENV === "test") {
-    return { answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null };
+  if (process.env.NODE_ENV === "test") {
+    return { available: true, answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null };
   }
+  if (!gateway) return { available: false, answer: SOURCE_EXPLANATION_UNAVAILABLE, grounding: null };
 
   try {
     const composition = await gateway.composeControlledRagAnswer({
@@ -1618,9 +1621,13 @@ async function composeSourceAnswer(
       usedIndexes[0],
     );
     const grounding = "groundingReview" in composition ? sourceAnswerGroundingAuditSchema.parse(composition.groundingReview) : null;
-    return { answer, grounding };
-  } catch {
-    return { answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null };
+    return { available: true, answer, grounding };
+  } catch (error) {
+    console.warn({ event: "source_answer_composition_failed", groundingAttempted: !!error && typeof error === "object" && "contextualCompositionAttempts" in error });
+    // A rejected draft is not permission to expose unedited or truncated
+    // retrieval fragments as a clinical explanation. Keep the source links
+    // and the interview state available for clarification or resumption.
+    return { available: false, answer: SOURCE_EXPLANATION_UNAVAILABLE, grounding: null };
   }
 }
 
@@ -1724,11 +1731,13 @@ export async function askControlledRagForSurveyInterviewerTurn(
     responseMode,
   );
   let cited: ReturnType<typeof alignCitedSourceReferences>;
+  let explanationAvailable = composition.available;
   try {
     cited = alignCitedSourceReferences(composedAnswer, references);
   } catch {
-    cited = alignCitedSourceReferences(fallbackSourceAnswer(contextualCompositionInput, chunks, evidenceCard), references);
+    cited = { answer: SOURCE_EXPLANATION_UNAVAILABLE, references };
     composition.grounding = null;
+    explanationAvailable = false;
   }
   const answer = [
     cited.answer,
@@ -1744,12 +1753,12 @@ export async function askControlledRagForSurveyInterviewerTurn(
   });
 
   return {
-    enabled: true,
+    enabled: explanationAvailable,
     answer,
     references: cited.references,
     citationIds: cited.references.map((reference) => reference.citationId),
     conversationId: null,
-    reason: null,
+    reason: explanationAvailable ? null : "The source explanation could not be verified.",
     evidencePacket: packet.success ? packet.data : null,
     sourceQuestionPlan,
     sourceAnswerGrounding: composition.grounding,

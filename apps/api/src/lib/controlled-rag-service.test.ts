@@ -36,7 +36,13 @@ describe("controlled RAG source provider", () => {
     }] } });
     expect(compose).toHaveBeenCalledOnce();
     expect(result.sourceAnswerGrounding).toEqual(supported ? audit : null);
-    expect(result.answer).toContain("Synthetic supported guidance.");
+    expect(result.enabled).toBe(supported);
+    if (supported) expect(result.answer).toContain("Synthetic supported guidance.");
+    else {
+      expect(result.answer).toContain("I couldn't verify a clear explanation");
+      expect(result.answer).not.toContain("Synthetic supported guidance.");
+      expect(result.references).toHaveLength(1);
+    }
     expect(result.answer).not.toContain("invented monitoring instruction");
   });
 

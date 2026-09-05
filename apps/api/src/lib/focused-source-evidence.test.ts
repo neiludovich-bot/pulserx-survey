@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SourceQuestionPlan } from "@interview/schemas";
 import * as modelGateway from "./model-gateway";
 import { alignCitedSourceReferences, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 import { askControlledRagForSurveyInterviewerTurn, controlledRagTestInternals } from "./controlled-rag-service";
@@ -17,6 +18,13 @@ function source(surveySlug: ControlledRagChunk["surveySlug"], id: string): Contr
     title: "Adverse reactions", description: "Other outcome", url: `https://example.com/${id}-safety.png`, assetKind: "CHART", tags: ["safety"], priority: 100,
   }] };
 }
+
+const contextualPlan: SourceQuestionPlan = {
+  version: 1, interpretedQuestion: "Explain the direct evidence alongside separate safety context.",
+  retrievalQueries: ["direct evidence", "separate safety context"], answerApproach: "contextual_explanation",
+  usesSourceContext: true, contextBoundary: "Do not infer causal relationships from general safety context.",
+  rationale: "Both evidence roles are needed.",
+};
 
 describe("focused evidence selection", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
@@ -90,6 +98,36 @@ describe("focused evidence selection", () => {
     expect(result.mode).toBe("semantic");
     expect(result.chunks[0].id).toBe("trial");
     expect(select).toHaveBeenCalledTimes(2);
+  });
+
+  it("preserves validated first-pass evidence when the separate context pass finds nothing", async () => {
+    const excerpt = "Progression-free survival evidence from this trial.";
+    const select = mockSelector({ selections: [], rationale: "No additional safety context is supported." });
+    select.mockResolvedValueOnce({ result: { selections: [{ sourceId: "trial", supportExcerpt: excerpt, assetIds: [], evidenceRole: "contextual" }], rationale: "Initial evidence was labeled contextual." } });
+    const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: contextualPlan.interpretedQuestion, sourceQuestionPlan: contextualPlan, candidates: [source("nubeqa", "trial")], fallbackSourceIds: [] });
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls[1][0]).toMatchObject({ evidenceFocus: "contextual", query: "separate safety context" });
+    expect(result.mode).toBe("semantic");
+    expect(result.chunks).toEqual([expect.objectContaining({ id: "trial", text: excerpt, evidenceRole: "contextual" })]);
+  });
+
+  it("retains direct evidence ahead of older contextual passages within the three-source bound", async () => {
+    const direct = "Progression-free survival evidence from this trial.";
+    const context = "Separate safety context is also present in this document.";
+    const select = mockSelector({ selections: [
+      { sourceId: "new-context-1", supportExcerpt: context, assetIds: [], evidenceRole: "contextual" },
+      { sourceId: "new-context-2", supportExcerpt: context, assetIds: [], evidenceRole: "contextual" },
+    ], rationale: "Two exact contextual passages support the complementary question." });
+    select.mockResolvedValueOnce({ result: { selections: [
+      { sourceId: "old-context-1", supportExcerpt: context, assetIds: [], evidenceRole: "contextual" },
+      { sourceId: "old-context-2", supportExcerpt: context, assetIds: [], evidenceRole: "contextual" },
+      { sourceId: "direct", supportExcerpt: direct, assetIds: [], evidenceRole: "direct" },
+    ], rationale: "The initial response placed its direct evidence last." } });
+    const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: contextualPlan.interpretedQuestion, sourceQuestionPlan: contextualPlan,
+      candidates: ["old-context-1", "old-context-2", "direct", "new-context-1", "new-context-2"].map((id) => source("nubeqa", id)), fallbackSourceIds: [] });
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(result.chunks.map((chunk) => chunk.id)).toEqual(["direct", "new-context-1", "new-context-2"]);
+    expect(result.chunks.map((chunk) => chunk.text)).toEqual([direct, context, context]);
   });
 
   it("does not use inherited interaction tags when the fallback source text only discusses efficacy", async () => {

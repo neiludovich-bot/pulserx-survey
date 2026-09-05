@@ -106,16 +106,17 @@ export async function selectFocusedSourceEvidence(input: {
         });
         return { ...source, text: supportExcerpt, assets, ...(evidenceRole ? { evidenceRole } : {}) };
       });
-      if (input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation" &&
-          !chunks.some((chunk) => chunk.evidenceRole === "contextual")) {
+      if (input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation") {
         // The original relation and the useful background are different evidence
-        // needs. One focused recovery prevents duplicate direct passages from
-        // crowding out the complementary answer, without inventing any facts.
+        // needs. Always run the focused pass: a contextual label on the first
+        // selection alone cannot establish that it contains useful background.
         const focused = await selectFocusedSourceEvidence({ ...input, evidenceFocus: "contextual",
           query: input.sourceQuestionPlan.retrievalQueries.slice(1).join("\n") || input.sourceQuestionPlan.interpretedQuestion, fallbackSourceIds: [] });
         const context = focused.chunks.filter((chunk) => chunk.evidenceRole === "contextual").slice(0, 2);
         if (context.length) return { mode: "semantic", chunks: [
-          ...chunks.filter((chunk) => !context.some((other) => other.id === chunk.id)).slice(0, 3 - context.length), ...context,
+          ...chunks.filter((chunk) => !context.some((other) => other.id === chunk.id))
+            .sort((left, right) => Number(left.evidenceRole === "contextual") - Number(right.evidenceRole === "contextual"))
+            .slice(0, 3 - context.length), ...context,
         ] };
       }
       if (!chunks.length) console.info({ event: "source_evidence_selection_empty", candidateCount: candidates.length });

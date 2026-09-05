@@ -84,7 +84,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     expect(mocks.plan).toHaveBeenCalledWith(expect.objectContaining({ participantMessage: screenshotQuestion, sourceTopicContext: input.sourceTopicContext, recentTurns }));
     expect(mocks.plan.mock.invocationCallOrder[0]).toBeLessThan(mocks.query.mock.invocationCallOrder[0]);
     expect(sqlValues().some((values) => /general/.test(values) && /safety/.test(values))).toBe(true);
-    expect(mocks.select).toHaveBeenCalledOnce();
+    expect(mocks.select).toHaveBeenCalledTimes(2);
     expect(mocks.select).toHaveBeenCalledWith(expect.objectContaining({ sourceQuestionPlan: plan, evidenceFocus: "all" }));
     expect(JSON.stringify(mocks.select.mock.calls[0][0].candidates)).not.toContain(generatedAnswer);
     expect(mocks.compose).toHaveBeenCalledWith(expect.objectContaining({
@@ -107,7 +107,11 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     expect(mocks.compose.mock.calls[0][0].sources[0].text).toContain("Additional original safety facts omitted");
   });
 
-  it.each([false, true])("recovers an actual general warning when both initial passages only repeat DDI evidence (single query=%s)", async (singleQuery) => {
+  it.each([
+    { singleQuery: false, initialRole: "direct" },
+    { singleQuery: true, initialRole: "direct" },
+    { singleQuery: false, initialRole: "contextual" },
+  ] as const)("recovers an actual general warning despite initial $initialRole label (single query=$singleQuery)", async ({ singleQuery, initialRole }) => {
     const { input, plan: initialPlan, ddi, safety } = setup();
     const plan = { ...initialPlan, retrievalQueries: singleQuery ? initialPlan.retrievalQueries.slice(0, 1) : initialPlan.retrievalQueries };
     mocks.plan.mockResolvedValue({ result: plan });
@@ -117,7 +121,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     mocks.select.mockReset()
       .mockResolvedValueOnce({ result: { selections: [
         { sourceId: ddi.id, supportExcerpt: ddi.text, assetIds: [], evidenceRole: "direct" },
-        { sourceId: safety.id, supportExcerpt: repeatedDdi, assetIds: [], evidenceRole: "direct" },
+        { sourceId: safety.id, supportExcerpt: repeatedDdi, assetIds: [], evidenceRole: initialRole },
       ], rationale: "Both first-pass excerpts describe only the interaction instruction." } })
       .mockResolvedValueOnce({ result: { selections: [
         { sourceId: safety.id, supportExcerpt: safety.text, assetIds: [], evidenceRole: "contextual" },
