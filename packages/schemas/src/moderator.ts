@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sourceQuestionPlanSchema } from "./source-question";
 
 const evidenceExcerptSchema = z.string().min(1).max(4000);
 const answerStatusSchema = z.enum(["answered", "partial", "not_answered"]);
@@ -125,6 +126,7 @@ export const moderatorEvidenceSelectionInputSchema = z.object({
   query: z.string().min(1).max(4000),
   sourceTopicContext: z.string().min(1).max(6000).nullable().default(null),
   priorSourceIds: z.array(z.string().min(1)).max(3).default([]),
+  sourceQuestionPlan: sourceQuestionPlanSchema.nullable().optional(),
   candidates: z.array(z.object({
     id: z.string().min(1),
     title: z.string(),

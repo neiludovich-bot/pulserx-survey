@@ -9,6 +9,7 @@ import {
   moderatorPlannerSystemPrompt,
   moderatorPhraserSystemPrompt,
   moderatorEvidenceSelectorSystemPrompt,
+  sourceQuestionPlannerSystemPrompt,
   phraserSystemPrompt
 } from "@interview/prompts";
 import {
@@ -26,6 +27,10 @@ import {
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionInputSchema,
   moderatorEvidenceSelectionResultSchema,
+  sourceQuestionPlanInputSchema,
+  sourceQuestionPlanSchema,
+  type SourceQuestionPlanInput,
+  type SourceQuestionPlan,
   type ModeratorPlanInput,
   type ModeratorPlanModelResult,
   type ModeratorPhrasingInput,
@@ -64,6 +69,7 @@ type CallType =
   | "moderator_plan"
   | "moderator_phrasing"
   | "moderator_evidence"
+  | "source_question_plan"
   | "turn_route";
 
 type ModelConfig = {
@@ -232,15 +238,16 @@ export class OpenAIResponsesGateway {
     return this.runStructuredCall<ControlledRagCompositionResult>({
       callType: "source_composition",
       model: this.config.phrasingModel,
-      promptVersion: "controlled-rag-composition-v8",
+      promptVersion: "controlled-rag-composition-v9",
       schemaName: "controlled_rag_composition_result",
       schema: controlledRagCompositionResultSchema,
       instructions: [
         "You compose clinician-facing, source-grounded interviewer answers for a structured medical market research interview.",
         "Use the supplied source excerpts only as evidence. Do not add facts, claims, trial outcomes, labels, guidance, or caveats that are not supported by those excerpts.",
         "Only each source's text supplies clinical evidence. Titles, URLs, descriptions, tags, prior generated answers, and participant statements identify context; they cannot establish a medical fact. Never infer an interaction, mechanism, outcome, or dose change from indexing metadata or connect separately listed topics into an unstated medical claim.",
-        "input.sourceTopicContext resolves backward references such as 'those medications' in the current question; it is context, not evidence. Keep the current question's causal meaning: general adverse-event rates do not establish risks caused by an interaction. Explain only interaction effects or guidance supported by source text. If more than one medication class could be meant, state that uncertainty and the supported distinctions without guessing a class, inventing a causal link, or switching to a general adverse-event list. Do not append a research question or advance the interview.",
-        "Answer the requested level of detail explicitly. If asked which adverse reactions an interaction causes and the evidence describes increased exposure and monitoring but names no interaction-specific adverse reactions, lead with that precise limitation, then briefly explain the supported guidance. Do not present monitoring instructions alone as if they answered which reactions occur. Apply this rule to any missing requested detail, including rates, named medicines, or subgroup effects. Describe the limitation of the cited material without claiming the answer is unknown throughout medicine, and do not begin a non-yes/no question with 'Yes'.",
+        "input.sourceTopicContext and recentTurns resolve references and practical intent; they are context, not evidence. input.sourceQuestionPlan is the typed evidence-scope plan, not medical authority. Follow its interpretedQuestion, answerApproach, and contextBoundary while grounding every factual statement in source text. Never invent a causal link, medication class, patient detail, or missing trial result. Do not append a research question or advance the interview.",
+        "When answerApproach is contextual_explanation, answer the practical question with the supported interaction guidance and relevant complementary general label safety or monitoring information. Clearly distinguish general safety context from adverse reactions proven to be caused or increased by the interaction. Do not withhold useful supported monitoring information merely because interaction-specific event names or rates are unavailable, and do not repeat the same literal limitation as the whole answer. Use recentTurns to address the participant's new angle without reciting a caveat already explained.",
+        "For direct, genuinely precise trial or causal-only requests, retain their exact scope and state a missing requested detail succinctly rather than substituting general data. For clarify, explain the supported known context and the specific unresolved detail without assuming it. A limitation concerns the cited evidence, not all medical knowledge. Do not begin a non-yes/no question with 'Yes'.",
         "Preserve the source's exact endpoint identity. PFS, radiographic PFS (rPFS), metastasis-free survival (MFS), and overall survival (OS) are distinct labels. A broad PFS question may be answered with explicitly labeled rPFS evidence, but MFS or OS cannot substitute for PFS. Do not combine these under invented terms such as 'progression-free-type endpoints'. Keep study, population, comparator, and endpoint attached to each result.",
         "Do not mention the retrieval process, source inventory, source snippets, source areas, knowledge base, or what is available here. The respondent should see a polished clinical answer, not your internal evidence map.",
         "If input.clinicalEvidenceCard is present, treat it as the moderator's evidence card and answer plan. Use its clinicianBrief, keyFacts, caveats, and answerDirective to decide what matters most for this turn.",
@@ -268,6 +275,21 @@ export class OpenAIResponsesGateway {
         survey_slug: parsed.surveySlug
       }
     });
+  }
+
+  async planSourceQuestion(input: SourceQuestionPlanInput) {
+    const parsed = sourceQuestionPlanInputSchema.parse(input);
+    const call = await this.runStructuredCall<SourceQuestionPlan>({
+      callType: "source_question_plan",
+      model: this.config.analysisModel,
+      promptVersion: sourceQuestionPlannerSystemPrompt.version,
+      schemaName: "source_question_plan_v1",
+      schema: sourceQuestionPlanSchema,
+      instructions: sourceQuestionPlannerSystemPrompt.instructions,
+      input: parsed,
+      metadata: { survey_slug: parsed.surveySlug },
+    });
+    return { ...call, result: sourceQuestionPlanSchema.parse(call.result) };
   }
 
   async planModeratorTurn(input: ModeratorPlanInput) {

@@ -1,4 +1,4 @@
-import { moderatorEvidencePacketSchema, type GroundedReference, type ModeratorEvidencePacket } from "@interview/schemas";
+import { moderatorEvidencePacketSchema, type GroundedReference, type ModeratorEvidencePacket, type SourceQuestionPlan, type SourceQuestionPlanInput } from "@interview/schemas";
 import {
   CONTROLLED_RAG_CHUNKS,
   NUBEQA_ARANOTE_UTI_FACTS,
@@ -11,6 +11,7 @@ import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
 import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 import { sourceContentSearchSql } from "./source-retrieval-query";
+import { planSourceQuestion } from "./source-question-planner";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -38,6 +39,8 @@ export type ControlledRagSurveyTurnInput = {
   selectedNextQuestion: string | null;
   selectedQuestionSourceContext: string | null;
   recentInterviewerContext?: string | null;
+  recentTurns?: SourceQuestionPlanInput["recentTurns"];
+  sourceQuestionPlan?: SourceQuestionPlan | null;
   sourceTopicContext?: string | null;
   evidencePacket?: ModeratorEvidencePacket | null;
   responseMode?: "answer_only" | "answer_then_ask";
@@ -51,6 +54,7 @@ export type ControlledRagSurveyTurnResult = {
   conversationId: string | null;
   reason: string | null;
   evidencePacket?: ModeratorEvidencePacket | null;
+  sourceQuestionPlan?: SourceQuestionPlan | null;
 };
 
 const STOP_WORDS = new Set([
@@ -1564,6 +1568,8 @@ async function composeSourceAnswer(
       participantMessage: input.participantMessage,
       resolvedSourceQuestion: retrievalQuery,
       sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null,
+      sourceQuestionPlan: input.sourceQuestionPlan ?? null,
+      recentTurns: input.recentTurns ?? [],
       surveyContext: input.surveyContext,
       currentQuestion: input.currentQuestion,
       selectedNextQuestion: input.selectedNextQuestion,
@@ -1614,17 +1620,26 @@ async function composeSourceAnswer(
 export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
-  const { retrievalQuery, retrievalInput, compositionInput } = sourceTurnInputs(input);
+  const original = sourceTurnInputs(input);
   const parsedPacket = moderatorEvidencePacketSchema.safeParse(input.evidencePacket);
   const retained = parsedPacket.success && parsedPacket.data.sources.every((source) => source.surveySlug === input.surveySlug)
     ? parsedPacket.data : null;
   const pureClarification = input.responseMode === "answer_only" && isReferentialClarification(input.participantMessage);
-  const dependentQuestion = input.responseMode === "answer_only" && hasBackwardSourceReference(input.participantMessage);
+  const recentTurns = (input.recentTurns ?? []).slice(-24).map((turn) => ({ ...turn, content: turn.content.slice(0, 12000) }));
+  const sourceQuestionPlan = input.responseMode === "answer_only" && !(pureClarification && retained)
+    ? await planSourceQuestion({ surveySlug: input.surveySlug, participantMessage: input.participantMessage.slice(0, 12000),
+        sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null, recentTurns })
+    : null;
+  const retrievalQuery = sourceQuestionPlan?.interpretedQuestion ?? original.retrievalQuery;
+  const retrievalInput = { ...original.retrievalInput, participantMessage: retrievalQuery };
+  const dependentQuestion = input.responseMode === "answer_only" &&
+    (sourceQuestionPlan?.usesSourceContext ?? hasBackwardSourceReference(input.participantMessage));
   const priorSources = dependentQuestion ? retained?.sources ?? [] : [];
   const sourceTopicContext = dependentQuestion
     ? input.sourceTopicContext?.trim() || priorSources.map((source) => source.title).join("; ") || null
     : null;
-  const contextualCompositionInput = { ...compositionInput, sourceTopicContext: pureClarification ? input.sourceTopicContext : sourceTopicContext };
+  const contextualCompositionInput = { ...original.compositionInput, recentTurns, sourceQuestionPlan,
+    sourceTopicContext: pureClarification ? input.sourceTopicContext : sourceTopicContext };
   let chunks: ControlledRagChunk[];
   let evidenceCard: ClinicalEvidenceCard | null;
   if (pureClarification && retained) {
@@ -1633,11 +1648,27 @@ export async function askControlledRagForSurveyInterviewerTurn(
     chunks = retained.sources;
     evidenceCard = null;
   } else {
-  const retrievedChunks = await retrieveChunks(retrievalInput);
+  const retrievalQueries = sourceQuestionPlan?.retrievalQueries ?? [retrievalQuery];
+  const retrievalGroups = await Promise.all(retrievalQueries.map((query) => retrieveChunks({ ...retrievalInput, participantMessage: query })));
+  // Interleave searches so a complementary query has room beside the original
+  // relation. Keep the curated catalog and bound the selector input to 24.
+  const fullSources = new Map(retrievalGroups.flat().map((chunk) => [chunk.id, chunk]));
+  const candidates: ControlledRagChunk[] = [];
+  const add = (chunk: ControlledRagChunk) => {
+    if (candidates.length < 24 && !candidates.some((candidate) => candidate.id === chunk.id)) candidates.push(chunk);
+  };
+  for (const source of priorSources) add(fullSources.get(source.id) ?? source);
+  const curated = [...fullSources.values()].filter((chunk) => !chunk.id.startsWith("db:"));
+  const libraryLimit = Math.max(candidates.length, 24 - curated.filter((chunk) => !candidates.some((candidate) => candidate.id === chunk.id)).length);
+  const libraries = retrievalGroups.map((group) => group.filter((chunk) => chunk.id.startsWith("db:")));
+  for (let index = 0; index < 24 && candidates.length < libraryLimit; index += 1) {
+    for (const group of libraries) { if (group[index] && candidates.length < libraryLimit) add(group[index]); }
+  }
+  for (const source of curated) add(source);
+  const retrievedChunks = candidates;
   // A new dependent question may need additional evidence, but its antecedent
   // must survive retrieval. Preserve exact prior source excerpts as candidates;
   // the selector still decides which evidence actually supports the new ask.
-  const candidates = [...priorSources, ...retrievedChunks.filter((chunk) => !priorSources.some((source) => source.id === chunk.id))].slice(0, 24);
   const initialEvidenceCard = buildClinicalEvidenceCard(retrievalInput, retrievedChunks);
   const orderedCandidates = orderChunksForEvidenceCard(
     retrievedChunks,
@@ -1652,13 +1683,14 @@ export async function askControlledRagForSurveyInterviewerTurn(
     query: retrievalQuery,
     candidates,
     sourceTopicContext,
+    sourceQuestionPlan,
     priorSourceIds: priorSources.map((source) => source.id),
     fallbackSourceIds: priorSources.length ? priorSources.map((source) => source.id) : preferredFallbackIds.length ? preferredFallbackIds : fallbackMatches.slice(0, 1).map((chunk) => chunk.id),
   });
   chunks = selection.chunks;
   // Semantic selection owns the evidence scope. Do not reintroduce a broad
   // topic card containing facts from sources that the selector did not choose.
-  evidenceCard = selection.mode === "fallback" && !dependentQuestion
+  evidenceCard = selection.mode === "fallback" && !dependentQuestion && !sourceQuestionPlan
     ? buildClinicalEvidenceCard(retrievalInput, chunks)
     : null;
   }
@@ -1672,6 +1704,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
       conversationId: null,
       reason:
         "Controlled RAG did not retrieve a matching curated source chunk.",
+      sourceQuestionPlan,
     };
   }
 
@@ -1709,6 +1742,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     conversationId: null,
     reason: null,
     evidencePacket: packet.success ? packet.data : null,
+    sourceQuestionPlan,
   };
 }
 

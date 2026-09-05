@@ -3651,12 +3651,14 @@ export async function submitMvpCustomGptSurveyTurn(
         selectedNextQuestion: selectedQuestionText,
         selectedQuestionSourceContext: sourceContextRequirement,
         recentInterviewerContext: recentSourceDiscussionContext(session),
+        recentTurns: session.messages.slice(0, -1).slice(-12).map((message) => ({ role: message.role, content: message.content.slice(0, 12000) })),
         remainingSeconds: remaining,
         askedQuestions: askedQuestions(session),
         responseMode: sourceResponseMode,
       });
       sourceProvider = sourceTurn.provider;
       sourceProviderShadow = sourceTurn.shadow ?? null;
+      if (sourceTurn.sourceQuestionPlan) moderatorDecision = { ...moderatorDecision, sourceQuestionPlan: sourceTurn.sourceQuestionPlan };
 
       if (!sourceTurn.enabled || !sourceTurn.answer) {
         customGptStatus = "fallback";

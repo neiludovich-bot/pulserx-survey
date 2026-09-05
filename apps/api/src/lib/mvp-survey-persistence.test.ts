@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sourceQuestionPlanSchema } from "@interview/schemas";
 import { guideFromQuestionStrings } from "./mvp-brukinsa-guide";
 import {
   loadMvpSurveySessionSnapshot,
@@ -328,6 +329,15 @@ describe("MVP survey persistence", () => {
         action: "ask_reaction",
         priorityId: "ddi",
         reason: "The interaction evidence was presented and its reaction remains unanswered.",
+        sourceQuestionPlan: sourceQuestionPlanSchema.parse({
+          version: 1,
+          interpretedQuestion: "What interaction precautions are documented?",
+          usesSourceContext: true,
+          retrievalQueries: ["drug interaction precautions", "general safety monitoring"],
+          answerApproach: "contextual_explanation",
+          contextBoundary: "Keep general safety information distinct from interaction-specific evidence.",
+          rationale: "Resolve the participant's reference to the preceding source discussion.",
+        }),
       };
       const persistedModeratorState = structuredClone(moderatorState);
       const evidencePacket = { sources: [{

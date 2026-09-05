@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { sourceQuestionPlanSchema, sourceQuestionRecentTurnsSchema } from "./source-question";
 export * from "./moderator";
+export * from "./source-question";
 
 export const interviewTurnSchema = z.object({
   role: z.enum(["system", "interviewer", "participant"]),
@@ -112,6 +114,8 @@ export const controlledRagCompositionInputSchema = z.object({
   participantMessage: z.string().min(1),
   resolvedSourceQuestion: z.string().min(1).nullable().default(null),
   sourceTopicContext: z.string().min(1).max(6000).nullable().optional(),
+  sourceQuestionPlan: sourceQuestionPlanSchema.nullable().optional(),
+  recentTurns: sourceQuestionRecentTurnsSchema.optional(),
   surveyContext: z.string().default(""),
   currentQuestion: z.string().min(1).nullable(),
   selectedNextQuestion: z.string().min(1).nullable(),
@@ -547,6 +551,7 @@ export const openAIDebugTraceSchema = z.object({
     "moderator_plan",
     "moderator_phrasing",
     "moderator_evidence",
+    "source_question_plan",
   ]),
   promptVersion: z.string().min(1),
   requestedAt: z.string().datetime(),

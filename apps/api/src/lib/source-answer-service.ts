@@ -1,5 +1,5 @@
 import { env } from "../env";
-import type { GroundedReference, ModeratorEvidencePacket } from "@interview/schemas";
+import type { GroundedReference, ModeratorEvidencePacket, SourceQuestionPlan, SourceQuestionPlanInput } from "@interview/schemas";
 import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
 import { askCustomGptForSurveyInterviewerTurn } from "./customgpt-service";
 import type { CustomGptReference } from "./customgpt-service";
@@ -15,6 +15,7 @@ export type SourceAnswerProviderInput = {
   selectedNextQuestion: string | null;
   selectedQuestionSourceContext: string | null;
   recentInterviewerContext?: string | null;
+  recentTurns?: SourceQuestionPlanInput["recentTurns"];
   sourceTopicContext?: string | null;
   evidencePacket?: ModeratorEvidencePacket | null;
   remainingSeconds: number;
@@ -39,6 +40,7 @@ export type SourceAnswerProviderResult = {
     answerPreview: string | null;
     latencyMs: number;
   };
+  sourceQuestionPlan?: SourceQuestionPlan | null;
 };
 
 function groundedReferences(
@@ -81,6 +83,7 @@ async function timedControlledRag(input: SourceAnswerProviderInput) {
     selectedNextQuestion: input.selectedNextQuestion,
     selectedQuestionSourceContext: input.selectedQuestionSourceContext,
     recentInterviewerContext: input.recentInterviewerContext,
+    recentTurns: input.recentTurns,
     sourceTopicContext: input.sourceTopicContext,
     evidencePacket: input.evidencePacket,
     responseMode: input.responseMode,

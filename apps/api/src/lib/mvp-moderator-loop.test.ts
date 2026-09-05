@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { sourceQuestionPlanSchema } from "@interview/schemas";
 import type { ModeratorPlanResult, ModeratorPhrasingInput, ModeratorEvidencePacket } from "@interview/schemas";
 import type { SourceAnswerProviderInput } from "./source-answer-service";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
@@ -268,6 +269,42 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       responseMode: "answer_only",
     }));
     expect(activeSourceQuestion).toMatch(/drug interactions/);
+  });
+
+  it("retains the validated source question plan and resolved discussion while forwarding structured conversation", async () => {
+    const first = await presentAgenda(surveySlug);
+    const recentTurns: ModeratorInput["recentTurns"] = [
+      { role: "participant", content: "Which drug interactions are documented?" },
+      { role: "interviewer", content: "The source describes interaction precautions." },
+    ];
+    const sourceQuestionPlan = sourceQuestionPlanSchema.parse({
+      version: 1,
+      interpretedQuestion: `What monitoring information is documented for ${surveySlug.toUpperCase()} in the context of those drug interactions?`,
+      usesSourceContext: true,
+      retrievalQueries: ["drug interaction precautions", "general safety monitoring"],
+      answerApproach: "contextual_explanation",
+      contextBoundary: "General monitoring information does not establish interaction-caused adverse reactions.",
+      rationale: "Resolve the reference to the preceding interaction discussion while preserving the new monitoring question.",
+    });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });
+    mocks.source.mockResolvedValueOnce({
+      enabled: true, provider: "controlled_rag", answer: "Synthetic contextual source explanation.",
+      references: [{ citationId: `${surveySlug}-DDI-source`, title: "Synthetic interaction source", url: `https://example.test/${surveySlug}/DDI`, description: null, assets: [] }],
+      citationIds: [`${surveySlug}-DDI-source`], conversationId: null, reason: null,
+      evidencePacket: evidenceFor(surveySlug, "DDI"), sourceQuestionPlan,
+    });
+    const result = await runModeratorTurn(inputFor(surveySlug, {
+      state: first.state, currentQuestion: first.question,
+      participantMessage: "What should be monitored with those medications?", recentTurns,
+      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered",
+    }));
+
+    expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ recentTurns }));
+    expect(result?.decision.sourceQuestionPlan).toEqual(sourceQuestionPlan);
+    expect(result?.state.sourceDiscussion).toEqual({
+      query: sourceQuestionPlan.interpretedQuestion, evidencePacket: evidenceFor(surveySlug, "DDI"),
+    });
+    expect(result?.state.priorities).toEqual(first.state.priorities);
   });
 
   it("clarifies the latest DDI detour after restart while preserving the original PFS reaction", async () => {

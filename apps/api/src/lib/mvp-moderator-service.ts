@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference } from "@interview/schemas";
+import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference, type SourceQuestionPlan } from "@interview/schemas";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 import { isReferentialClarification } from "./controlled-rag-service";
@@ -73,6 +73,7 @@ export async function runModeratorTurn(input: Input) {
   let question: string | null = null;
   let sourceReason: string | null = null;
   let sourceEvidencePacket: ModeratorEvidencePacket | undefined;
+  const sourcePlanning: { plan: SourceQuestionPlan | null } = { plan: null };
   const creditOriginalAnswer = !previousActive && input.answerStatus === "answered" && plan.newPriorities.length > 0;
   const phrase = async (kind: "reaction" | "transition", label: string) => {
     try {
@@ -87,7 +88,8 @@ export async function runModeratorTurn(input: Input) {
   const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket) => {
     sourceUsed = true;
     try {
-      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentInterviewerContext: input.recentTurns.slice(-2).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      sourcePlanning.plan = answer.sourceQuestionPlan ?? null;
       if (!answer.enabled || !answer.answer || !answer.references.length) { sourceReason = answer.reason ?? "No supporting evidence returned."; return null; }
       references = answer.references;
       sourceEvidencePacket = answer.evidencePacket ?? undefined;
@@ -101,7 +103,7 @@ export async function runModeratorTurn(input: Input) {
     const retainedPacket = discussion ? discussion.evidencePacket : previousActive?.evidencePacket;
     const answer = await source(input.participantMessage, sourceTopic, retainedPacket);
     state.sourceDiscussion = {
-      query: isReferentialClarification(input.participantMessage) && sourceTopic ? sourceTopic : input.participantMessage,
+      query: sourcePlanning.plan?.interpretedQuestion ?? (isReferentialClarification(input.participantMessage) && sourceTopic ? sourceTopic : input.participantMessage),
       ...(sourceEvidencePacket ? { evidencePacket: structuredClone(sourceEvidencePacket) } : {}),
     };
     content = answer ? `${answer}\n\nWhat else would you like to explore? Say "continue" when you're ready to return to the interview.` : 'I could not find supporting evidence for that question. You can clarify your question, or say "continue" to return to the interview.';
@@ -138,5 +140,5 @@ export async function runModeratorTurn(input: Input) {
       } else { action = "resume_guide"; state.activePriorityId = null; }
     }
   }
-  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason } };
+  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan } };
 }

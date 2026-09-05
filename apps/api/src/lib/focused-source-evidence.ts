@@ -1,4 +1,4 @@
-import type { GroundedReference, ModeratorEvidenceSelectionInput } from "@interview/schemas";
+import type { GroundedReference, ModeratorEvidenceSelectionInput, SourceQuestionPlan } from "@interview/schemas";
 import type { ControlledRagChunk } from "./controlled-rag-source-packs";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { sourceContentSearchTerms } from "./source-retrieval-query";
@@ -65,12 +65,14 @@ export async function selectFocusedSourceEvidence(input: {
   fallbackSourceIds: string[];
   sourceTopicContext?: string | null;
   priorSourceIds?: string[];
+  sourceQuestionPlan?: SourceQuestionPlan | null;
 }): Promise<{ chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" | "unavailable" }> {
   const candidates = input.candidates.slice(0, 24);
   const selectionInput: ModeratorEvidenceSelectionInput = {
     surveySlug: input.surveySlug, query: input.query.slice(0, 4000),
     sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null,
     priorSourceIds: input.priorSourceIds ?? [],
+    sourceQuestionPlan: input.sourceQuestionPlan ?? null,
     candidates: candidates.map((chunk) => ({
       id: chunk.id, title: chunk.title, url: chunk.url, description: chunk.description,
       text: chunk.text.slice(0, 12000), tags: chunk.tags,
