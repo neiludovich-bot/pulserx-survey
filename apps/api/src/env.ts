@@ -24,6 +24,7 @@ const apiEnvSchema = z.object({
   OPENAI_MODEL_ANALYSIS: z.string().default("gpt-5.4-mini"),
   OPENAI_MODEL_DECISION: z.string().default("gpt-5.4-mini"),
   OPENAI_MODEL_PHRASING: z.string().default("gpt-5.4-mini"),
+  OPENAI_MODEL_SOURCE: z.string().default("gpt-5.4"),
   OPENAI_MODEL_TRANSCRIPTION: z.string().default("gpt-4o-transcribe"),
   OPENAI_MODEL_TTS: z.string().default("gpt-4o-mini-tts"),
   OPENAI_TTS_SPEED: z.coerce.number().min(0.25).max(4).default(1.2),

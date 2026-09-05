@@ -228,6 +228,10 @@ export const mvpTurnRouteAnalysisResultSchema = z.object({
   }
 });
 
+export const controlledRagCompositionModelResultSchema = controlledRagCompositionResultSchema.extend({
+  limitations: controlledRagCompositionResultSchema.shape.limitations.removeDefault(),
+}).strict();
+
 export const healthResponseSchema = z.object({
   status: z.literal("ok"),
   service: z.enum(["api", "web"]),

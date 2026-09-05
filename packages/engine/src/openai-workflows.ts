@@ -17,6 +17,7 @@ import {
   analysisResultSchema,
   controlledRagCompositionInputSchema,
   controlledRagCompositionResultSchema,
+  controlledRagCompositionModelResultSchema,
   decisionInputSchema,
   decisionResultSchema,
   mvpTurnRouteAnalysisInputSchema,
@@ -77,6 +78,7 @@ type ModelConfig = {
   analysisModel: string;
   decisionModel: string;
   phrasingModel: string;
+  sourceModel?: string;
 };
 
 type DebugTraceStore = {
@@ -238,10 +240,10 @@ export class OpenAIResponsesGateway {
 
     return this.runStructuredCall<ControlledRagCompositionResult>({
       callType: "source_composition",
-      model: this.config.phrasingModel,
+      model: this.config.sourceModel ?? this.config.phrasingModel,
       promptVersion: "controlled-rag-composition-v11",
-      schemaName: "controlled_rag_composition_result",
-      schema: controlledRagCompositionResultSchema,
+      schemaName: "controlled_rag_composition_result_v2",
+      schema: controlledRagCompositionModelResultSchema,
       instructions: [
         "You compose clinician-facing, source-grounded interviewer answers for a structured medical market research interview.",
         "Use the supplied source excerpts only as evidence. Do not add facts, claims, trial outcomes, labels, guidance, or caveats that are not supported by those excerpts.",
@@ -283,7 +285,7 @@ export class OpenAIResponsesGateway {
     const parsed = sourceQuestionPlanInputSchema.parse(input);
     const call = await this.runStructuredCall<SourceQuestionPlan>({
       callType: "source_question_plan",
-      model: this.config.analysisModel,
+      model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: sourceQuestionPlannerSystemPrompt.version,
       schemaName: "source_question_plan_v1",
       schema: sourceQuestionPlanSchema,
@@ -336,7 +338,7 @@ export class OpenAIResponsesGateway {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
     const call = await this.runStructuredCall<ModeratorEvidenceSelectionResult>({
       callType: "moderator_evidence",
-      model: this.config.analysisModel,
+      model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: moderatorEvidenceSelectorSystemPrompt.version,
       schemaName: "moderator_evidence_selection_result_v3",
       schema: moderatorEvidenceSelectionModelResultSchema,

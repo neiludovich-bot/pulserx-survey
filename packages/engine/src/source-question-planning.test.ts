@@ -24,6 +24,30 @@ const plan: SourceQuestionPlan = {
 };
 
 describe("typed source-question planning", () => {
+  it.each([
+    { sourceModel: "source-model", expected: ["source-model", "source-model", "source-model", "phrasing-model"] },
+    { sourceModel: undefined, expected: ["analysis-model", "analysis-model", "phrasing-model", "phrasing-model"] },
+  ])("routes all source calls through the optional source model while keeping moderator phrasing separate: $sourceModel", async ({ sourceModel, expected }) => {
+    const parse = vi.fn()
+      .mockResolvedValueOnce({ output_parsed: plan })
+      .mockResolvedValueOnce({ output_parsed: { selections: [{ sourceId: "label", supportExcerpt: "Source evidence.", assetIds: [], evidenceRole: "contextual" }], rationale: "Contextual safety information." } })
+      .mockResolvedValueOnce({ output_parsed: { answerBody: "Source evidence. [1]", usedSourceIndexes: [1], limitations: [] } })
+      .mockResolvedValueOnce({ output_parsed: { text: "How does the DDI information fit into your assessment?" } });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "analysis-model", decisionModel: "decision-model", phrasingModel: "phrasing-model", sourceModel }, undefined, { parse });
+    const planned = await gateway.planSourceQuestion(input);
+    const selected = await gateway.selectModeratorEvidence({ surveySlug: "nubeqa", query: input.participantMessage, sourceQuestionPlan: plan, candidates: [{ id: "label", title: "Label", url: "", description: "", text: "Source evidence.", tags: [], assets: [] }] });
+    const composed = await gateway.composeControlledRagAnswer(controlledRagCompositionInputSchema.parse({ surveySlug: "nubeqa", participantMessage: input.participantMessage, sourceQuestionPlan: plan, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, sources: [{ index: 1, title: "Label", url: null, description: null, text: "Source evidence.", evidenceRole: "contextual" }] }));
+    const phrased = await gateway.phraseModeratorTurn({ brand: "NUBEQA", action: "reaction", priorityLabel: "DDI", participantMessage: "DDI", previousPriorityLabel: null });
+    expect(parse.mock.calls.map(([request]) => request.model)).toEqual(expected);
+    expect(parse.mock.calls[2][0].text.format).toMatchObject({
+      name: "controlled_rag_composition_result_v2",
+      strict: true,
+      schema: { additionalProperties: false, required: ["answerBody", "usedSourceIndexes", "limitations"] },
+    });
+    expect([planned, selected, composed, phrased].map((call) => call.trace.request.model)).toEqual(expected);
+    expect([planned, selected, composed, phrased].map((call) => call.trace.callType)).toEqual(["source_question_plan", "moderator_evidence", "source_composition", "moderator_phrasing"]);
+  });
+
   it("uses a separate strict analysis call and preserves contextual planning, current text, and audit metadata", async () => {
     const parse = vi.fn().mockResolvedValue({ output_parsed: plan, model: "analysis-model", status: "completed" });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "analysis-model", decisionModel: "decision-model", phrasingModel: "phrasing-model" }, undefined, { parse });
