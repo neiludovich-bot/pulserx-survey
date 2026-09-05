@@ -37,6 +37,22 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it("falls back from a v5 source flag with no request provenance without losing a declarative reaction", async () => {
+    const participantContent = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, schemaVersion: 5, sourceRequest: null, asksSourceQuestion: true, needsSource: true, answerEvidence: [participantContent] } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, participantContent });
+    expect(route).toMatchObject({ provider: "deterministic", asksSourceQuestion: false, answerStatus: "answered" });
+    expect(route.error).toContain("source request");
+  });
+
+  it("retains v5 exact request provenance for a mixed in-situ question without punctuation", async () => {
+    const reaction = "It's something I need to track but not terribly concerning.";
+    const question = "So someone on those medications is at risk for what adverse reactions";
+    const sourceRequest = { kind: "question", participantEvidence: question, resolvedQuestion: "What adverse reactions are described for the medications just discussed?" };
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, schemaVersion: 5, sourceRequest, answerEvidence: [reaction], asksSourceQuestion: true, needsSource: true, kind: "source_question", sourceDirective: "Answer the actual source followup." } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, participantContent: `${reaction} ${question}`, sourceConversationActive: true });
+    expect(route).toMatchObject({ provider: "openai_hybrid", sourceRequest, answerStatus: "answered", answerEvidence: [reaction], asksSourceQuestion: true });
+  });
   it.each([true, false])("exposes understanding updates only when their evidence is exact (valid=%s)", async (valid) => {
     const participantContent = "Not very familiar; keep it brief.";
     const understandingUpdate = { version: 1, productFamiliarity: "low", preferredDepth: "brief", participantEvidence: [valid ? "Not very familiar" : "I use it daily"] };

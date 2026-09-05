@@ -34,6 +34,7 @@ export type MvpHybridTurnRouteInput = MvpParticipantIntentInput & {
 };
 
 export type MvpHybridTurnRouteDecision = MvpParticipantIntent & {
+  sourceRequest?: MvpTurnRouteAnalysisResult["sourceRequest"];
   understandingUpdate?: MvpTurnRouteAnalysisResult["understandingUpdate"];
   decision: MvpTurnRouteDecision;
   provider: "deterministic" | "openai_hybrid";
@@ -156,6 +157,9 @@ export async function classifyMvpTurnRouteHybrid(
       candidateQuestions: input.candidateQuestions,
     });
     const result = mvpTurnRouteAnalysisResultSchema.parse(route.result);
+    if (result.sourceRequest && !input.participantContent.includes(result.sourceRequest.participantEvidence)) {
+      throw new Error("Source requests require an exact participant excerpt.");
+    }
     if (result.answerStatus !== "answered" && localIntent.answerStatus === "answered" && participantExplicitlyStatesPriority(input)) {
       throw new Error("An explicit statement of priorities must retain answer credit for the priorities question.");
     }
@@ -188,6 +192,7 @@ export async function classifyMvpTurnRouteHybrid(
 
     return {
       answerStatus: result.answerStatus,
+      sourceRequest: result.sourceRequest,
       asksSourceQuestion: result.asksSourceQuestion,
       answerEvidence: result.answerEvidence,
       understandingUpdate: result.understandingUpdate ?? null,

@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { sourceRequestSchema } from "./source-request";
+export * from "./source-request";
 import { sourceQuestionPlanSchema, sourceQuestionRecentTurnsSchema } from "./source-question";
 import { moderatorEvidenceRoleSchema } from "./moderator";
 import { participantUnderstandingSchema, participantUnderstandingUpdateSchema, presentationPlanSchema } from "./presentation";
@@ -211,7 +213,8 @@ export const mvpTurnRouteAnalysisInputSchema = z.object({
 }).strict();
 
 export const mvpTurnRouteAnalysisResultSchema = z.object({
-  schemaVersion: z.union([z.literal(3), z.literal(4)]),
+  schemaVersion: z.union([z.literal(3), z.literal(4), z.literal(5)]),
+  sourceRequest: sourceRequestSchema.nullable().optional(),
   understandingUpdate: participantUnderstandingUpdateSchema.nullable().optional(),
   answerStatus: z.enum(["answered", "partial", "not_answered"]),
   asksSourceQuestion: z.boolean(),
@@ -225,6 +228,10 @@ export const mvpTurnRouteAnalysisResultSchema = z.object({
   sourceDirective: z.string().min(1).nullable().default(null),
   rationale: z.string().min(1).max(500),
 }).strict().superRefine((value, context) => {
+  if ((value.schemaVersion === 5 && value.sourceRequest === undefined) ||
+      ((value.schemaVersion === 5 || value.sourceRequest !== undefined) && value.asksSourceQuestion !== Boolean(value.sourceRequest))) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ["sourceRequest"], message: "A source request must identify the participant's information request; a topic mention is not sufficient." });
+  }
   if ((value.answerStatus === "not_answered") !== (value.answerEvidence.length === 0)) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["answerEvidence"], message: "Answer credit requires exact supporting participant excerpts; unanswered turns have no answer evidence." });
   }
@@ -234,7 +241,8 @@ export const mvpTurnRouteAnalysisResultSchema = z.object({
 });
 
 export const mvpTurnRouteAnalysisModelResultSchema = mvpTurnRouteAnalysisResultSchema.innerType().extend({
-  schemaVersion: z.literal(4),
+  schemaVersion: z.literal(5),
+  sourceRequest: sourceRequestSchema.nullable(),
   understandingUpdate: participantUnderstandingUpdateSchema.nullable(),
   suggestedQuestionIds: z.array(z.string().min(1)).max(3),
   sourceDirective: z.string().min(1).nullable(),

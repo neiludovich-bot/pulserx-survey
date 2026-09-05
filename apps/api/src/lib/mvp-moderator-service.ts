@@ -11,11 +11,12 @@ type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"
 const normalized = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export async function runModeratorTurn(input: Input) {
+  if (input.sourceRequest !== undefined) input = { ...input, asksSourceQuestion: Boolean(input.sourceRequest) };
   const gateway = getOptionalOpenAIGateway();
   const state = moderatorStateSchema.parse(structuredClone(input.state));
   const hadOpenPriorities = state.priorities.some((p) => p.status === "pending" || p.status === "presented");
   if (!state.priorities.length && !gateway) return null;
-  const planningInput = moderatorPlanInputSchema.parse({ brand: input.brand, currentQuestion: input.currentQuestion, participantMessage: input.participantMessage, recentTurns: input.recentTurns, state, isPriorityQuestion: input.isPriorityQuestion, asksSourceQuestion: input.asksSourceQuestion, answerStatus: input.answerStatus, isResumeCue: input.isResumeCue });
+  const planningInput = moderatorPlanInputSchema.parse({ brand: input.brand, currentQuestion: input.currentQuestion, participantMessage: input.participantMessage, recentTurns: input.recentTurns, state, isPriorityQuestion: input.isPriorityQuestion, asksSourceQuestion: input.asksSourceQuestion, sourceRequest: input.sourceRequest, answerStatus: input.answerStatus, isResumeCue: input.isResumeCue });
   let plan: ModeratorPlanResult | null = null;
   let plannerError: string | null = null;
   let plannerAttempts = 0;
@@ -26,6 +27,7 @@ export async function runModeratorTurn(input: Input) {
     plannerAttempts += 1;
     try {
       const candidate = moderatorPlanResultSchema.parse((await gateway.planModeratorTurn(planningInput)).result);
+      if (candidate.sourceRequest && !input.participantMessage.includes(candidate.sourceRequest.participantEvidence)) throw new Error("Source request evidence must be an exact participant excerpt.");
       if (candidate.newPriorities.some((p) => !input.participantMessage.includes(p.participantEvidence)) || candidate.reactionEvidence.some((e) => !input.participantMessage.includes(e))) throw new Error("Moderator evidence must be an exact participant excerpt.");
       plan = candidate;
     } catch (error) {
@@ -43,8 +45,16 @@ export async function runModeratorTurn(input: Input) {
   }
   const previousActive = state.priorities.find((p) => p.id === state.activePriorityId);
   const retryRequested = Boolean(state.sourceDiscussion && isSourceRetryCue(input.participantMessage));
-  const sourceOnlyTurn = retryRequested || (input.asksSourceQuestion || plan.action === "answer_source") && input.answerStatus === "not_answered";
-  if (!hadOpenPriorities && !state.sourceDiscussion && plan.newPriorities.length === 0) return null;
+  const sourceRequested = plan.sourceRequest !== undefined ? Boolean(plan.sourceRequest) : input.asksSourceQuestion || plan.action === "answer_source";
+  const sourceOnlyTurn = retryRequested || sourceRequested && input.answerStatus === "not_answered";
+  if (plan.newPriorities.length === 0 && ((!hadOpenPriorities && !state.sourceDiscussion) || state.priorities.length === 0)) {
+    if (!plan.sourceRequest) return null;
+    // The legacy guide orchestrator owns the exact return target outside a
+    // priority agenda. Return the recovered request instead of losing it or
+    // manufacturing an agenda entry solely to answer a participant question.
+    return { state, content: null, question: null, references: [] as GroundedReference[], sourceUsed: false, creditOriginalAnswer: false,
+      recoveredSourceRequest: plan.sourceRequest, decision: { plan, action: "answer_source", selectedPriorityId: null, plannerError, plannerAttempts, plannerErrors, plannerRecovered } };
+  }
   for (const priority of plan.newPriorities) {
     if (state.priorities.length >= 64) break;
     if (!state.priorities.some((p) => normalized(p.label) === normalized(priority.label))) {
@@ -108,7 +118,7 @@ export async function runModeratorTurn(input: Input) {
     } catch (error) { sourceReason = error instanceof Error ? error.message : "Evidence unavailable."; return null; }
   };
   const retryPendingPresentation = retryRequested && state.priorities.some((p) => p.id === state.sourceDiscussion?.returnTarget?.id && p.status === "pending");
-  if ((input.asksSourceQuestion || plan.action === "answer_source" || retryRequested) && !input.isResumeCue && !retryPendingPresentation) {
+  if ((sourceRequested || retryRequested) && !input.isResumeCue && !retryPendingPresentation) {
     action = "answer_source";
     const discussion = state.sourceDiscussion;
     const sourceTopic = discussion?.query ?? previousActive?.sourceQuestion ?? null;
@@ -161,5 +171,5 @@ export async function runModeratorTurn(input: Input) {
       } else { action = "resume_guide"; state.activePriorityId = null; }
     }
   }
-  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding, sourceOutcome: sourcePlanning.outcome ?? null } };
+  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, recoveredSourceRequest: null, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding, sourceOutcome: sourcePlanning.outcome ?? null } };
 }

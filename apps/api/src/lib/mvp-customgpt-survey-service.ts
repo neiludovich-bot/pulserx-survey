@@ -3261,6 +3261,12 @@ export async function submitMvpCustomGptSurveyTurn(
     : null;
   let moderatorCompleted = false;
   let moderatorDecision: Record<string, unknown> | null = null;
+  if (participantAnalysis?.sourceRequest !== undefined) {
+    const asksSourceQuestion = Boolean(participantAnalysis.sourceRequest);
+    participantAnalysis = { ...participantAnalysis, asksSourceQuestion,
+      decision: { ...participantAnalysis.decision, needsSource: asksSourceQuestion && !participantAnalysis.decision.isOutOfScope,
+        ...(!asksSourceQuestion ? { ...(participantAnalysis.decision.kind === "source_question" ? { kind: "planned_answer" as const } : {}), sourceDirective: null } : {}) } };
+  }
   const understandingUpdate = applyParticipantUnderstanding(session.moderatorState, participantAnalysis?.understandingUpdate, input.content);
   if (understandingUpdate?.productFamiliarity) {
     // Explicit familiarity can be volunteered before its authored question.
@@ -3297,7 +3303,7 @@ export async function submitMvpCustomGptSurveyTurn(
     !currentQuestionBefore.id.startsWith("moderator-reaction:") &&
     /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
   if (!fixedFlow && discussionBefore?.returnTarget?.kind !== "guide" && session.surveySlug !== "data" && !participantRequestedStop && !hardTimeboxExpired(session) && participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
-      ((currentQuestionBefore && !currentQuestionBefore.close && !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id)) || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
+      ((currentQuestionBefore && !currentQuestionBefore.close && currentQuestionBefore.id !== "intro_consent") || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
     const moderator = await runModeratorTurn({
       state: session.moderatorState,
       brand: session.sourceBrand,
@@ -3309,10 +3315,16 @@ export async function submitMvpCustomGptSurveyTurn(
       asksSourceQuestion: participantAnalysis.asksSourceQuestion,
       answerStatus: participantAnalysis.answerStatus,
       isResumeCue: contentLooksLikeReturnToSurveyCue(input.content),
+      sourceRequest: participantAnalysis.sourceRequest,
       projectId: session.projectId,
       surveyContext: `Approved ${session.sourceBrand} market research evidence. Active disease areas: ${session.activeDiseaseAreas.join(", ") || "not yet specified"}. Do not infer a treatment setting when the participant has not supplied it.`,
     });
-    if (moderator) {
+    if (moderator?.recoveredSourceRequest) {
+      moderatorDecision = moderator.decision;
+      participantAnalysis = { ...participantAnalysis, sourceRequest: moderator.recoveredSourceRequest, asksSourceQuestion: true,
+        decision: { ...participantAnalysis.decision, kind: "source_question", needsSource: true,
+          sourceDirective: `Answer the participant's identified request: ${moderator.recoveredSourceRequest.resolvedQuestion}` } };
+    } else if (moderator) {
       session.moderatorState = moderator.state;
       moderatorDecision = moderator.decision;
       if (moderator.creditOriginalAnswer && currentQuestionBefore) {

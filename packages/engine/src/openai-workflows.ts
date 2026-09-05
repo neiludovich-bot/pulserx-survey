@@ -218,7 +218,7 @@ export class OpenAIResponsesGateway {
       callType: "turn_route",
       model: this.config.analysisModel,
       promptVersion: mvpTurnRouterSystemPrompt.version,
-      schemaName: "mvp_turn_route_analysis_result_v4",
+      schemaName: "mvp_turn_route_analysis_result_v5",
       schema: mvpTurnRouteAnalysisModelResultSchema,
       instructions: mvpTurnRouterSystemPrompt.instructions,
       input: parsed,
@@ -228,7 +228,10 @@ export class OpenAIResponsesGateway {
         current_question_id: parsed.currentQuestionId ?? "none"
       }
     });
-    const result = mvpTurnRouteAnalysisResultSchema.parse(call.result);
+    const result = mvpTurnRouteAnalysisResultSchema.parse(mvpTurnRouteAnalysisModelResultSchema.parse(call.result));
+    if (result.sourceRequest && !parsed.participantMessage.includes(result.sourceRequest.participantEvidence)) {
+      throw new Error("Source requests require exact current participant excerpts.");
+    }
     if (result.understandingUpdate?.participantEvidence.some((excerpt) => !parsed.participantMessage.includes(excerpt))) {
       throw new Error("Understanding updates require exact current participant excerpts.");
     }
@@ -379,7 +382,7 @@ export class OpenAIResponsesGateway {
       callType: "moderator_plan",
       model: this.config.decisionModel,
       promptVersion: moderatorPlannerSystemPrompt.version,
-      schemaName: "moderator_plan_result_v2",
+      schemaName: "moderator_plan_result_v3",
       schema: moderatorPlanModelResultSchema,
       instructions: moderatorPlannerSystemPrompt.instructions,
       input: planningContext,

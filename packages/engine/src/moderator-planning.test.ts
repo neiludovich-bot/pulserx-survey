@@ -31,6 +31,7 @@ const input: ModeratorPlanInput = {
   isResumeCue: false,
 };
 const plan: ModeratorPlanResult = {
+  sourceRequest: null,
   newPriorities: [
     { label: "PFS", participantEvidence: "PFS", sourceQuestion: "What PFS results are reported for NUBEQA?" },
     { label: "Drug interactions", participantEvidence: "DDI", sourceQuestion: "What drug interactions are reported for NUBEQA?" },
@@ -42,6 +43,7 @@ const plan: ModeratorPlanResult = {
   rationale: "Retain both stated priorities, then present the first.",
 };
 const { newPriorities: initialPriorities, ...modelPlanBase } = plan;
+const request = (participantEvidence: string) => ({ kind: "question" as const, participantEvidence, resolvedQuestion: participantEvidence });
 const modelPlan = {
   ...modelPlanBase,
   priorityMentions: initialPriorities.map((priority) => ({
@@ -99,6 +101,24 @@ describe("moderator evidence packet persistence contract", () => {
 });
 
 describe("moderator planning contract", () => {
+  it.each(["NUBEQA", "BRUKINSA", "PADCEV"])("does not turn a %s declarative reaction into a source detour without request evidence", (brand) => {
+    const participantMessage = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
+    const state = structuredClone(presentedInput.state);
+    state.priorities.push({ ...state.priorities[0], id: "ddi", label: "DDI", status: "pending", participantEvidence: "DDI" });
+    const normalized = normalizeModeratorPlanModelResult({ ...presentedInput, brand, participantMessage, sourceRequest: null, state }, {
+      ...modelPlanBase, priorityMentions: [], action: "answer_source", selectedPriorityId: "pfs",
+      sourceRequest: null, reactionStatus: "answered", reactionEvidence: [participantMessage],
+    });
+    expect(normalized).toMatchObject({ sourceRequest: null, action: "present_priority", selectedPriorityId: "ddi", reactionStatus: "answered", reactionEvidence: [participantMessage] });
+  });
+
+  it("rejects invented request excerpts while retaining strict nullable model provenance", () => {
+    expect(moderatorPlanModelResultSchema.safeParse({ ...modelPlan, sourceRequest: undefined }).success).toBe(false);
+    expect(() => normalizeModeratorPlanModelResult(presentedInput, { ...modelPlan, sourceRequest: request("Tell me about interactions") })).toThrow("exact excerpt");
+    // Old persisted application plans remain valid without the newly required model field.
+    expect(validateModeratorPlan(input, { ...plan, sourceRequest: undefined }).sourceRequest).toBeUndefined();
+  });
+
   it("preserves all separately extracted participant priorities", () => {
     expect(validateModeratorPlan(input, plan).newPriorities).toHaveLength(2);
     expect(normalizeModeratorPlanModelResult(input, modelPlan).newPriorities).toEqual(plan.newPriorities);
@@ -194,6 +214,7 @@ describe("moderator planning contract", () => {
     const mixed = { ...presentedInput, participantMessage: "I would use it. What about interactions?", asksSourceQuestion: true };
     expect(validateModeratorPlan(mixed, {
       ...plan, newPriorities: [], reactionStatus: "answered", reactionEvidence: ["I would use it"], action: "answer_source", selectedPriorityId: "pfs",
+      sourceRequest: request("What about interactions?"),
     }).action).toBe("answer_source");
     expect(() => validateModeratorPlan(mixed, {
       ...plan, newPriorities: [], reactionStatus: "answered", reactionEvidence: ["I would use it"], action: "resume_guide",
@@ -215,6 +236,7 @@ describe("moderator planning contract", () => {
     mixedInput.recentTurns = [{ role: "interviewer", content: "The cited interaction information was presented. How does the DDI information affect your assessment?" }];
     const normalized = normalizeModeratorPlanModelResult(mixedInput, {
       ...modelPlanBase, priorityMentions: [], action: modelAction, selectedPriorityId: mixedInput.state.activePriorityId,
+      sourceRequest: request("So someone on those medications are at risk for what adverse reactions"),
       reactionStatus: "answered", reactionEvidence: [reaction],
     });
     expect(normalized).toMatchObject({
@@ -228,6 +250,7 @@ describe("moderator planning contract", () => {
     const clarification = { ...presentedInput, participantMessage: "Can you explain that more simply?", asksSourceQuestion: false, answerStatus: "not_answered" as const };
     const result = normalizeModeratorPlanModelResult(clarification, {
       ...modelPlanBase, priorityMentions: [], action: "answer_source", selectedPriorityId: "pfs",
+      sourceRequest: request(clarification.participantMessage),
     });
     expect(result.action).toBe("answer_source");
     expect(result.reactionStatus).toBe("not_answered");
@@ -240,6 +263,7 @@ describe("moderator planning contract", () => {
       ...presentedInput, participantMessage, asksSourceQuestion, answerStatus: "not_answered",
     }, {
       ...modelPlanBase, priorityMentions: [], action: "answer_source", selectedPriorityId: "pfs",
+      sourceRequest: request(participantMessage),
       reactionStatus: "answered", reactionEvidence: [participantMessage],
     });
     expect(normalized).toMatchObject({ action: "answer_source", selectedPriorityId: "pfs", reactionStatus: "not_answered", reactionEvidence: [] });
@@ -251,6 +275,7 @@ describe("moderator planning contract", () => {
       ...presentedInput, participantMessage: `${reaction}. Can you explain the interaction detail?`, asksSourceQuestion: true, answerStatus,
     }, {
       ...modelPlanBase, priorityMentions: [], action: "answer_source", selectedPriorityId: "pfs",
+      sourceRequest: request("Can you explain the interaction detail?"),
       reactionStatus: answerStatus, reactionEvidence: [reaction],
     });
     expect(normalized).toMatchObject({ action: "answer_source", reactionStatus: answerStatus, reactionEvidence: [reaction] });
@@ -445,7 +470,7 @@ describe("moderator structured gateway", () => {
     const phrased = await gateway.phraseModeratorTurn({ brand: "NUBEQA", action: "reaction", priorityLabel: "PFS", participantMessage: "PFS and DDI", previousPriorityLabel: null });
     expect(planned.trace.callType).toBe("moderator_plan");
     expect(phrased.trace.callType).toBe("moderator_phrasing");
-    expect(parse.mock.calls[0][0]).toMatchObject({ model: "decision-model", text: { format: { type: "json_schema", name: "moderator_plan_result_v2", strict: true } } });
+    expect(parse.mock.calls[0][0]).toMatchObject({ model: "decision-model", text: { format: { type: "json_schema", name: "moderator_plan_result_v3", strict: true } } });
     expect(parse.mock.calls[1][0]).toMatchObject({ model: "phrase-model", text: { format: { name: "moderator_phrasing_result_v1", strict: true } } });
   });
 

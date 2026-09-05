@@ -17,7 +17,7 @@ const routeInput: MvpTurnRouteAnalysisInput = {
   candidateQuestions: [{ id: "factors", question: "What factors matter most?", objective: "Capture priorities.", module: "Baseline", allowedByIntent: true, alreadyAsked: false, routeKeywords: [], sourceContextRequirement: null }],
 };
 const routeResult = {
-  schemaVersion: 4, answerStatus: "answered", asksSourceQuestion: false, answerEvidence: [routeInput.participantMessage],
+  schemaVersion: 5, sourceRequest: null, answerStatus: "answered", asksSourceQuestion: false, answerEvidence: [routeInput.participantMessage],
   kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false,
   suggestedQuestionIds: ["factors"], sourceDirective: null, rationale: "The participant states low product familiarity.",
   understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidence: [routeInput.participantMessage] },
@@ -54,7 +54,7 @@ describe("presentation and understanding contracts", () => {
     const result = await gateway(parse).analyzeMvpTurnRoute(routeInput);
     expect(result.result.understandingUpdate).toEqual(routeResult.understandingUpdate);
     expect(result.result.asksSourceQuestion).toBe(false);
-    expect(parse.mock.calls[0][0].text.format.name).toBe("mvp_turn_route_analysis_result_v4");
+    expect(parse.mock.calls[0][0].text.format.name).toBe("mvp_turn_route_analysis_result_v5");
     expect(parse.mock.calls[0][0].text.format.schema.required).toContain("understandingUpdate");
     expect([...parse.mock.calls[0][0].text.format.schema.required].sort()).toEqual(Object.keys(parse.mock.calls[0][0].text.format.schema.properties).sort());
     expect(mvpTurnRouteAnalysisResultSchema.parse({ ...routeResult, schemaVersion: 3, understandingUpdate: undefined }).schemaVersion).toBe(3);

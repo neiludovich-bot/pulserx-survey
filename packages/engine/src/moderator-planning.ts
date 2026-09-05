@@ -21,18 +21,28 @@ function hasExplicitAdditionEvidence(evidence: string) {
 export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, output: unknown) {
   const parsed = moderatorPlanInputSchema.parse(input);
   const model = moderatorPlanModelResultSchema.parse(output);
+  const sourceRequest = parsed.isResumeCue ? null : parsed.sourceRequest ?? model.sourceRequest;
+  if (sourceRequest && !parsed.participantMessage.includes(sourceRequest.participantEvidence)) {
+    throw new Error("Source requests require an exact excerpt of the current participant message.");
+  }
+  // Older deterministic callers have only the boolean. New model decisions
+  // must ground the request separately; an unsupported action cannot erase
+  // an independently valid reaction or turn its mentioned topic into a detour.
+  const asksSource = !parsed.isResumeCue && (Boolean(sourceRequest) || (parsed.sourceRequest === undefined && parsed.asksSourceQuestion));
+  const effectiveInput = { ...parsed, asksSourceQuestion: asksSource };
   const active = parsed.state.priorities.find((priority) => priority.id === parsed.state.activePriorityId && priority.status === "presented");
-  const sourceOnly = (parsed.asksSourceQuestion || model.action === "answer_source") && parsed.answerStatus === "not_answered";
+  const sourceOnly = asksSource && parsed.answerStatus === "not_answered";
   const canCreditReaction = active && !parsed.isResumeCue && !sourceOnly;
   const reactionStatus = canCreditReaction ? model.reactionStatus : "not_answered";
   const reactionEvidence = canCreditReaction ? model.reactionEvidence : [];
   // Validate research evidence independently. A bad action/ID must not erase
   // a genuine reaction, but invented reaction evidence must still fail closed.
-  validateModeratorPlan(parsed, {
+  validateModeratorPlan(effectiveInput, {
     newPriorities: [],
     reactionStatus,
     reactionEvidence,
-    action: parsed.asksSourceQuestion ? "answer_source" : "resume_guide",
+    action: asksSource ? "answer_source" : "resume_guide",
+    sourceRequest: sourceRequest ?? undefined,
     selectedPriorityId: null,
     rationale: model.rationale,
   });
@@ -64,7 +74,7 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
   let selectedPriorityId: string | null;
   // The model supplies interpretation and a preference among valid pending
   // priorities. The engine reconciles that preference with actual state.
-  if (!parsed.isResumeCue && (parsed.asksSourceQuestion || model.action === "answer_source")) {
+  if (asksSource) {
     action = "answer_source";
     selectedPriorityId = active?.id ?? null;
   } else if (active && reactionStatus !== "answered" && (active.probeCount < 2 || parsed.isResumeCue)) {
@@ -77,7 +87,8 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
     action = "resume_guide";
     selectedPriorityId = null;
   }
-  return validateModeratorPlan(parsed, {
+  return validateModeratorPlan(effectiveInput, {
+    sourceRequest: sourceRequest ?? (asksSource ? undefined : null),
     newPriorities,
     reactionStatus,
     reactionEvidence,
@@ -93,11 +104,15 @@ export function validateModeratorPlan(input: ModeratorPlanInput, output: unknown
   const active = parsed.state.priorities.find((priority) => priority.id === parsed.state.activePriorityId);
   const selected = parsed.state.priorities.find((priority) => priority.id === result.selectedPriorityId);
   const excerpts = [
+    ...(result.sourceRequest ? [result.sourceRequest.participantEvidence] : []),
     ...result.newPriorities.map((priority) => priority.participantEvidence),
     ...result.reactionEvidence,
   ];
   if (excerpts.some((excerpt) => !parsed.participantMessage.includes(excerpt))) {
     throw new Error("Moderator evidence must be exact excerpts of the current participant message.");
+  }
+  if (result.sourceRequest !== undefined && (result.action === "answer_source") !== Boolean(result.sourceRequest)) {
+    throw new Error("A source-answer action must preserve the identified participant request.");
   }
   if (parsed.isResumeCue && (result.newPriorities.length || result.reactionStatus !== "not_answered")) {
     throw new Error("A navigation cue cannot supply priorities or reaction evidence.");
@@ -108,7 +123,7 @@ export function validateModeratorPlan(input: ModeratorPlanInput, output: unknown
   if (result.selectedPriorityId !== null && !selected) {
     throw new Error("The moderator selected an unknown priority ID.");
   }
-  if (!parsed.isResumeCue && parsed.asksSourceQuestion && result.action !== "answer_source") {
+  if (!parsed.isResumeCue && (parsed.sourceRequest !== undefined ? Boolean(parsed.sourceRequest) : parsed.asksSourceQuestion) && result.action !== "answer_source") {
     throw new Error("A participant source question must retain its source-answer action.");
   }
   if (result.action === "present_priority" &&

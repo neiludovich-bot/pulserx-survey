@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { sourceRequestSchema } from "./source-request";
 import { sourceQuestionPlanSchema } from "./source-question";
 import { participantUnderstandingSchema, presentationPlanSchema } from "./presentation";
 
@@ -84,11 +85,13 @@ export const moderatorPlanInputSchema = z.object({
   state: moderatorStateSchema,
   isPriorityQuestion: z.boolean(),
   asksSourceQuestion: z.boolean(),
+  sourceRequest: sourceRequestSchema.nullable().optional(),
   answerStatus: answerStatusSchema,
   isResumeCue: z.boolean(),
 }).strict();
 
 export const moderatorPlanResultSchema = z.object({
+  sourceRequest: sourceRequestSchema.nullable().optional(),
   newPriorities: z.array(z.object({
     label: z.string().min(1).max(200),
     participantEvidence: evidenceExcerptSchema,
@@ -111,6 +114,7 @@ export const moderatorPlanResultSchema = z.object({
 export const moderatorPlanModelResultSchema = moderatorPlanResultSchema.innerType()
   .omit({ newPriorities: true })
   .extend({
+    sourceRequest: sourceRequestSchema.nullable(),
     priorityMentions: z.array(z.object({
       label: z.string().min(1).max(200),
       participantEvidence: evidenceExcerptSchema,

@@ -107,6 +107,18 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("does not let a stale source boolean override explicit null request provenance", async () => {
+    const first = await presentAgenda(surveySlug);
+    const participantMessage = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", reactionStatus: "answered", reactionEvidence: [participantMessage], selectedPriorityId: first.state.priorities[1].id }) });
+    const next = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage, isPriorityQuestion: false, sourceRequest: null, asksSourceQuestion: true }));
+    expect(mocks.plan.mock.calls.at(-1)![0]).toMatchObject({ asksSourceQuestion: false, sourceRequest: null });
+    expect(next?.decision.action).toBe("present_priority");
+    expect(next?.state.priorities[0].status).toBe("reacted");
+    expect(next?.state.priorities[1].status).toBe("presented");
+    expect(next?.state.sourceDiscussion).toBeUndefined();
+  });
+
   it("keeps source evidence and reaction state through a failed followup, retry, and continue", async () => {
     const initial = await presentAgenda(surveySlug);
     const active = initial.state.priorities[0];
