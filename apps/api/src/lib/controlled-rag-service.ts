@@ -1644,6 +1644,7 @@ async function composeSourceAnswer(
     const composition = await gateway.composeControlledRagAnswer({
       surveySlug: input.surveySlug,
       participantMessage: input.participantMessage,
+      resolvedSourceQuestion: retrievalQuery,
       surveyContext: input.surveyContext,
       currentQuestion: input.currentQuestion,
       selectedNextQuestion: input.selectedNextQuestion,

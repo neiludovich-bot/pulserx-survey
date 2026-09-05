@@ -213,7 +213,7 @@ export class OpenAIResponsesGateway {
     return this.runStructuredCall<ControlledRagCompositionResult>({
       callType: "source_composition",
       model: this.config.phrasingModel,
-      promptVersion: "controlled-rag-composition-v3",
+      promptVersion: "controlled-rag-composition-v4",
       schemaName: "controlled_rag_composition_result",
       schema: controlledRagCompositionResultSchema,
       instructions: [
@@ -224,6 +224,7 @@ export class OpenAIResponsesGateway {
         "Do not recite every source. Synthesize across the card and cite the source indexes that support the facts.",
         "Do not choose the next survey question. The application has already selected it. Your job is only to answer the participant's current source question or provide the source-backed setup needed for the next question.",
         "If input.responseMode is answer_only, answer the participant's source question as a standalone turn and do not steer into the selected next question.",
+        "input.resolvedSourceQuestion identifies the source topic being answered, including the earlier question referred to by a clarification. Preserve that topic; input.participantMessage tells you whether to simplify, explain, or add detail. For example, if the resolved question asks about drug interactions and the participant says 'explain that more simply', simplify drug interactions, not general dosing or disease positioning. Select only evidence-card facts relevant to that resolved question; their order is not a priority ranking.",
         "If input.responseMode is answer_then_ask, still do not include the selected next question in answerBody; the application will append the selected question after your source answer.",
         "Never add your own follow-up question, bridge question, transition question, or question mark in answerBody.",
         "Write for an HCP respondent: concise, specific, clinically useful, and conversational. Avoid robotic openers such as 'For context' unless it is genuinely needed.",

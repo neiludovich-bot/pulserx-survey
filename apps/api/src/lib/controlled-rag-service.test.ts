@@ -85,6 +85,7 @@ describe("controlled RAG source provider", () => {
 
     expect(result.enabled).toBe(true);
     expect(composeControlledRagAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      resolvedSourceQuestion: "What are the known drug-drug interactions with NUBEQA?",
       participantMessage: parkedFactorsInput.participantMessage,
       currentQuestion: null,
       selectedNextQuestion: null,

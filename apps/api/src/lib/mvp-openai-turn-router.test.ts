@@ -37,6 +37,20 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it.each(["not_answered", "partial"])("retains explicit mixed-turn priorities when the model says %s", async (answerStatus) => {
+    const statement = "PFS and DDI matter most to me.";
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: {
+      ...result, answerStatus, answerEvidence: answerStatus === "partial" ? [statement] : [],
+      asksSourceQuestion: true, needsSource: true, kind: "source_question",
+      sourceDirective: "Answer the interaction question.",
+    } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input,
+      participantContent: `${statement} What drug interactions should I consider?`,
+    });
+    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "answered",
+      asksSourceQuestion: true, answerEvidence: [statement] });
+    expect(route.error).toContain("explicit statement of priorities");
+  });
   it("runs the mocked model in tests and passes authored question context", async () => {
     gateway.analyzeMvpTurnRoute.mockResolvedValue({ result });
     const route = await classifyMvpTurnRouteHybrid(input);

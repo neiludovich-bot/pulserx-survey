@@ -12,7 +12,7 @@ import {
   type MvpTurnRouteDecision,
 } from "./mvp-turn-router";
 import type { MvpSurveySlug } from "./mvp-survey-definition";
-import { interpretMvpParticipantIntent, participantOnlyRequestsInformation, type MvpParticipantIntent, type MvpParticipantIntentInput } from "./mvp-participant-intent";
+import { interpretMvpParticipantIntent, participantOnlyRequestsInformation, participantExplicitlyStatesPriority, type MvpParticipantIntent, type MvpParticipantIntentInput } from "./mvp-participant-intent";
 
 export type MvpRouteAnalysisCandidate = MvpTurnRouteCandidate;
 
@@ -153,6 +153,9 @@ export async function classifyMvpTurnRouteHybrid(
       candidateQuestions: input.candidateQuestions,
     });
     const result = mvpTurnRouteAnalysisResultSchema.parse(route.result);
+    if (result.answerStatus !== "answered" && localIntent.answerStatus === "answered" && participantExplicitlyStatesPriority(input)) {
+      throw new Error("An explicit statement of priorities must retain answer credit for the priorities question.");
+    }
     if (result.answerEvidence.some((excerpt) => !input.participantContent.includes(excerpt))) {
       throw new Error("Route answer evidence must be an exact excerpt of the participant message.");
     }

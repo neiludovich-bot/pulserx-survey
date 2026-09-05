@@ -56,6 +56,20 @@ export function participantOnlyRequestsInformation(content: string) {
     clauses.every((clause) => isRequestClause(clause) || isDiscourseOnlyClause(clause));
 }
 
+/** An explicit statement of priorities satisfies an authored priorities question. */
+export function participantExplicitlyStatesPriority(input: MvpParticipantIntentInput) {
+  const question = normalize([input.currentQuestion, input.currentQuestionObjective,
+    ...(input.currentQuestionCompletionSignals ?? [])].filter(Boolean).join(" "));
+  if (!/\b(?:factors?|priorities|priority|drivers?|matters?|most important)\b/.test(question)) return false;
+  return participantClauses(input.participantContent).some((clause) => {
+    if (isRequestClause(clause)) return false;
+    const statement = normalize(clause);
+    if (/\b(?:not sure|don t know|do not know|unsure)\b/.test(statement)) return false;
+    return /\S.+\b(?:matter most|matters most|are most important|is most important|is my priority|are my priorities)\b/.test(statement)
+      || /\b(?:i|we) prioriti[sz]e\s+\S+/.test(statement);
+  });
+}
+
 function answerStatusForClause(
   clause: string,
   input: MvpParticipantIntentInput,
