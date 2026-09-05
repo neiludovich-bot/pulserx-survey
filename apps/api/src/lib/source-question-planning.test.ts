@@ -107,8 +107,10 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     expect(mocks.compose.mock.calls[0][0].sources[0].text).toContain("Additional original safety facts omitted");
   });
 
-  it("recovers an actual general warning when both initial passages only repeat DDI evidence", async () => {
-    const { input, plan, ddi, safety } = setup();
+  it.each([false, true])("recovers an actual general warning when both initial passages only repeat DDI evidence (single query=%s)", async (singleQuery) => {
+    const { input, plan: initialPlan, ddi, safety } = setup();
+    const plan = { ...initialPlan, retrievalQueries: singleQuery ? initialPlan.retrievalQueries.slice(0, 1) : initialPlan.retrievalQueries };
+    mocks.plan.mockResolvedValue({ result: plan });
     const repeatedDdi = "Original interaction monitoring excerpt repeated in the broad source.";
     const broadSource = { ...safety, text: `${repeatedDdi} ${safety.text}` };
     mocks.findMany.mockResolvedValue(databaseRows([ddi, broadSource]));
@@ -124,7 +126,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     expect(mocks.select).toHaveBeenCalledTimes(2);
     const first = mocks.select.mock.calls[0][0];
     const recovery = mocks.select.mock.calls[1][0];
-    expect(recovery).toMatchObject({ evidenceFocus: "contextual", query: plan.retrievalQueries.slice(1).join("\n"), sourceQuestionPlan: plan });
+    expect(recovery).toMatchObject({ evidenceFocus: "contextual", query: singleQuery ? plan.interpretedQuestion : plan.retrievalQueries.slice(1).join("\n"), sourceQuestionPlan: plan });
     expect(recovery.candidates).toEqual(first.candidates);
     expect(recovery.candidates.find((candidate: { id: string }) => candidate.id === safety.id).text).toBe(broadSource.text);
     const composedSources = mocks.compose.mock.calls[0][0].sources;

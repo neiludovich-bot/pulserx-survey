@@ -107,12 +107,12 @@ export async function selectFocusedSourceEvidence(input: {
         return { ...source, text: supportExcerpt, assets, ...(evidenceRole ? { evidenceRole } : {}) };
       });
       if (input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation" &&
-          !chunks.some((chunk) => chunk.evidenceRole === "contextual") && input.sourceQuestionPlan.retrievalQueries.length > 1) {
+          !chunks.some((chunk) => chunk.evidenceRole === "contextual")) {
         // The original relation and the useful background are different evidence
         // needs. One focused recovery prevents duplicate direct passages from
         // crowding out the complementary answer, without inventing any facts.
         const focused = await selectFocusedSourceEvidence({ ...input, evidenceFocus: "contextual",
-          query: input.sourceQuestionPlan.retrievalQueries.slice(1).join("\n"), fallbackSourceIds: [] });
+          query: input.sourceQuestionPlan.retrievalQueries.slice(1).join("\n") || input.sourceQuestionPlan.interpretedQuestion, fallbackSourceIds: [] });
         const context = focused.chunks.filter((chunk) => chunk.evidenceRole === "contextual").slice(0, 2);
         if (context.length) return { mode: "semantic", chunks: [
           ...chunks.filter((chunk) => !context.some((other) => other.id === chunk.id)).slice(0, 3 - context.length), ...context,
