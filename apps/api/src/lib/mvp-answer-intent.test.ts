@@ -83,6 +83,36 @@ async function startAtNubeqaFactors() {
 
 describe("participant answer intent through the MVP survey service", () => {
   it.each([
+    "continue",
+    "Let's continue",
+    "Return to the survey",
+    "Back to the question",
+    "Can we return to the interview?",
+    "Let's resume the survey",
+    "Thanks, continue with the interview please",
+  ])("offers a visible next step after a source answer and accepts: %s", async (cue) => {
+    const sessionId = await startAtNubeqaFactors();
+    const content = "What does the ARAMIS study say about?";
+    const answer = await submitMvpCustomGptSurveyTurn({ sessionId, content });
+
+    expect(answer.messages.at(-1)?.content).toContain("What else would you like to know?");
+    expect(answer.messages.at(-1)?.content).toContain('say "continue" to return to the survey.');
+    expect(answer.messages.at(-1)?.content).not.toContain(frameworkQuestion);
+    const audited = mocks.persistTurn.mock.calls.find(([input]) =>
+      input.turn.participantMessage === content,
+    )?.[0];
+    expect(audited?.turn.actualAskedQuestionId).toBeNull();
+    expect(audited?.session.pendingReturnQuestionId).toBe("decision_framework");
+    expect(audited?.session.answeredQuestionIds).not.toContain("decision_framework");
+
+    mocks.source.mockClear();
+    const resumed = await submitMvpCustomGptSurveyTurn({ sessionId, content: cue });
+    expect(resumed.messages.at(-1)?.content).toBe(frameworkQuestion);
+    expect(resumed.status).toBe("active");
+    expect(mocks.source).not.toHaveBeenCalled();
+  });
+
+  it.each([
     "PFS and DDI",
     "OS, tolerability, and cost",
     "Drug interactions",
@@ -228,7 +258,7 @@ describe("participant answer intent through the MVP survey service", () => {
     const sourceContext = (mocks.source.mock.calls[0][0] as SourceAnswerProviderInput)
       .recentInterviewerContext;
     expect(sourceContext).toBe(
-      `participant: What drug interactions should I consider?\ninterviewer: ${initialAnswer.messages.at(-1)!.content}`,
+      `participant: What drug interactions should I consider?\ninterviewer: ${initialAnswer.messages.at(-1)!.content.replace(/\s+/g, " ")}`,
     );
     expect(sourceContext).not.toContain("Is it okay to begin?");
     expect(sourceContext).not.toContain(frameworkQuestion);

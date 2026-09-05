@@ -2154,6 +2154,14 @@ function contentLooksLikeSurveyStop(content: string) {
 function contentLooksLikeReturnToSurveyCue(content: string) {
   const normalized = normalizeText(content);
 
+  // Recognize explicit navigation even when phrased as a question. Keep the
+  // whole-message match so a substantive answer is never swallowed as a cue.
+  if (
+    /^(?:(?:thanks|thank you|okay|ok)\s+)?(?:(?:can we|could we|let s|i d like to|i would like to|please)\s+)?(?:return to|go back to|back to|resume|continue with|continue) (?:the |this |our )?(?:survey|interview|question)(?:\s+please)?$/.test(normalized)
+  ) {
+    return true;
+  }
+
   // A participant can finish one topic without ending the whole interview.
   // Check this before reactive-topic detection, which also matches words such
   // as "interactions" even when the participant is done asking about them.
@@ -2179,7 +2187,7 @@ function contentLooksLikeReturnToSurveyCue(content: string) {
     /^(yes|yeah|yep|ok|okay|sure|continue|go on|move on|next|next question|keep going|that helps|that s helpful|that is helpful|makes sense|got it|understood|thanks|thank you|no|no thanks|all set|i m good|i am good)\.?$/.test(
       normalized,
     ) ||
-    /^(?:(?:thanks|thank you|okay|ok|that helps|got it)\s+)?(?:please\s+)?(?:continue|go on|move on|next question|keep going)(?:\s+please)?$/.test(
+    /^(?:(?:thanks|thank you|okay|ok|that helps|got it)\s+)?(?:(?:please|let s)\s+)?(?:continue|go on|move on|next question|keep going)(?:\s+please)?$/.test(
       normalized,
     )
   );
@@ -3665,6 +3673,14 @@ export async function submitMvpCustomGptSurveyTurn(
         assistantContent = filtered.content;
         references = filtered.references;
         droppedReferences = filtered.droppedReferences;
+        if (sourceResponseMode === "answer_only") {
+          // This is a navigation invitation, not a new research question.
+          // Append after source cleanup; the controller owns survey resumption.
+          const invitation = session.pendingReturnQuestionId
+            ? 'What else would you like to know? When you\'re ready, say "continue" to return to the survey.'
+            : "What else would you like to know?";
+          assistantContent = `${assistantContent}\n\n${invitation}`;
+        }
       }
     } catch (error) {
       customGptStatus = "error";
