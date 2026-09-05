@@ -9,7 +9,7 @@ import { getOptionalOpenAIGateway } from "./model-gateway";
 import { classifyMvpTurnRoute, type MvpDisplayTopic } from "./mvp-turn-router";
 import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
-import { alignCitedSourceReferences, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
+import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -37,6 +37,7 @@ export type ControlledRagSurveyTurnInput = {
   selectedNextQuestion: string | null;
   selectedQuestionSourceContext: string | null;
   recentInterviewerContext?: string | null;
+  sourceTopicContext?: string | null;
   responseMode?: "answer_only" | "answer_then_ask";
 };
 
@@ -148,23 +149,13 @@ function sourceTurnInputs(input: ControlledRagSurveyTurnInput) {
     const exchanges = [...(input.recentInterviewerContext ?? "").matchAll(
       /(?:^|\n)(participant|interviewer):\s*([\s\S]*?)(?=\n(?:participant|interviewer):|$)/gi,
     )];
-    const previousRequest = exchanges.reverse().find(
-      (exchange) => exchange[1]?.toLowerCase() === "participant"
-        && exchange[2]?.trim()
-        && !isReferentialClarification(exchange[2]),
-    );
-    if (previousRequest?.[2]) {
-      retrievalQuery = previousRequest[2].trim();
-    } else {
-      // The bounded history may contain another clarification rather than the
-      // original source question. Its answer still carries the active topic.
-      const previousAnswer = exchanges.find(
-        (exchange) => exchange[1]?.toLowerCase() === "interviewer" && exchange[2]?.trim(),
-      );
-      if (previousAnswer?.[2]) {
-        retrievalQuery = previousAnswer[2].trim();
-      }
-    }
+    const recent = exchanges.reverse();
+    const previousAnswer = recent.find((exchange) => exchange[1]?.toLowerCase() === "interviewer" && exchange[2]?.trim());
+    const previousRequest = recent.find((exchange) => exchange[1]?.toLowerCase() === "participant" && exchange[2]?.trim() && !isReferentialClarification(exchange[2]));
+    // Moderator source presentations can follow a reaction to the previous
+    // topic. Canonical source context owns "that"; legacy sessions use the
+    // newest source answer instead of the older participant reaction.
+    retrievalQuery = input.sourceTopicContext?.trim() || previousAnswer?.[2]?.trim() || previousRequest?.[2]?.trim() || retrievalQuery;
   }
 
   return {
@@ -1331,8 +1322,8 @@ function referencesForChunks(
       withExplicitSourceAssets({
         citationId: `rag:${chunk.id}`,
         title: chunk.title,
-        url: chunk.url,
-        description: chunk.description,
+        url: chunk.url || null,
+        description: chunk.description || null,
         assets: chunk.assets ?? [],
       }),
   );
@@ -1575,15 +1566,15 @@ async function composeSourceAnswer(
       sources: chunks.map((chunk, index) => ({
         index: index + 1,
         title: chunk.title,
-        url: chunk.url,
-        description: chunk.description,
+        url: chunk.url || null,
+        description: chunk.description || null,
         tags: chunk.tags,
         text: compact(chunk.text, 1500),
       })),
     });
 
     const usedIndexes = composition.result.usedSourceIndexes ?? chunks.map((_chunk, index) => index + 1);
-    const body = cleanClinicalAnswer(composition.result.answerBody);
+    const body = normalizeSourceCitationMarkers(cleanClinicalAnswer(composition.result.answerBody), chunks.length);
     if (!usedIndexes.length || usedIndexes.some((index) => index < 1 || index > chunks.length) ||
       [...body.matchAll(/\[(\d+)\]/g)].some((match) => !usedIndexes.includes(Number(match[1])))) {
       throw new Error("Composer cited evidence outside its selected sources.");

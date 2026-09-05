@@ -60,6 +60,22 @@ export const moderatorPlanResultSchema = z.object({
   }
 });
 
+// The model identifies mentions before the engine projects them into the
+// application plan. Reaction details never become new agenda entries merely
+// because the participant described an existing priority in different words.
+export const moderatorPlanModelResultSchema = moderatorPlanResultSchema.innerType()
+  .omit({ newPriorities: true })
+  .extend({
+    priorityMentions: z.array(z.object({
+      label: z.string().min(1).max(200),
+      participantEvidence: evidenceExcerptSchema,
+      sourceQuestion: z.string().min(1).max(2000),
+      existingPriorityId: z.string().min(1).nullable(),
+      kind: z.enum(["initial_priority", "additional_priority", "existing_priority", "reaction_detail"]),
+      additionEvidence: evidenceExcerptSchema.nullable(),
+    }).strict()).max(32),
+  }).strict();
+
 export const moderatorPhrasingInputSchema = z.object({
   brand: z.string().min(1).max(100),
   action: z.enum(["reaction", "transition"]),
@@ -96,6 +112,7 @@ export const moderatorEvidenceSelectionInputSchema = z.object({
 export const moderatorEvidenceSelectionResultSchema = z.object({
   selections: z.array(z.object({
     sourceId: z.string().min(1),
+    supportExcerpt: z.string().min(1).max(1500),
     assetIds: z.array(z.string().min(1)).max(6),
   }).strict()).max(3),
   rationale: z.string().min(1).max(1000),
@@ -105,6 +122,7 @@ export type ModeratorPriority = z.infer<typeof moderatorPrioritySchema>;
 export type ModeratorState = z.infer<typeof moderatorStateSchema>;
 export type ModeratorPlanInput = z.infer<typeof moderatorPlanInputSchema>;
 export type ModeratorPlanResult = z.infer<typeof moderatorPlanResultSchema>;
+export type ModeratorPlanModelResult = z.infer<typeof moderatorPlanModelResultSchema>;
 export type ModeratorPhrasingInput = z.infer<typeof moderatorPhrasingInputSchema>;
 export type ModeratorPhrasingResult = z.infer<typeof moderatorPhrasingResultSchema>;
 export type ModeratorEvidenceSelectionInput = z.infer<typeof moderatorEvidenceSelectionInputSchema>;

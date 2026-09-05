@@ -31,7 +31,7 @@ const guide = [
   "What else would you like to add?",
 ];
 const firstReaction = "The PFS evidence changes how I weigh benefit.";
-const secondReaction = "The DDI information would require a medication review.";
+const secondReaction = "I would review concomitant medicines before choosing it, so that interaction profile would affect my decision.";
 
 function planResult(input: ModeratorPlanInput): ModeratorPlanResult {
   const reaction = [firstReaction, secondReaction].includes(input.participantMessage);
@@ -132,10 +132,24 @@ describe("moderator controller integration", () => {
       expect(second.messages.at(-1)?.content).toContain("You also mentioned DDI.");
       expect(second.messages.at(-1)?.references).toHaveLength(1);
 
+      const genericFollowup = "Can you explain that more simply?";
+      const sourceCallsBefore = mocks.source.mock.calls.length;
+      const simplified = await turn(genericFollowup);
+      expect(simplified.currentQuestion).toBe(second.currentQuestion);
+      expect(simplified.messages.at(-1)?.content).not.toContain(second.currentQuestion!);
+      expect(mocks.source.mock.calls[sourceCallsBefore]?.[0]).toMatchObject({
+        participantMessage: genericFollowup,
+        sourceTopicContext: priorities[1].sourceQuestion,
+        responseMode: "answer_only",
+      });
+      const returnedToDdi = await turn("continue");
+      expect(returnedToDdi.currentQuestion).toBe(second.currentQuestion);
+
       const returned = await turn(secondReaction);
       const completedAudit = auditFor(secondReaction);
       expect(completedAudit.session.answeredQuestionIds).toContain(secondQuestionId);
       expect(completedAudit.session.answerEvidenceByQuestionId[secondQuestionId]).toEqual([secondReaction]);
+      expect(completedAudit.session.moderatorState.priorities).toHaveLength(2);
       expect(completedAudit.session.moderatorState.priorities.every((priority: { status: string }) => priority.status === "reacted")).toBe(true);
       expect(returned.currentQuestion).toBe(guide[1]);
       expect(returned.messages.at(-1)?.content).not.toContain(guide[0]);

@@ -164,6 +164,42 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.source).not.toHaveBeenCalled();
   });
 
+  it("binds a generic simplification request to the active DDI source question after the PFS reaction", async () => {
+    const first = await presentAgenda(surveySlug);
+    const reaction = "That evidence would increase my confidence in choosing it for appropriate patients.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({
+      action: "present_priority", selectedPriorityId: first.state.priorities[1].id,
+      reactionStatus: "answered", reactionEvidence: [reaction],
+    }) });
+    const second = await runModeratorTurn(inputFor(surveySlug, {
+      state: first.state, currentQuestion: first.question, participantMessage: reaction,
+      isPriorityQuestion: false,
+    }));
+    expect(second?.state.priorities[1].status).toBe("presented");
+    const activeSourceQuestion = second!.state.priorities[1].sourceQuestion;
+    mocks.source.mockClear();
+    mocks.plan.mockResolvedValueOnce({ result: planned({
+      action: "answer_source", selectedPriorityId: second!.state.activePriorityId,
+    }) });
+    const followup = await runModeratorTurn(inputFor(surveySlug, {
+      state: second!.state, currentQuestion: second!.question,
+      participantMessage: "Can you explain that more simply?",
+      isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered",
+      recentTurns: [{ role: "participant", content: reaction }, { role: "interviewer", content: second!.content! }],
+    }));
+
+    expect(followup?.state).toEqual(second!.state);
+    expect(followup?.question).toBeNull();
+    expect(followup?.content).not.toContain(second!.question!);
+    expect(mocks.source).toHaveBeenCalledTimes(1);
+    expect(mocks.source).toHaveBeenCalledWith(expect.objectContaining({
+      participantMessage: "Can you explain that more simply?",
+      sourceTopicContext: activeSourceQuestion,
+      responseMode: "answer_only",
+    }));
+    expect(activeSourceQuestion).toMatch(/drug interactions/);
+  });
+
   it("honors an explicit request to leave all remaining topics without fabricating reactions", async () => {
     const first = await presentAgenda(surveySlug);
     mocks.plan.mockResolvedValueOnce({ result: planned({ action: "resume_guide" }) });

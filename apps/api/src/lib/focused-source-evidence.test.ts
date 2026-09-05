@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as modelGateway from "./model-gateway";
 import { alignCitedSourceReferences, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
-import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
+import { askControlledRagForSurveyInterviewerTurn, controlledRagTestInternals } from "./controlled-rag-service";
 import { CONTROLLED_RAG_CHUNKS, type ControlledRagChunk } from "./controlled-rag-source-packs";
 
 function mockSelector(result: unknown) {
@@ -11,7 +11,7 @@ function mockSelector(result: unknown) {
 }
 
 function source(surveySlug: ControlledRagChunk["surveySlug"], id: string): ControlledRagChunk {
-  return { surveySlug, id, title: "Trial evidence", description: "Approved trial evidence", url: `https://example.com/${id}`, text: "Progression-free survival evidence from this trial.", tags: ["efficacy"], assets: [{
+  return { surveySlug, id, title: "Trial evidence", description: "Approved trial evidence", url: `https://example.com/${id}`, text: "Progression-free survival evidence from this trial. Separate safety context is also present in this document.", tags: ["efficacy"], assets: [{
     title: "Progression-free survival curve", description: "Trial endpoint", url: `https://example.com/${id}.png`, assetKind: "CHART", tags: ["pfs"], priority: 1,
   }, {
     title: "Adverse reactions", description: "Other outcome", url: `https://example.com/${id}-safety.png`, assetKind: "CHART", tags: ["safety"], priority: 100,
@@ -27,6 +27,20 @@ describe("focused evidence selection", () => {
     expect(() => alignCitedSourceReferences("Unsupported. [3]", references)).toThrow();
   });
 
+  it.each(["[2-3]", "[2, 3]", "[2–3]"])("normalizes grouped citation %s and keeps ownership aligned", (marker) => {
+    const references = ["unused", "first", "second"].map((id) => ({ citationId: id, title: id, url: `https://example.com/${id}`, description: null, assets: [] }));
+    expect(alignCitedSourceReferences(`The rate was 70.3%. ${marker}`, references)).toEqual({ answer: "The rate was 70.3%. [1] [2]", references: references.slice(1) });
+    expect(() => alignCitedSourceReferences("Invalid. [1-4]", references)).toThrow();
+    expect(() => alignCitedSourceReferences("Invalid. [3-1]", references)).toThrow();
+  });
+
+  it("resolves a source clarification to the active moderator topic instead of the previous reaction", () => {
+    const input = { surveySlug: "brukinsa" as const, participantMessage: "Can you explain that more simply?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const, recentInterviewerContext: "participant: That PFS evidence increases my confidence.\ninterviewer: Now let's move to DDI. BRUKINSA has drug-interaction considerations.", sourceTopicContext: "What drug interactions are documented for BRUKINSA?" };
+    expect(controlledRagTestInternals.sourceTurnInputs(input).retrievalQuery).toBe(input.sourceTopicContext);
+    expect(controlledRagTestInternals.sourceTurnInputs({ ...input, sourceTopicContext: null }).retrievalQuery).toBe("Now let's move to DDI. BRUKINSA has drug-interaction considerations.");
+    expect(controlledRagTestInternals.sourceTurnInputs({ ...input, participantMessage: "What did ALPINE show?" }).retrievalQuery).toBe("What did ALPINE show?");
+  });
+
   it("uses the next selected source question for legacy answer-then-ask rather than the previous reaction", async () => {
     vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue(null);
     const result = await askControlledRagForSurveyInterviewerTurn({ surveySlug: "nubeqa", participantMessage: "I would be concerned about CYP3A4 inducers.", surveyContext: "NUBEQA", currentQuestion: "What do you think of DDI?", selectedNextQuestion: "What access and patient support resources do you need?", selectedQuestionSourceContext: "NUBEQA patient access and support resources", responseMode: "answer_then_ask" });
@@ -35,16 +49,17 @@ describe("focused evidence selection", () => {
   });
 
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("uses the typed semantic selection and only selected own assets for %s", async (surveySlug) => {
-    const select = mockSelector({ selections: [{ sourceId: "trial", assetIds: ["trial:asset:0"] }], rationale: "The curve supports the selected endpoint." });
+    const select = mockSelector({ selections: [{ sourceId: "trial", assetIds: ["trial:asset:0"], supportExcerpt: "Progression-free survival evidence from this trial." }], rationale: "The curve supports the selected endpoint." });
     const result = await selectFocusedSourceEvidence({ surveySlug, query: "How long did participants remain without progression?", candidates: [source(surveySlug, "safety"), source(surveySlug, "trial")], fallbackSourceIds: ["safety"] });
     expect(result.mode).toBe("semantic");
     expect(result.chunks.map((chunk) => chunk.id)).toEqual(["trial"]);
+    expect(result.chunks[0].text).toBe("Progression-free survival evidence from this trial.");
     expect(result.chunks[0].assets?.map((asset) => asset.url)).toEqual(["https://example.com/trial.png"]);
     expect(select.mock.calls[0][0].query).toBe("How long did participants remain without progression?");
   });
 
   it("rejects a source borrowing another source's asset even if the model returns it", async () => {
-    mockSelector({ selections: [{ sourceId: "trial", assetIds: ["safety:asset:0"] }], rationale: "Invalid ownership fixture." });
+    mockSelector({ selections: [{ sourceId: "trial", assetIds: ["safety:asset:0"], supportExcerpt: "Progression-free survival evidence from this trial." }], rationale: "Invalid ownership fixture." });
     const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: "PFS", candidates: [source("nubeqa", "trial"), source("nubeqa", "safety")], fallbackSourceIds: ["trial"] });
     expect(result.mode).toBe("fallback");
     expect(result.chunks[0].assets?.map((asset) => asset.url)).toEqual(["https://example.com/trial.png"]);
@@ -69,7 +84,7 @@ describe("focused evidence selection", () => {
     vi.stubEnv("DATABASE_URL", "");
     const trial = CONTROLLED_RAG_CHUNKS.find((chunk) => chunk.id === "nubeqa-mcspc-aranote")!;
     expect(trial).toBeDefined();
-    const selectModeratorEvidence = vi.fn().mockResolvedValue({ result: { selections: [{ sourceId: trial.id, assetIds: [] }], rationale: "ARANOTE answers the requested endpoint." } });
+    const selectModeratorEvidence = vi.fn().mockResolvedValue({ result: { selections: [{ sourceId: trial.id, assetIds: [], supportExcerpt: trial.text }], rationale: "ARANOTE answers the requested endpoint." } });
     const composeControlledRagAnswer = vi.fn().mockResolvedValue({ result: { answerBody: "ARANOTE assessed radiographic progression-free survival. [1]" } });
     vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({ selectModeratorEvidence, composeControlledRagAnswer } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
     const result = await askControlledRagForSurveyInterviewerTurn({ surveySlug: "nubeqa", participantMessage: "Explain ARANOTE PFS", surveyContext: "Earlier topic: drug interactions", currentQuestion: "What about DDI?", selectedNextQuestion: "What do you think about interactions?", selectedQuestionSourceContext: "Drug interactions", recentInterviewerContext: "participant: Explain DDI\ninterviewer: CYP3A4 and BCRP interactions.", responseMode: "answer_only" });

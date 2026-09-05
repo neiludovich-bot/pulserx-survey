@@ -15,6 +15,7 @@ export type SourceAnswerProviderInput = {
   selectedNextQuestion: string | null;
   selectedQuestionSourceContext: string | null;
   recentInterviewerContext?: string | null;
+  sourceTopicContext?: string | null;
   remainingSeconds: number;
   askedQuestions: string[];
   responseMode?: "answer_only" | "answer_then_ask";
@@ -78,6 +79,7 @@ async function timedControlledRag(input: SourceAnswerProviderInput) {
     selectedNextQuestion: input.selectedNextQuestion,
     selectedQuestionSourceContext: input.selectedQuestionSourceContext,
     recentInterviewerContext: input.recentInterviewerContext,
+    sourceTopicContext: input.sourceTopicContext,
     responseMode: input.responseMode,
   });
 
@@ -103,7 +105,10 @@ export async function askSourceProviderForSurveyInterviewerTurn(
     projectId: input.projectId,
     conversationId: input.conversationId,
     participantMessage: input.participantMessage,
-    surveyContext: input.surveyContext,
+    surveyContext: [
+      input.sourceTopicContext ? `Current source topic for referential follow-ups: ${input.sourceTopicContext}. Use this to interpret that/this/it; an explicit new participant question takes precedence.` : null,
+      input.surveyContext,
+    ].filter(Boolean).join("\n"),
     currentQuestion: input.currentQuestion,
     selectedNextQuestion: input.selectedNextQuestion,
     selectedQuestionSourceContext: input.selectedQuestionSourceContext,

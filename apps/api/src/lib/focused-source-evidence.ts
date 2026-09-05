@@ -20,8 +20,23 @@ export function withExplicitSourceAssets(reference: GroundedReference): Grounded
   }] };
 }
 
+/** Expand numeric citation groups before validating or attaching references. */
+export function normalizeSourceCitationMarkers(answer: string, sourceCount: number) {
+  return answer.replace(/\[(\d+(?:\s*(?:[,;]|[-–])\s*\d+)*)\]/g, (_marker, group: string) => {
+    const indexes = group.split(/\s*[,;]\s*/).flatMap((part) => {
+      const bounds = part.split(/\s*[-–]\s*/).map(Number);
+      const first = bounds[0];
+      const last = bounds[1] ?? first;
+      if (first < 1 || last < first || last > sourceCount) throw new Error("Answer cited an unselected evidence source.");
+      return Array.from({ length: last - first + 1 }, (_value, index) => first + index);
+    });
+    return [...new Set(indexes)].map((index) => `[${index}]`).join(" ");
+  });
+}
+
 /** Keep numeric markers and the displayed reference list in the same order. */
 export function alignCitedSourceReferences(answer: string, references: GroundedReference[]) {
+  answer = normalizeSourceCitationMarkers(answer, references.length);
   const cited = [...new Set([...answer.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1])))].sort((a, b) => a - b);
   if (cited.some((index) => index < 1 || index > references.length)) throw new Error("Answer cited an unselected evidence source.");
   if (!cited.length) return { answer, references };
@@ -66,10 +81,11 @@ export async function selectFocusedSourceEvidence(input: {
       const selection = await gateway.selectModeratorEvidence(selectionInput);
       if (selection.result.selections.length > 3) throw new Error("Too many selected sources.");
       const seen = new Set<string>();
-      const chunks = selection.result.selections.map(({ sourceId, assetIds }) => {
+      const chunks = selection.result.selections.map(({ sourceId, assetIds, supportExcerpt }) => {
         const sourceIndex = candidates.findIndex((chunk) => chunk.id === sourceId);
         const source = candidates[sourceIndex];
         if (!source || seen.has(sourceId)) throw new Error("Invalid evidence source selection.");
+        if (!supportExcerpt?.trim() || !source.text.includes(supportExcerpt)) throw new Error("Evidence support must quote its selected source exactly.");
         if (new Set(assetIds).size !== assetIds.length || assetIds.length > 6) throw new Error("Invalid evidence asset selection.");
         seen.add(sourceId);
         const assets = assetIds.map((assetId) => {
@@ -78,7 +94,7 @@ export async function selectFocusedSourceEvidence(input: {
           if (!asset) throw new Error("Selected asset does not belong to its evidence source.");
           return asset;
         });
-        return { ...source, assets };
+        return { ...source, text: supportExcerpt, assets };
       });
       return { chunks, mode: "semantic" };
     } catch {

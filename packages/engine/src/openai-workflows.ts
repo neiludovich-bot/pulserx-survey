@@ -21,13 +21,13 @@ import {
   mvpTurnRouteAnalysisInputSchema,
   mvpTurnRouteAnalysisResultSchema,
   moderatorPlanInputSchema,
-  moderatorPlanResultSchema,
+  moderatorPlanModelResultSchema,
   moderatorPhrasingInputSchema,
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionInputSchema,
   moderatorEvidenceSelectionResultSchema,
   type ModeratorPlanInput,
-  type ModeratorPlanResult,
+  type ModeratorPlanModelResult,
   type ModeratorPhrasingInput,
   type ModeratorPhrasingResult,
   type ModeratorEvidenceSelectionInput,
@@ -48,7 +48,7 @@ import {
   type PhrasingResult
 } from "@interview/schemas";
 import type { CompiledStudy } from "./study-compiler";
-import { validateModeratorPlan, validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
+import { normalizeModeratorPlanModelResult, validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
 import {
   buildDecisionCandidates,
   commitSelection,
@@ -268,17 +268,17 @@ export class OpenAIResponsesGateway {
 
   async planModeratorTurn(input: ModeratorPlanInput) {
     const parsed = moderatorPlanInputSchema.parse(input);
-    const call = await this.runStructuredCall<ModeratorPlanResult>({
+    const call = await this.runStructuredCall<ModeratorPlanModelResult>({
       callType: "moderator_plan",
       model: this.config.decisionModel,
       promptVersion: moderatorPlannerSystemPrompt.version,
-      schemaName: "moderator_plan_result_v1",
-      schema: moderatorPlanResultSchema,
+      schemaName: "moderator_plan_result_v2",
+      schema: moderatorPlanModelResultSchema,
       instructions: moderatorPlannerSystemPrompt.instructions,
       input: parsed,
       metadata: { brand: parsed.brand },
     });
-    return { ...call, result: validateModeratorPlan(parsed, call.result) };
+    return { ...call, result: normalizeModeratorPlanModelResult(parsed, call.result) };
   }
 
   async phraseModeratorTurn(input: ModeratorPhrasingInput) {
@@ -302,7 +302,7 @@ export class OpenAIResponsesGateway {
       callType: "moderator_evidence",
       model: this.config.analysisModel,
       promptVersion: moderatorEvidenceSelectorSystemPrompt.version,
-      schemaName: "moderator_evidence_selection_result_v1",
+      schemaName: "moderator_evidence_selection_result_v2",
       schema: moderatorEvidenceSelectionResultSchema,
       instructions: moderatorEvidenceSelectorSystemPrompt.instructions,
       input: parsed,

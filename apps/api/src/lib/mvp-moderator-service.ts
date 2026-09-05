@@ -70,10 +70,10 @@ export async function runModeratorTurn(input: Input) {
       return kind === "reaction" ? `How does this information about ${label} affect your assessment of ${input.brand}?` : `You also mentioned ${label}. Let's look at that next.`;
     }
   };
-  const source = async (query: string) => {
+  const source = async (query: string, sourceTopicContext: string | null = null) => {
     sourceUsed = true;
     try {
-      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentInterviewerContext: input.recentTurns.slice(-2).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentInterviewerContext: input.recentTurns.slice(-2).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
       if (!answer.enabled || !answer.answer || !answer.references.length) { sourceReason = answer.reason ?? "No supporting evidence returned."; return null; }
       references = answer.references;
       return answer.answer;
@@ -81,7 +81,7 @@ export async function runModeratorTurn(input: Input) {
   };
   if (input.asksSourceQuestion && !input.isResumeCue) {
     action = "answer_source";
-    const answer = await source(input.participantMessage);
+    const answer = await source(input.participantMessage, previousActive?.sourceQuestion ?? null);
     content = answer ? `${answer}\n\nWhat else would you like to explore? Say "continue" when you're ready to return to the interview.` : 'I could not find supporting evidence for that question. You can clarify your question, or say "continue" to return to the interview.';
   } else {
     const active = state.priorities.find((p) => p.id === state.activePriorityId && p.status === "presented");
