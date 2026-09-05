@@ -30,7 +30,7 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
-  it.each([{ brand: "nubeqa" as const, questionId: "familiarity", answered: true }, { brand: "brukinsa" as const, questionId: "role", answered: false }])("recovers a source request outside an agenda while retaining $questionId coverage (answered=$answered)", async ({ brand, questionId, answered }) => {
+  it.each([{ brand: "nubeqa" as const, questionId: "familiarity", answered: true }, { brand: "brukinsa" as const, questionId: "role", answered: false }].flatMap((scenario) => [false, true].map((phrasingFails) => ({ ...scenario, phrasingFails }))))("recovers a source request outside an agenda while retaining $questionId coverage (answered=$answered, phrasing failure=$phrasingFails)", async ({ brand, questionId, answered, phrasingFails }) => {
     const started = startMvpCustomGptSurvey({ surveySlug: brand, targetDurationSeconds: 600 });
     const snapshot = mocks.started.mock.calls.at(-1)![0].session;
     mocks.load.mockResolvedValue({ session: { ...snapshot, currentQuestionId: questionId, askedQuestionIds: ["intro_consent", questionId], answeredQuestionIds: ["intro_consent"], answerEvidenceByQuestionId: {}, queuedQuestionIds: [] }, messages: started.messages, turnCount: 1 });
@@ -53,10 +53,26 @@ describe("shared persisted source detours", () => {
     if (answered) expect(returnId).not.toBe(questionId);
     else expect(returnId).toBe(questionId);
     expect(saved.session.moderatorState.sourceDiscussion.returnTarget).toEqual({ kind: "guide", id: returnId });
+    expect(mocks.phrase).not.toHaveBeenCalled();
+    const selected = snapshot.guide.find((item: { id: string }) => item.id === returnId);
+    const resumedWording = answered ? "What factors matter most in your treatment decisions?" : "What is your clinical role?";
+    const sourceReply = response.messages.at(-1)?.content;
+    if (phrasingFails) mocks.phrase.mockRejectedValueOnce(new Error("Invalid guide-resume wording"));
+    else mocks.phrase.mockResolvedValueOnce({ result: { text: resumedWording }, trace: { responseId: "guide-source-resume-fixture" } });
     rehydrate(response);
-    await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Thanks, continue." });
+    const resumed = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Thanks, continue." });
     expect(mocks.persist.mock.calls.at(-1)![0].session.currentQuestionId).toBe(returnId);
     expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion).toBeUndefined();
+    expect(mocks.phrase).toHaveBeenCalledOnce();
+    expect(mocks.phrase.mock.calls[0][0]).toMatchObject({ action: "guide_resume", selectedQuestion: { id: returnId, question: selected.canonicalQuestion, objective: selected.objective }, discussedPriorities: [], recentTurns: expect.arrayContaining([expect.objectContaining({ role: "interviewer", content: sourceReply })]) });
+    const phrasingAudit = mocks.persist.mock.calls.at(-1)![0].turn.moderatorDecision.guideResumePhrasing;
+    expect(phrasingAudit.status).toBe(phrasingFails ? "fallback" : "success");
+    expect(resumed.currentQuestion).toBe(selected.canonicalQuestion);
+    if (phrasingFails) expect(resumed.messages.at(-1)?.content).toBe(selected.canonicalQuestion);
+    else {
+      expect(resumed.messages.at(-1)?.content).toBe(resumedWording);
+      expect(phrasingAudit.trace).toEqual({ responseId: "guide-source-resume-fixture" });
+    }
   });
 
   it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((brand) => [false, true].map((phrasingFails) => ({ brand, phrasingFails }))))("reconciles volunteered familiarity and resumes the unanswered $brand default-guide step (phrasing failure=$phrasingFails)", async ({ brand, phrasingFails }) => {
@@ -96,8 +112,9 @@ describe("shared persisted source detours", () => {
     mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: priorityState.priorities[1].id, rationale: "Move to DDI." } });
     await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: reaction });
     const mixedReaction = "It's something I need to track but not terribly concerning.";
-    mocks.route.mockResolvedValueOnce(researchAnswer(mixedReaction, true));
-    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionStatus: "answered", reactionEvidence: [mixedReaction], action: "answer_source", selectedPriorityId: priorityState.priorities[1].id, rationale: "Credit the reaction and answer the followup." } });
+    const mixedSourceRequest = { kind: "question", participantEvidence: "What adverse reactions are described?", resolvedQuestion: "What adverse reactions are described?" };
+    mocks.route.mockResolvedValueOnce({ ...researchAnswer(mixedReaction, true), sourceRequest: mixedSourceRequest, answerStatus: "not_answered", answerEvidence: [] });
+    mocks.plan.mockResolvedValueOnce({ result: { sourceRequest: mixedSourceRequest, newPriorities: [], reactionStatus: "answered", reactionEvidence: [mixedReaction], action: "answer_source", selectedPriorityId: priorityState.priorities[1].id, rationale: "Credit the reaction and answer the followup independently of the missed upstream reaction." } });
     const detour = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: `${mixedReaction} What adverse reactions are described?` });
     rehydrate(detour);
     mocks.route.mockResolvedValueOnce(questionRoute);

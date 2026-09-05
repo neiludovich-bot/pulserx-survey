@@ -101,6 +101,23 @@ describe("moderator evidence packet persistence contract", () => {
 });
 
 describe("moderator planning contract", () => {
+  it("retains an independently stated reaction when the upstream guide interpretation says not answered", () => {
+    const reaction = "It's something I need to track but not terribly concerning.";
+    const question = "So someone on those medications is at risk for what adverse reactions";
+    const normalized = normalizeModeratorPlanModelResult({ ...presentedInput, participantMessage: `${reaction} ${question}`, answerStatus: "not_answered", asksSourceQuestion: true, sourceRequest: request(question) }, {
+      ...modelPlanBase, sourceRequest: request(question), priorityMentions: [], action: "answer_source", reactionStatus: "answered", reactionEvidence: [reaction],
+    });
+    expect(normalized).toMatchObject({ action: "answer_source", reactionStatus: "answered", reactionEvidence: [reaction] });
+  });
+
+  it.each(["Can you explain that more simply?", "explain that more simply"])("does not credit request text as a reaction even when both interpreters claim answered (%s)", (excerpt) => {
+    const question = "Can you explain that more simply?";
+    const normalized = normalizeModeratorPlanModelResult({ ...presentedInput, participantMessage: question, answerStatus: "answered", asksSourceQuestion: true, sourceRequest: request(question) }, {
+      ...modelPlanBase, sourceRequest: request(question), priorityMentions: [], action: "answer_source", reactionStatus: "answered", reactionEvidence: [excerpt],
+    });
+    expect(normalized).toMatchObject({ action: "answer_source", reactionStatus: "not_answered", reactionEvidence: [] });
+  });
+
   it.each(["NUBEQA", "BRUKINSA", "PADCEV"])("does not turn a %s declarative reaction into a source detour without request evidence", (brand) => {
     const participantMessage = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
     const state = structuredClone(presentedInput.state);

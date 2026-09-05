@@ -26,6 +26,7 @@ const requestOpening = /^(?:(?:well|so|also|and|but|actually|please|okay|ok)\s+)
 function isRequestClause(clause: string) {
   if (clause.includes("?")) return true;
   const text = normalize(clause);
+  if (/^(?:please )?(?:(?:even|much) )?(?:more simply|simpler)(?: please)?$/.test(text)) return true;
   // Declarative "what" clauses state the answer: "What would help is a
   // checklist" is different from the question "What would help?".
   if (/^what (?:(?:would|could|will) help(?: (?:me|us))?(?: most| the most)?|matters?(?: most| the most| to me| to us)?|(?:i|we) (?:would )?(?:need|want|prefer|value|care about)) (?:is|are|would be)\b/.test(text)) {

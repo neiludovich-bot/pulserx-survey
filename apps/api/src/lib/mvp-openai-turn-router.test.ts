@@ -37,6 +37,12 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it.each(["Even more simply please.", "Simpler please", "More simply"])("keeps an elliptical source clarification open when the model misses it: %s", async (participantContent) => {
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, schemaVersion: 5, sourceRequest: null, asksSourceQuestion: false, answerStatus: "not_answered", answerEvidence: [] } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, participantContent, sourceConversationActive: true });
+    expect(route).toMatchObject({ provider: "deterministic", asksSourceQuestion: true, answerStatus: "not_answered", answerEvidence: [] });
+    expect(route.error).toContain("only information requests");
+  });
   it("falls back from a v5 source flag with no request provenance without losing a declarative reaction", async () => {
     const participantContent = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
     gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, schemaVersion: 5, sourceRequest: null, asksSourceQuestion: true, needsSource: true, answerEvidence: [participantContent] } });

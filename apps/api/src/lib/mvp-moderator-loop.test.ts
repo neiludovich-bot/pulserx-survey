@@ -107,6 +107,33 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("credits a separate mixed-turn reaction even when upstream says not_answered, then resumes the next priority", async () => {
+    const first = await presentAgenda(surveySlug);
+    const reaction = "It's something I need to track but not terribly concerning.";
+    const question = "So someone on those medications is at risk for what adverse reactions";
+    const sourceRequest = { kind: "question" as const, participantEvidence: question, resolvedQuestion: question };
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, action: "answer_source", reactionStatus: "answered", reactionEvidence: [reaction] }) });
+    const detour = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: `${reaction} ${question}`, isPriorityQuestion: false, sourceRequest, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(detour?.state.priorities[0]).toMatchObject({ status: "reacted", reactionEvidence: [reaction] });
+    expect(detour?.question).toBeNull();
+    expect(detour?.decision.plan.reactionStatus).toBe("answered");
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first.state.priorities[1].id }) });
+    const resumed = await runModeratorTurn(inputFor(surveySlug, { state: detour!.state, participantMessage: "Thanks, continue.", isPriorityQuestion: false, sourceRequest: null, asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
+    expect(resumed?.state.priorities[1].status).toBe("presented");
+    expect(resumed?.state.activePriorityId).toBe(first.state.priorities[1].id);
+  });
+
+  it("rejects overlapping request text as reaction credit even if upstream and planner both say answered", async () => {
+    const first = await presentAgenda(surveySlug);
+    const question = "Can you explain that more simply?";
+    const sourceRequest = { kind: "clarification_request" as const, participantEvidence: question, resolvedQuestion: question };
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, action: "answer_source", reactionStatus: "answered", reactionEvidence: ["explain that more simply"] }) });
+    const detour = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: question, isPriorityQuestion: false, sourceRequest, asksSourceQuestion: true, answerStatus: "answered" }));
+    expect(detour?.state.priorities[0]).toMatchObject({ status: "presented", reactionEvidence: [] });
+    expect(detour?.decision.plan).toMatchObject({ reactionStatus: "not_answered", reactionEvidence: [] });
+    expect(detour?.question).toBeNull();
+  });
+
   it("does not let a stale source boolean override explicit null request provenance", async () => {
     const first = await presentAgenda(surveySlug);
     const participantMessage = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";

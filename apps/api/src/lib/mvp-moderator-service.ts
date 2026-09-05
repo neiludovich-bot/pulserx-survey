@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { moderatorReactionEvidenceOutsideRequest } from "@interview/engine";
 import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference, type SourceQuestionPlan, type SourceAnswerGroundingAudit } from "@interview/schemas";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
@@ -46,7 +47,11 @@ export async function runModeratorTurn(input: Input) {
   const previousActive = state.priorities.find((p) => p.id === state.activePriorityId);
   const retryRequested = Boolean(state.sourceDiscussion && isSourceRetryCue(input.participantMessage));
   const sourceRequested = plan.sourceRequest !== undefined ? Boolean(plan.sourceRequest) : input.asksSourceQuestion || plan.action === "answer_source";
-  const sourceOnlyTurn = retryRequested || sourceRequested && input.answerStatus === "not_answered";
+  const requestForReaction = plan.sourceRequest ?? input.sourceRequest;
+  const legacySourceOnlyTurn = sourceRequested && !requestForReaction && input.answerStatus === "not_answered";
+  const reactionEvidence = previousActive?.status === "presented" && !retryRequested && !input.isResumeCue && !legacySourceOnlyTurn
+    ? moderatorReactionEvidenceOutsideRequest(input.participantMessage, plan.reactionEvidence, requestForReaction) : [];
+  plan = { ...plan, reactionEvidence, reactionStatus: reactionEvidence.length ? plan.reactionStatus : "not_answered" };
   if (plan.newPriorities.length === 0 && ((!hadOpenPriorities && !state.sourceDiscussion) || state.priorities.length === 0)) {
     if (!plan.sourceRequest) return null;
     // The legacy guide orchestrator owns the exact return target outside a
@@ -73,7 +78,7 @@ export async function runModeratorTurn(input: Input) {
   }
   if (previousActive?.status === "presented") {
     if (explicitSkip) previousActive.status = "skipped";
-    else if (!input.isResumeCue && !sourceOnlyTurn && plan.reactionStatus !== "not_answered") {
+    else if (!input.isResumeCue && !retryRequested && plan.reactionStatus !== "not_answered") {
       previousActive.reactionEvidence = [...new Set([...previousActive.reactionEvidence, ...plan.reactionEvidence])].slice(-32);
       if (plan.reactionStatus === "answered") previousActive.status = "reacted";
     }

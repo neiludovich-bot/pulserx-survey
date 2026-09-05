@@ -9,7 +9,25 @@ import {
   type ModeratorEvidenceSelectionInput,
   type ModeratorPlanInput,
   type ModeratorPhrasingInput,
+  type SourceRequest,
 } from "@interview/schemas";
+
+/** Model-assigned reaction evidence must be separate from its quoted request. */
+export function moderatorReactionEvidenceOutsideRequest(message: string, evidence: string[], request?: SourceRequest | null) {
+  const occurrences = (excerpt: string) => {
+    if (!excerpt) throw new Error("Evidence excerpts cannot be empty.");
+    const spans: Array<[number, number]> = [];
+    for (let offset = message.indexOf(excerpt); offset >= 0; offset = message.indexOf(excerpt, offset + 1)) spans.push([offset, offset + excerpt.length]);
+    return spans;
+  };
+  const requestSpans = request ? occurrences(request.participantEvidence) : [];
+  if (request && !requestSpans.length) throw new Error("Source requests require an exact excerpt of the current participant message.");
+  return evidence.filter((excerpt) => {
+    const spans = occurrences(excerpt);
+    if (!spans.length) throw new Error("Moderator evidence must be exact excerpts of the current participant message.");
+    return spans.some(([start, end]) => requestSpans.every(([requestStart, requestEnd]) => end <= requestStart || start >= requestEnd));
+  });
+}
 
 function hasExplicitAdditionEvidence(evidence: string) {
   // This checks an explicit conversational addition, not medical topic words.
@@ -31,10 +49,10 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
   const asksSource = !parsed.isResumeCue && (Boolean(sourceRequest) || (parsed.sourceRequest === undefined && parsed.asksSourceQuestion));
   const effectiveInput = { ...parsed, asksSourceQuestion: asksSource };
   const active = parsed.state.priorities.find((priority) => priority.id === parsed.state.activePriorityId && priority.status === "presented");
-  const sourceOnly = asksSource && parsed.answerStatus === "not_answered";
-  const canCreditReaction = active && !parsed.isResumeCue && !sourceOnly;
-  const reactionStatus = canCreditReaction ? model.reactionStatus : "not_answered";
-  const reactionEvidence = canCreditReaction ? model.reactionEvidence : [];
+  const legacySourceOnly = asksSource && !sourceRequest && parsed.answerStatus === "not_answered";
+  const canCreditReaction = active && !parsed.isResumeCue && !legacySourceOnly;
+  const reactionEvidence = canCreditReaction ? moderatorReactionEvidenceOutsideRequest(parsed.participantMessage, model.reactionEvidence, sourceRequest) : [];
+  const reactionStatus = reactionEvidence.length ? model.reactionStatus : "not_answered";
   // Validate research evidence independently. A bad action/ID must not erase
   // a genuine reaction, but invented reaction evidence must still fail closed.
   validateModeratorPlan(effectiveInput, {

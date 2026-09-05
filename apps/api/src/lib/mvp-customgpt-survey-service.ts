@@ -3317,7 +3317,7 @@ export async function submitMvpCustomGptSurveyTurn(
       isResumeCue: contentLooksLikeReturnToSurveyCue(input.content),
       sourceRequest: participantAnalysis.sourceRequest,
       projectId: session.projectId,
-      surveyContext: `Approved ${session.sourceBrand} market research evidence. Active disease areas: ${session.activeDiseaseAreas.join(", ") || "not yet specified"}. Do not infer a treatment setting when the participant has not supplied it.`,
+      surveyContext: `Study: ${session.studyName}\nApproved ${session.sourceBrand} market research evidence. Active disease areas: ${session.activeDiseaseAreas.join(", ") || "not yet specified"}. Do not infer a treatment setting when the participant has not supplied it.`,
     });
     if (moderator?.recoveredSourceRequest) {
       moderatorDecision = moderator.decision;
@@ -3815,7 +3815,8 @@ export async function submitMvpCustomGptSurveyTurn(
     assistantContent = 'I could not retrieve the source context needed before that question. Say "continue" to try again.';
   }
 
-  if (moderatorCompleted && !session.completedReason) {
+  const resumesSourceDiscussionGuide = Boolean(resumeQuestion && discussionBefore?.returnTarget?.kind === "guide");
+  if ((moderatorCompleted || resumesSourceDiscussionGuide) && !session.completedReason) {
     let guideResumePhrased = false;
     // Selection stays canonical. Rephrase only a source-free resumed question;
     // source-required questions retain their authored evidence presentation.
@@ -3843,7 +3844,7 @@ export async function submitMvpCustomGptSurveyTurn(
       }
       moderatorDecision = { ...moderatorDecision, guideResumePhrasing };
     }
-    if (!guideResumePhrased) assistantContent = `We've finished discussing the priorities you raised. Let's return to the interview.\n\n${assistantContent}`;
+    if (moderatorCompleted && !guideResumePhrased) assistantContent = `We've finished discussing the priorities you raised. Let's return to the interview.\n\n${assistantContent}`;
   }
   session.messages.push(
     createMessage("interviewer", assistantContent, references),

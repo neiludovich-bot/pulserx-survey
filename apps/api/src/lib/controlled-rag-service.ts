@@ -13,6 +13,7 @@ import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocus
 import { sourceContentSearchSql } from "./source-retrieval-query";
 import { planSourceQuestion } from "./source-question-planner";
 import { sourceTurnOutcome } from "./source-turn-outcome";
+import { logSyntheticGroundingDiagnostics } from "./synthetic-grounding-diagnostics";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -1627,6 +1628,7 @@ async function composeSourceAnswer(
     const grounding = "groundingReview" in composition ? sourceAnswerGroundingAuditSchema.parse(composition.groundingReview) : null;
     return { available: true, answer, grounding, outcome: sourceTurnOutcome("success", composition) };
   } catch (error) {
+    logSyntheticGroundingDiagnostics(input.surveyContext, error);
     const outcome = sourceTurnOutcome("composition_failure", error);
     console.warn(JSON.stringify({ event: "source_answer_composition_failed", outcome }));
     // A rejected draft is not permission to expose unedited or truncated
