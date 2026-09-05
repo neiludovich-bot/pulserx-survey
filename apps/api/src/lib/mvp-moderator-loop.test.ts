@@ -106,6 +106,56 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it.each(["schema", "evidence"])("retries one invalid planner %s result without duplicate state changes or source calls", async (failure) => {
+    const first = await presentAgenda(surveySlug);
+    const reaction = "That evidence would increase my confidence in choosing it for appropriate patients.";
+    mocks.plan.mockClear();
+    mocks.source.mockClear();
+    mocks.plan.mockResolvedValueOnce({ result: planned({
+      reactionStatus: "answered", reactionEvidence: failure === "schema" ? [] : ["A fabricated reaction"],
+    }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({
+      reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: first.state.priorities[1].id,
+    }) });
+    const recovered = await runModeratorTurn(inputFor(surveySlug, {
+      state: first.state, currentQuestion: first.question, participantMessage: reaction, isPriorityQuestion: false,
+    }));
+
+    expect(mocks.plan).toHaveBeenCalledTimes(2);
+    expect(mocks.plan.mock.calls[0][0]).toEqual(mocks.plan.mock.calls[1][0]);
+    expect(recovered?.decision).toMatchObject({ plannerAttempts: 2, plannerRecovered: true, plannerError: null });
+    expect(recovered?.decision.plannerErrors).toHaveLength(1);
+    expect(recovered?.state.priorities[0]).toMatchObject({ status: "reacted", reactionEvidence: [reaction], probeCount: 0 });
+    expect(recovered?.state.priorities[1].status).toBe("presented");
+    expect(mocks.source).toHaveBeenCalledTimes(1);
+    expect(first.state.priorities[0]).toMatchObject({ status: "presented", reactionEvidence: [], probeCount: 0 });
+  });
+
+  it.each([
+    { content: "That evidence would increase my confidence in choosing it for appropriate patients.", answerStatus: "answered" as const, asksSourceQuestion: false, isResumeCue: false, probes: 1 },
+    { content: "CYP3A4 inducers", answerStatus: "answered" as const, asksSourceQuestion: false, isResumeCue: false, probes: 1 },
+    { content: "Can you explain that more simply?", answerStatus: "not_answered" as const, asksSourceQuestion: true, isResumeCue: false, probes: 0 },
+    { content: "continue", answerStatus: "not_answered" as const, asksSourceQuestion: false, isResumeCue: true, probes: 0 },
+  ])("preserves conservative answer credit after both planner attempts fail: $content", async ({ content, answerStatus, asksSourceQuestion, isResumeCue, probes }) => {
+    const first = await presentAgenda(surveySlug);
+    mocks.plan.mockClear();
+    mocks.plan.mockRejectedValueOnce(new Error("Invalid model result on first attempt"));
+    mocks.plan.mockRejectedValueOnce(new Error("Invalid model result on retry"));
+    const failed = await runModeratorTurn(inputFor(surveySlug, {
+      state: first.state, currentQuestion: first.question, participantMessage: content,
+      isPriorityQuestion: false, answerStatus, asksSourceQuestion, isResumeCue,
+    }));
+
+    expect(mocks.plan).toHaveBeenCalledTimes(2);
+    expect(failed?.decision).toMatchObject({
+      plannerAttempts: 2, plannerRecovered: false, plannerError: "Invalid model result on retry",
+      plannerErrors: ["Invalid model result on first attempt", "Invalid model result on retry"],
+    });
+    expect(failed?.state.priorities[0]).toMatchObject({ status: "presented", reactionEvidence: [], probeCount: probes });
+    expect(failed?.state.priorities[1].status).toBe("pending");
+    expect(failed?.state.activePriorityId).toBe(first.state.activePriorityId);
+  });
+
   it("retains both stated priorities and presents cited evidence before asking for the first reaction", async () => {
     const first = await presentAgenda(surveySlug);
     expect(first.state.priorities.map((priority) => [priority.label, priority.status])).toEqual([["PFS", "presented"], ["DDI", "pending"]]);

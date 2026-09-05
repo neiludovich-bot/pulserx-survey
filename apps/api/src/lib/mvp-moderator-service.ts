@@ -14,14 +14,25 @@ export async function runModeratorTurn(input: Input) {
   const hadOpenPriorities = state.priorities.some((p) => p.status === "pending" || p.status === "presented");
   if (!state.priorities.length && !gateway) return null;
   const planningInput = moderatorPlanInputSchema.parse({ brand: input.brand, currentQuestion: input.currentQuestion, participantMessage: input.participantMessage, recentTurns: input.recentTurns, state, isPriorityQuestion: input.isPriorityQuestion, asksSourceQuestion: input.asksSourceQuestion, answerStatus: input.answerStatus, isResumeCue: input.isResumeCue });
-  let plan: ModeratorPlanResult;
+  let plan: ModeratorPlanResult | null = null;
   let plannerError: string | null = null;
-  try {
-    if (!gateway) throw new Error("Moderator model unavailable.");
-    plan = moderatorPlanResultSchema.parse((await gateway.planModeratorTurn(planningInput)).result);
-    if (plan.newPriorities.some((p) => !input.participantMessage.includes(p.participantEvidence)) || plan.reactionEvidence.some((e) => !input.participantMessage.includes(e))) throw new Error("Moderator evidence must be an exact participant excerpt.");
-  } catch (error) {
-    plannerError = error instanceof Error ? error.message : "Moderator planning failed.";
+  let plannerAttempts = 0;
+  const plannerErrors: string[] = [];
+  // Retry the typed planning boundary once before mutating state or calling
+  // the source/phrasing providers. Invalid output must not consume a probe.
+  while (gateway && plannerAttempts < 2 && plan === null) {
+    plannerAttempts += 1;
+    try {
+      const candidate = moderatorPlanResultSchema.parse((await gateway.planModeratorTurn(planningInput)).result);
+      if (candidate.newPriorities.some((p) => !input.participantMessage.includes(p.participantEvidence)) || candidate.reactionEvidence.some((e) => !input.participantMessage.includes(e))) throw new Error("Moderator evidence must be an exact participant excerpt.");
+      plan = candidate;
+    } catch (error) {
+      plannerErrors.push(error instanceof Error ? error.message : "Moderator planning failed.");
+    }
+  }
+  const plannerRecovered = plan !== null && plannerAttempts > 1;
+  if (plan === null) {
+    plannerError = plannerErrors.at(-1) ?? "Moderator model unavailable.";
     // Preserve explicit lists during an API outage. This does not infer medical
     // meaning or manufacture research answers from a navigation message.
     const labels = input.isPriorityQuestion && input.answerStatus !== "not_answered" && !input.asksSourceQuestion
@@ -127,5 +138,5 @@ export async function runModeratorTurn(input: Input) {
       } else { action = "resume_guide"; state.activePriorityId = null; }
     }
   }
-  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, sourceReason } };
+  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason } };
 }
