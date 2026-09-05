@@ -2135,13 +2135,34 @@ function contentLooksLikeBroadPatientFitQuestion(content: string) {
 function contentLooksLikeSurveyStop(content: string) {
   const normalized = normalizeText(content);
 
-  return /\b(no other questions|no more questions|nothing else|that is all|that s all|done|end survey|stop survey|finish)\b/.test(
+  // Match affirmative requests, not mentions of finishing a thought, stopping
+  // treatment, or a negated request to end the interview. Explicit requests
+  // may be followed by another sentence (for example, a reason for leaving).
+  const explicitStop = content.split(/[.!?;\n]+/).some((sentence) =>
+    /^(?:(?:please )?(?:(?:can|could|would) (?:you|we) |let (?:s|us) |i (?:want|need|would like) to )?(?:end|stop|finish|close) |(?:i m|i am) done with )(?:the |this |my )?(?:survey|interview)(?: (?:now|here|please|thanks|thank you))*$/.test(
+      normalizeText(sentence),
+    ),
+  );
+
+  return explicitStop || /^(?:please )?(?:(?:i (?:want|need|would like) to )?(?:stop|end|finish)|(?:i m |i am )?done|(?:i have )?no (?:other|more) questions(?: (?:at this time|for now))?|nothing else|that is all|that s all)(?: (?:now|here|please|thanks|thank you))*$/.test(
     normalized,
   );
 }
 
 function contentLooksLikeReturnToSurveyCue(content: string) {
   const normalized = normalizeText(content);
+
+  // A participant can finish one topic without ending the whole interview.
+  // Check this before reactive-topic detection, which also matches words such
+  // as "interactions" even when the participant is done asking about them.
+  if (
+    !content.includes("?") &&
+    !contentLooksLikeSurveyStop(content) &&
+    !/\b(?:but|what|how|why|can|could|would)\b/.test(normalized) &&
+    /^(?:(?:i have )?no (?:other|more) questions (?:about|on|regarding)|(?:i m|i am) done with) .+$/.test(normalized)
+  ) {
+    return true;
+  }
 
   if (
     !normalized ||
@@ -2159,6 +2180,17 @@ function contentLooksLikeReturnToSurveyCue(content: string) {
     /\b(continue|go on|move on|next question|keep going|that helps|that s helpful|that is helpful|makes sense|got it|understood|thanks|thank you)\b/.test(
       normalized,
     )
+  );
+}
+
+function contentRequestsSurveyContinuation(content: string) {
+  const normalized = normalizeText(content);
+
+  return (
+    /\b(?:do not|don t)(?: want to)? (?:end|stop|finish|close) (?:the |this |my )?(?:survey|interview)\b/.test(normalized) ||
+    /\b(?:i m|i am) not (?:done with|ready to (?:end|stop|finish)) (?:the |this |my )?(?:survey|interview)\b/.test(normalized) ||
+    /\b(?:let me|i (?:want|need|would like) to) finish (?:my|the) (?:questions|thought|answer)\b/.test(normalized) ||
+    /^(?:i m|i am) not done(?: yet)?$/.test(normalized)
   );
 }
 
@@ -3244,7 +3276,9 @@ export async function submitMvpCustomGptSurveyTurn(
     }
   }
 
-  const answerQuality = fixedFlow
+  const participantRequestedStop =
+    !fixedFlow && contentLooksLikeSurveyStop(input.content);
+  const answerQuality = fixedFlow || participantRequestedStop
     ? { accepted: true as const }
     : currentAnswerQuality(session, input.content);
   if (!answerQuality.accepted) {
@@ -3367,9 +3401,11 @@ export async function submitMvpCustomGptSurveyTurn(
   queueExplicitIntentExcursions(session, input.content);
 
   const hasQueuedFollowUp = hasDequeuableQueuedQuestion(session, input.content);
+  const participantRequestsContinuation = contentRequestsSurveyContinuation(input.content);
   const shouldCloseNow =
-    contentLooksLikeSurveyStop(input.content) ||
+    participantRequestedStop ||
     (currentQuestionBefore?.close &&
+      !participantRequestsContinuation &&
       !hasQueuedFollowUp &&
       !contentLooksLikeReactiveQuestion(input.content));
 
@@ -3473,7 +3509,8 @@ export async function submitMvpCustomGptSurveyTurn(
       input.content,
     ) &&
     !contentLooksLikeReturnToSurveyCue(input.content);
-  const selectedQuestion = shouldReturnToCurrentQuestion
+  const selectedQuestion = shouldReturnToCurrentQuestion ||
+    (currentQuestionBefore?.close && participantRequestsContinuation)
     ? currentQuestionBefore
     : parkedQuestion &&
         !questionWasAsked(session, parkedQuestion) &&

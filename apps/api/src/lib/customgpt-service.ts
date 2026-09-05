@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { env } from "../env";
+import { stripQuestionSentences } from "./source-answer-sentences";
 
 const customGptConversationResponseSchema = z.object({
   data: z
@@ -636,26 +637,6 @@ function stripInlineCitationMarkers(answer: string) {
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function stripQuestionSentences(answer: string) {
-  return answer
-    .split(/\n{2,}/)
-    .map((paragraph) => {
-      const sentences =
-        paragraph.match(/[^.!?\n]+[.!?]+(?:\s+|$)|[^.!?\n]+$/g) ?? [
-          paragraph,
-        ];
-
-      return sentences
-        .map((sentence) => sentence.trim())
-        .filter((sentence) => sentence.length > 0 && !sentence.endsWith("?"))
-        .join(" ")
-        .trim();
-    })
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
 }
 
 function stripControllerQuestionFromCustomGptAnswer(

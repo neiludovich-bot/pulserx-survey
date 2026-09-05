@@ -365,6 +365,28 @@ describe("controlled RAG source provider", () => {
     expect(cleaned).not.toContain("?");
   });
 
+  it("preserves decimal source claims while stripping composer questions with abbreviations and quotes", () => {
+    const evidence = [
+      "At 24 months, 70.3% and 52.1% of patients, respectively, remained free of radiological progression and were alive.",
+      "The U.S. source reports HR 0.54 (95% CI, 0.41-0.71; P<0.0001).",
+      "Median follow-up was 25.3 months versus 25.0 months.",
+    ];
+    const answer = [
+      `${evidence[0]} What stands out from these results?`,
+      `${evidence[1]} How does the U.S. guidance apply? ${evidence[2]}`,
+      "Would the 70.3% result change your view?",
+      '\u201cWhich result matters most to you?\u201d',
+    ].join("\n\n");
+
+    expect(
+      controlledRagTestInternals.stripComposerFollowUpQuestions(
+        answer,
+        null,
+        "answer_then_ask",
+      ),
+    ).toBe(`${evidence[0]}\n\n${evidence[1]} ${evidence[2]}`);
+  });
+
   it("keeps generic ad-hoc evidence-card facts compact enough for composer schema", () => {
     const card = controlledRagTestInternals.buildClinicalEvidenceCard(
       {

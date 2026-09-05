@@ -256,6 +256,67 @@ describe("CustomGPT clarification service", () => {
     expect(promptText).not.toContain("ask at the end");
   });
 
+  it.each(["answer_only", "answer_then_ask"] as const)(
+    "preserves decimal evidence and abbreviations while removing survey questions in %s mode",
+    async (responseMode) => {
+      process.env.CUSTOMGPT_API_KEY = "test-customgpt-key";
+      const evidence = [
+        "At 24 months, 70.3% and 52.1% of patients, respectively, remained free of radiological progression and were alive.",
+        "The U.S. source reports HR 0.54 (95% CI, 0.41-0.71; P<0.0001).",
+        "Median follow-up was 25.3 months versus 25.0 months.",
+      ];
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string | URL | Request) => {
+          if (
+            String(url).endsWith(
+              "/projects/654/conversations/decimal_evidence/messages",
+            )
+          ) {
+            return new Response(
+              JSON.stringify({
+                data: {
+                  openai_response: [
+                    `${evidence[0]} What stands out from these results?`,
+                    `${evidence[1]} How does the U.S. guidance apply? ${evidence[2]}`,
+                    "Would the 70.3% result change your view?",
+                    '\u201cWhich result matters most to you?\u201d',
+                    "How would this affect your view?",
+                  ].join("\n\n"),
+                  citations: [],
+                },
+              }),
+              { status: 200 },
+            );
+          }
+          return new Response("not found", { status: 404 });
+        }),
+      );
+
+      const { askCustomGptForSurveyInterviewerTurn } =
+        await import("./customgpt-service");
+      const result = await askCustomGptForSurveyInterviewerTurn({
+        projectId: "654",
+        conversationId: "decimal_evidence",
+        participantMessage: "What did ARANOTE show?",
+        surveyContext: "NUBEQA source answer turn",
+        currentQuestion: "How familiar are you with NUBEQA?",
+        selectedNextQuestion: null,
+        selectedQuestionSourceContext: null,
+        remainingSeconds: 540,
+        askedQuestions: [],
+        responseMode,
+      });
+
+      expect(result.enabled).toBe(true);
+      expect(result.answer).toBe(
+        `${evidence[0]}\n\n${evidence[1]} ${evidence[2]}`,
+      );
+      expect(result.answer).not.toContain("What stands out");
+      expect(result.answer).not.toContain("How would this");
+    },
+  );
+
   it("keeps inline CustomGPT citation objects as respondent-visible references", async () => {
     process.env.CUSTOMGPT_API_KEY = "test-customgpt-key";
     process.env.CUSTOMGPT_PROJECT_ID = "654";

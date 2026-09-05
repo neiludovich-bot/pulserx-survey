@@ -6,6 +6,7 @@ import {
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { classifyMvpTurnRoute, type MvpDisplayTopic } from "./mvp-turn-router";
 import { prisma } from "./prisma";
+import { stripQuestionSentences } from "./source-answer-sentences";
 
 type ControlledRagAsset = NonNullable<ControlledRagChunk["assets"]>[number];
 type WeightedTokenGroup = {
@@ -1396,26 +1397,6 @@ function selectedQuestionLead(
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function stripQuestionSentences(value: string) {
-  return value
-    .split(/\n{2,}/)
-    .map((paragraph) => {
-      const sentences =
-        paragraph.match(/[^.!?\n]+[.!?]+(?:\s+|$)|[^.!?\n]+$/g) ?? [
-          paragraph,
-        ];
-
-      return sentences
-        .map((sentence) => sentence.trim())
-        .filter((sentence) => sentence.length > 0 && !sentence.endsWith("?"))
-        .join(" ")
-        .trim();
-    })
-    .filter(Boolean)
-    .join("\n\n")
-    .trim();
 }
 
 function stripComposerFollowUpQuestions(

@@ -26,6 +26,104 @@ afterEach(() => {
 });
 
 describe("MVP CustomGPT survey service", () => {
+  it.each([
+    "Please let me finish my questions first. What about older men?",
+    "I want to finish my questions first. What about older men?",
+    "I haven't done that in my practice.",
+    "Please do not stop the survey. I still have questions.",
+    "I don't want to end the interview yet.",
+    "I want to stop treatment when toxicity becomes unmanageable.",
+    "No more questions about interactions.",
+    "Nothing else about dosing, but what about safety?",
+  ])("does not end NUBEQA for a scoped or negated completion: %s", async (content) => {
+    env.CUSTOMGPT_API_KEY = undefined;
+    env.CUSTOMGPT_NUBEQA_PROJECT_ID = undefined;
+    env.OPENAI_API_KEY = undefined;
+    env.MVP_SOURCE_PROVIDER = "controlled_rag";
+
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "nubeqa",
+      targetDurationSeconds: 600,
+    });
+    await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Yes" });
+    const next = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content });
+
+    expect(next.status).toBe("active");
+    expect(next.nextAction).not.toBe("wrap_up");
+    expect(next.currentQuestion).not.toBeNull();
+    expect(next.messages.at(-1)?.content).not.toContain("Thank you for participating");
+  });
+
+  it.each([
+    "Stop survey",
+    "Please end the interview.",
+    "Could we finish the survey now?",
+    "I would like to stop the survey. I have to leave.",
+    "I need to stop",
+    "I'm done, thank you.",
+    "I'm done with the survey.",
+    "I am done with this interview.",
+  ])("honors an affirmative request to end the interview: %s", async (content) => {
+    env.MVP_SOURCE_PROVIDER = "controlled_rag";
+    env.OPENAI_API_KEY = undefined;
+    const started = startMvpCustomGptSurvey({ surveySlug: "nubeqa", targetDurationSeconds: 600 });
+    const next = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content });
+
+    expect(next.status).toBe("completed");
+    expect(next.nextAction).toBe("wrap_up");
+    expect(next.currentQuestion).toBeNull();
+  });
+
+  it("resumes the parked research question when a participant finishes only the source topic", async () => {
+    env.MVP_SOURCE_PROVIDER = "controlled_rag";
+    env.OPENAI_API_KEY = undefined;
+    const started = startMvpCustomGptSurvey({
+      surveySlug: "nubeqa",
+      targetDurationSeconds: 600,
+    });
+    await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Yes" });
+    const detour = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "I am familiar. Show me the source link for drug interactions.",
+    });
+    expect(detour.status).toBe("active");
+    expect(detour.messages.at(-1)?.references.length).toBeGreaterThan(0);
+
+    const resumed = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "No more questions about interactions.",
+    });
+    expect(resumed.status).toBe("active");
+    expect(resumed.nextAction).toBe("ask");
+    expect(resumed.currentQuestion).not.toBeNull();
+    expect(resumed.currentQuestion).not.toBe(detour.currentQuestion);
+    expect(resumed.messages.at(-1)?.content).toBe(resumed.currentQuestion);
+  });
+
+  it.each([
+    "I don't want to end the interview yet.",
+    "I'm not done yet.",
+    "Let me finish my questions first.",
+  ])("keeps the closing question open when the participant asks to continue: %s", async (content) => {
+    env.MVP_SOURCE_PROVIDER = "controlled_rag";
+    env.OPENAI_API_KEY = undefined;
+    const started = startMvpCustomGptSurvey({ targetDurationSeconds: 60 });
+    const closing = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Yes" });
+    expect(closing.currentQuestion).toContain("To close");
+
+    const continued = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content });
+    expect(continued.status).toBe("active");
+    expect(continued.nextAction).not.toBe("wrap_up");
+    expect(continued.currentQuestion).toBe(closing.currentQuestion);
+
+    const completed = await submitMvpCustomGptSurveyTurn({
+      sessionId: started.sessionId,
+      content: "No more questions. Thank you.",
+    });
+    expect(completed.status).toBe("completed");
+    expect(completed.currentQuestion).toBeNull();
+  });
+
   it("keeps the guarded survey moving when CustomGPT credentials are missing", async () => {
     env.CUSTOMGPT_API_KEY = undefined;
     env.CUSTOMGPT_PROJECT_ID = undefined;
@@ -1990,8 +2088,9 @@ describe("MVP CustomGPT survey service", () => {
     const followUpTranscript = followUp.messages
       .map((message) => message.content)
       .join("\n");
-    expect(followUp.nextAction).toBe("wrap_up");
-    expect(followUp.messages.at(-1)?.content).toContain(
+    expect(followUp.status).not.toBe("completed");
+    expect(followUp.nextAction).not.toBe("wrap_up");
+    expect(followUp.messages.at(-1)?.content).not.toContain(
       "Thank you for participating",
     );
     expect(followUpTranscript).not.toContain("EV-302");
