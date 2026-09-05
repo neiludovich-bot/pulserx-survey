@@ -191,6 +191,7 @@ export const mvpTurnRouteAnalysisInputSchema = z.object({
   currentQuestionObjective: z.string().min(1).nullable().default(null),
   currentQuestionKeywords: z.array(z.string()).default([]),
   currentQuestionCompletionSignals: z.array(z.string()).default([]),
+  sourceConversationActive: z.boolean().default(false),
   participantMessage: z.string().min(1),
   recentInterviewerContext: z.string().min(1).nullable().default(null),
   candidateQuestions: z.array(mvpTurnRouteCandidateSchema).min(1).max(16),

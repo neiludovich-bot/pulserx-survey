@@ -12,6 +12,7 @@ export type MvpParticipantIntentInput = {
   currentQuestionObjective?: string | null;
   currentQuestionKeywords?: string[];
   currentQuestionCompletionSignals?: string[];
+  sourceConversationActive?: boolean;
 };
 
 function normalize(value: string) {
@@ -44,6 +45,17 @@ export function participantRequestsInformation(content: string) {
   return participantClauses(content).some(isRequestClause);
 }
 
+function isDiscourseOnlyClause(clause: string) {
+  return /^(?:well|so|also|and|but|actually|please|thanks|thank you|ok|okay|got it|understood|that helps|continue|thanks continue|thank you continue|i have a question|one more question|let me ask)(?: now| again)?$/.test(normalize(clause));
+}
+
+/** Exact quotations cannot turn an information request into research evidence. */
+export function participantOnlyRequestsInformation(content: string) {
+  const clauses = participantClauses(content);
+  return clauses.some(isRequestClause) &&
+    clauses.every((clause) => isRequestClause(clause) || isDiscourseOnlyClause(clause));
+}
+
 function answerStatusForClause(
   clause: string,
   input: MvpParticipantIntentInput,
@@ -55,7 +67,7 @@ function answerStatusForClause(
     ...(input.currentQuestionCompletionSignals ?? []),
   ].join(" "));
   if (!context || !text || !/[a-z0-9]/i.test(clause)) return "not_answered";
-  if (/^(?:well|so|also|and|but|actually|please|thanks|thank you|ok|okay|got it|understood|that helps|continue|thanks continue|thank you continue|i have a question|one more question|let me ask)(?: now| again)?$/.test(text)) return "not_answered";
+  if (isDiscourseOnlyClause(clause)) return "not_answered";
 
   if (input.currentQuestionId === "intro_consent") {
     return /^(?:yes|yeah|yep|sure|okay|ok|i agree|no|no thanks)\b/.test(text) ? "answered" : "not_answered";

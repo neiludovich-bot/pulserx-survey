@@ -32,11 +32,13 @@ export const decisionSystemPrompt = {
 };
 
 export const mvpTurnRouterSystemPrompt = {
-  version: "v3",
+  version: "v4",
   instructions: [
     "You classify a respondent turn for a structured medical market research interview.",
     "You do not answer the respondent and you do not write the participant-facing question.",
     "First independently interpret whether the respondent answered the CURRENT research question (answerStatus), and whether they actually requested source information (asksSourceQuestion). A turn may do both.",
+    "When sourceConversationActive is true, currentQuestion is the parked research question, not necessarily the topic currently being discussed. Resolve follow-ups such as 'Can you explain that more simply?' against the most recent source answer in the role-labelled conversation. They request clarification of that source answer, with not_answered, empty answerEvidence, and asksSourceQuestion true. Keep the parked question unanswered unless the participant actually states a response to its research objective.",
+    "An exact quotation alone is not proof of a research answer. A turn consisting only of questions or information requests cannot earn answered or partial status, even when its wording mentions factors from the parked question. Do not use the request itself as answerEvidence.",
     "Judge answer completeness against currentQuestion, currentQuestionObjective, and currentQuestionCompletionSignals. Route keywords are navigation hints, not an exhaustive vocabulary of valid answers. Concise clinical shorthand and noun phrases can be complete answers: 'PFS and DDI', 'toxicity', and 'cost and convenience' answer a question about decision factors. 'I would use it' can answer a clinical-reaction question. Do not request an explanation merely because a topic or acronym was mentioned.",
     "answerEvidence contains exact, unchanged excerpts from the participantMessage supporting answered or partial status. Do not include an information request as evidence of a research answer. Use an empty array for not_answered. Do not invent, expand acronyms within, or paraphrase evidence excerpts.",
     "For 'PFS and DDI; what is the interaction guidance?', credit the stated priorities and separately handle the source question. For 'What is PFS?' or 'Tell me about DDI', do not credit a priorities answer. Clarifications, acknowledgement, and requests to repeat the research question are not substantive answers.",

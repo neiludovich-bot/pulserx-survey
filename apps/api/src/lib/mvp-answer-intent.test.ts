@@ -206,4 +206,33 @@ describe("participant answer intent through the MVP survey service", () => {
     expect(audited?.session.answeredQuestionIds).toContain("decision_framework");
     expect(audited?.session.answerEvidenceByQuestionId.decision_framework).toContain(content);
   });
+
+  it("keeps a request for a simpler explanation inside the source detour", async () => {
+    const sessionId = await startAtNubeqaFactors();
+    await submitMvpCustomGptSurveyTurn({
+      sessionId,
+      content: "What drug interactions should I consider?",
+    });
+    mocks.source.mockClear();
+    const content = "Can you explain that more simply?";
+    const followup = await submitMvpCustomGptSurveyTurn({ sessionId, content });
+
+    expect(followup.status).toBe("active");
+    expect(followup.currentQuestion).toBe(frameworkQuestion);
+    expect(followup.messages.at(-1)?.content).not.toContain(frameworkQuestion);
+    expect(mocks.source).toHaveBeenCalledTimes(1);
+    expect(mocks.source).toHaveBeenCalledWith(expect.objectContaining({
+      participantMessage: content,
+      responseMode: "answer_only",
+    }));
+    const audited = mocks.persistTurn.mock.calls.find(([input]) =>
+      input.turn.participantMessage === content,
+    )?.[0];
+    expect(audited?.session.answeredQuestionIds).not.toContain("decision_framework");
+
+    const resumed = await submitMvpCustomGptSurveyTurn({ sessionId, content: "Thanks." });
+    expect(resumed.status).toBe("active");
+    expect(resumed.currentQuestion).toBe(frameworkQuestion);
+    expect(resumed.messages.at(-1)?.content).toBe(frameworkQuestion);
+  });
 });

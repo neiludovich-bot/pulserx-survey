@@ -84,4 +84,47 @@ describe("typed hybrid participant turn interpretation", () => {
     expect(route).toMatchObject({ provider: "deterministic", answerStatus: "not_answered", asksSourceQuestion: true, answerEvidence: [] });
     expect(route.decision.needsSource).toBe(true);
   });
+
+  it.each([
+    ["Can you explain that more simply?", "Can you explain that more simply?", "answered"],
+    ["What drug interactions should I consider?", "drug interactions", "answered"],
+    ["Please. Can you explain that more simply? Thanks.", "Can you explain that more simply?", "partial"],
+  ])("rejects model answer credit based only on a follow-up request: %s", async (participantContent, excerpt, answerStatus) => {
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, answerStatus, answerEvidence: [excerpt] } });
+    const route = await classifyMvpTurnRouteHybrid({
+      ...input,
+      participantContent,
+      sourceConversationActive: true,
+      recentInterviewerContext: "Interviewer: The approved drug-interaction source describes medication review.",
+    });
+
+    expect(gateway.analyzeMvpTurnRoute).toHaveBeenCalledWith(expect.objectContaining({
+      currentQuestionId: "decision_framework",
+      sourceConversationActive: true,
+    }));
+    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "not_answered", asksSourceQuestion: true, answerEvidence: [] });
+    expect(route.decision.needsSource).toBe(true);
+    expect(route.error).toContain("only information requests");
+  });
+
+  it("still credits an actual answer mixed with a source follow-up while research is parked", async () => {
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: {
+      ...result,
+      answerEvidence: ["PFS and DDI are my priorities."],
+      asksSourceQuestion: true,
+      needsSource: true,
+      kind: "source_question",
+      sourceDirective: "Explain the preceding source answer more simply.",
+    } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, sourceConversationActive: true, participantContent: "PFS and DDI are my priorities. Can you explain that more simply?" });
+    expect(route).toMatchObject({ provider: "openai_hybrid", answerStatus: "answered", asksSourceQuestion: true, answerEvidence: ["PFS and DDI are my priorities."] });
+  });
+
+  it("rejects model navigation when the active source discussion has an explicit follow-up question", async () => {
+    gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: false } });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, sourceConversationActive: true, participantContent: "Can you explain that more simply?" });
+    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "not_answered", asksSourceQuestion: true, answerEvidence: [] });
+    expect(route.decision.needsSource).toBe(true);
+    expect(route.error).toContain("only information requests");
+  });
 });

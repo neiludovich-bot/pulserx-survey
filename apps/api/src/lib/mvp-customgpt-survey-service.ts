@@ -466,22 +466,6 @@ function compactHistoryText(value: string, maxLength = 320) {
     : compacted;
 }
 
-function recentInterviewerSourceContext(session: MvpSurveySession) {
-  const previousInterviewerMessages = session.messages
-    .filter((message) => message.role === "interviewer")
-    .slice(-4)
-    .map((message) => compactHistoryText(message.content, 260))
-    .filter(Boolean);
-
-  if (previousInterviewerMessages.length === 0) {
-    return null;
-  }
-
-  return previousInterviewerMessages
-    .map((message, index) => `${index + 1}. ${message}`)
-    .join(" ");
-}
-
 function recentParticipantInterpretationContext(session: MvpSurveySession) {
   return session.messages.slice(0, -1).slice(-8)
     .map((message) => `${message.role}: ${compactHistoryText(message.content, 800)}`)
@@ -3277,6 +3261,7 @@ export async function submitMvpCustomGptSurveyTurn(
         currentQuestionObjective: currentQuestionBefore?.objective ?? null,
         currentQuestionKeywords: currentQuestionBefore?.routeKeywords ?? [],
         currentQuestionCompletionSignals: currentQuestionBefore?.completionSignals ?? [],
+        sourceConversationActive: Boolean(session.pendingReturnQuestionId),
         recentInterviewerContext: recentParticipantInterpretationContext(session),
         candidateQuestions: routeAnalysisCandidates(session, input.content),
       })
@@ -3626,7 +3611,7 @@ export async function submitMvpCustomGptSurveyTurn(
         currentQuestion: questionText(currentQuestion(session)),
         selectedNextQuestion: selectedQuestionText,
         selectedQuestionSourceContext: sourceContextRequirement,
-        recentInterviewerContext: recentInterviewerSourceContext(session),
+        recentInterviewerContext: recentParticipantInterpretationContext(session),
         remainingSeconds: remaining,
         askedQuestions: askedQuestions(session),
         responseMode: sourceResponseMode,

@@ -12,7 +12,7 @@ import {
   type MvpTurnRouteDecision,
 } from "./mvp-turn-router";
 import type { MvpSurveySlug } from "./mvp-survey-definition";
-import { interpretMvpParticipantIntent, type MvpParticipantIntent, type MvpParticipantIntentInput } from "./mvp-participant-intent";
+import { interpretMvpParticipantIntent, participantOnlyRequestsInformation, type MvpParticipantIntent, type MvpParticipantIntentInput } from "./mvp-participant-intent";
 
 export type MvpRouteAnalysisCandidate = MvpTurnRouteCandidate;
 
@@ -147,6 +147,7 @@ export async function classifyMvpTurnRouteHybrid(
       currentQuestionObjective: input.currentQuestionObjective ?? null,
       currentQuestionKeywords: input.currentQuestionKeywords ?? [],
       currentQuestionCompletionSignals: input.currentQuestionCompletionSignals ?? [],
+      sourceConversationActive: input.sourceConversationActive ?? false,
       participantMessage: input.participantContent,
       recentInterviewerContext: input.recentInterviewerContext ?? null,
       candidateQuestions: input.candidateQuestions,
@@ -157,6 +158,12 @@ export async function classifyMvpTurnRouteHybrid(
     }
     if (result.answerStatus !== "not_answered" && !input.currentQuestion) {
       throw new Error("Route analysis cannot credit an answer without an active research question.");
+    }
+    if (
+      participantOnlyRequestsInformation(input.participantContent) &&
+      (result.answerStatus !== "not_answered" || (input.sourceConversationActive && !result.asksSourceQuestion))
+    ) {
+      throw new Error("A turn containing only information requests cannot receive research-answer credit or close an active source discussion.");
     }
     if (result.topic && result.topic !== "unknown_in_domain" && !result.topic.startsWith(`${input.surveySlug}_`)) {
       throw new Error("Route analysis cannot select a source topic belonging to another survey.");
