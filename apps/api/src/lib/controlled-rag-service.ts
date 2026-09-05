@@ -112,6 +112,63 @@ function compact(value: string | null | undefined, maxChars: number) {
     : `${value.slice(0, maxChars - 18).trimEnd()} [truncated]`;
 }
 
+function isReferentialClarification(message: string) {
+  const text = normalizeText(message)
+    .replace(/^(?:please\s+|(?:can|could|would) (?:you )?)/, "")
+    .replace(/^please\s+/, "")
+    .replace(/\s+please$/, "");
+
+  // Match the entire request so a newly named topic always owns retrieval.
+  return /^(?:explain(?: (?:that|this|it))?(?: (?:more simply|in simpler terms|in simple terms|again|a bit more))?|(?:say|tell me) more(?: about (?:that|this|it))?|simplify(?: (?:that|this|it))?|what does (?:that|this|it) mean)$/.test(text);
+}
+
+function sourceTurnInputs(input: ControlledRagSurveyTurnInput) {
+  if (input.responseMode !== "answer_only") {
+    return { retrievalQuery: input.participantMessage, retrievalInput: input, compositionInput: input };
+  }
+
+  // The research question is parked during a source discussion. Keep lane
+  // constraints and the reactive source directive, but do not retrieve or
+  // compose an answer to that parked research question.
+  const compositionInput = {
+    ...input,
+    currentQuestion: null,
+    selectedNextQuestion: null,
+    surveyContext: input.surveyContext.split("\n").filter((line) =>
+      !/^(?:Current question|Selected next question|Parked survey question to resume after a source-answer pause|Upcoming unasked guide preview):/i.test(line.trim()),
+    ).join("\n"),
+  };
+  let retrievalQuery = input.participantMessage;
+  if (isReferentialClarification(input.participantMessage)) {
+    const exchanges = [...(input.recentInterviewerContext ?? "").matchAll(
+      /(?:^|\n)(participant|interviewer):\s*([\s\S]*?)(?=\n(?:participant|interviewer):|$)/gi,
+    )];
+    const previousRequest = exchanges.reverse().find(
+      (exchange) => exchange[1]?.toLowerCase() === "participant"
+        && exchange[2]?.trim()
+        && !isReferentialClarification(exchange[2]),
+    );
+    if (previousRequest?.[2]) {
+      retrievalQuery = previousRequest[2].trim();
+    } else {
+      // The bounded history may contain another clarification rather than the
+      // original source question. Its answer still carries the active topic.
+      const previousAnswer = exchanges.find(
+        (exchange) => exchange[1]?.toLowerCase() === "interviewer" && exchange[2]?.trim(),
+      );
+      if (previousAnswer?.[2]) {
+        retrievalQuery = previousAnswer[2].trim();
+      }
+    }
+  }
+
+  return {
+    retrievalQuery,
+    retrievalInput: { ...compositionInput, participantMessage: retrievalQuery },
+    compositionInput,
+  };
+}
+
 function chunkHaystack(chunk: ControlledRagChunk) {
   return normalizeText(
     [chunk.title, chunk.description, chunk.tags.join(" "), chunk.text].join(
@@ -1574,11 +1631,13 @@ async function composeSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
   evidenceCard: ClinicalEvidenceCard | null,
+  retrievalQuery: string,
 ) {
   const gateway = getOptionalOpenAIGateway();
+  const fallbackInput = { ...input, participantMessage: retrievalQuery };
 
   if (!gateway || process.env.NODE_ENV === "test") {
-    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks, evidenceCard));
+    return cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard));
   }
 
   try {
@@ -1619,26 +1678,27 @@ async function composeSourceAnswer(
       chunks,
     );
   } catch {
-    return cleanClinicalAnswer(fallbackSourceAnswer(input, chunks, evidenceCard));
+    return cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard));
   }
 }
 
 export async function askControlledRagForSurveyInterviewerTurn(
   input: ControlledRagSurveyTurnInput,
 ): Promise<ControlledRagSurveyTurnResult> {
-  const retrievedChunks = await retrieveChunks(input);
-  const initialEvidenceCard = buildClinicalEvidenceCard(input, retrievedChunks);
+  const { retrievalQuery, retrievalInput, compositionInput } = sourceTurnInputs(input);
+  const retrievedChunks = await retrieveChunks(retrievalInput);
+  const initialEvidenceCard = buildClinicalEvidenceCard(retrievalInput, retrievedChunks);
   const chunks = orderChunksForEvidenceCard(
     retrievedChunks,
     initialEvidenceCard,
   );
-  const evidenceCard = buildClinicalEvidenceCard(input, chunks);
+  const evidenceCard = buildClinicalEvidenceCard(retrievalInput, chunks);
   const queryTokens = tokens(
     [
-      input.participantMessage,
-      input.selectedNextQuestion,
-      input.selectedQuestionSourceContext,
-      input.currentQuestion,
+      retrievalInput.participantMessage,
+      retrievalInput.selectedNextQuestion,
+      retrievalInput.selectedQuestionSourceContext,
+      retrievalInput.currentQuestion,
       evidenceCard?.title,
       evidenceCard?.clinicianBrief,
       evidenceCard?.keyFacts.join(" "),
@@ -1658,11 +1718,11 @@ export async function askControlledRagForSurveyInterviewerTurn(
     };
   }
 
-  const turnAssets = await retrieveTurnAssets(input, chunks, evidenceCard);
+  const turnAssets = await retrieveTurnAssets(retrievalInput, chunks, evidenceCard);
   const references = referencesForChunks(chunks, turnAssets, queryTokens);
   const responseMode = input.responseMode ?? "answer_then_ask";
   const composedAnswer = stripComposerFollowUpQuestions(
-    await composeSourceAnswer(input, chunks, evidenceCard),
+    await composeSourceAnswer(compositionInput, chunks, evidenceCard, retrievalQuery),
     input.selectedNextQuestion,
     responseMode,
   );
@@ -1684,6 +1744,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
 }
 
 export const controlledRagTestInternals = {
+  sourceTurnInputs,
   displayTopicForTurn,
   buildClinicalEvidenceCard,
   cleanClinicalAnswer,

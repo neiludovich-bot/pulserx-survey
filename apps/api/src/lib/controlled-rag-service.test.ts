@@ -1,10 +1,100 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as modelGateway from "./model-gateway";
 import {
   askControlledRagForSurveyInterviewerTurn,
   controlledRagTestInternals,
 } from "./controlled-rag-service";
 
 describe("controlled RAG source provider", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  const parkedFactorsInput = {
+    surveySlug: "nubeqa" as const,
+    participantMessage: "Can you explain that more simply?",
+    surveyContext: "Active disease lane: mCSPC. Use only approved source material.",
+    currentQuestion: "What are your top factors when evaluating systemic intensification?",
+    selectedNextQuestion: "What are your top factors when evaluating systemic intensification?",
+    selectedQuestionSourceContext: "Answer the participant's source question without asking a research question.",
+    recentInterviewerContext: "participant: What are the known drug-drug interactions with NUBEQA?\ninterviewer: NUBEQA has CYP3A4 and BCRP interaction considerations. [1]",
+    responseMode: "answer_only" as const,
+  };
+
+  it.each([
+    "Can you explain that more simply?",
+    "Can explain more simply?",
+    "Say more.",
+    "What does that mean?",
+  ])("keeps a referential clarification on DDI while the factors question is parked: %s", async (participantMessage) => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      ...parkedFactorsInput,
+      participantMessage,
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(result.references[0]?.title).toContain("Safety, Dosing, and DDI");
+    expect(result.answer).toContain("CYP3A4");
+    expect(result.answer).not.toContain("For nmCRPC, ARAMIS frames");
+    expect(result.answer).not.toContain("top factors");
+  });
+
+  it("lets an explicit new ARANOTE request replace the previous DDI source topic", async () => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      ...parkedFactorsInput,
+      participantMessage: "Can you explain ARANOTE rPFS more simply?",
+    });
+
+    expect(result.references[0]?.title).toContain("ARANOTE");
+    expect(result.references[0]?.title).not.toContain("Safety, Dosing, and DDI");
+    expect(result.answer).toContain("rPFS is the primary endpoint");
+  });
+
+  it("retains the DDI source topic across successive referential clarifications", async () => {
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      ...parkedFactorsInput,
+      participantMessage: "What does that mean?",
+      recentInterviewerContext: "participant: Can you explain that more simply?\ninterviewer: Some medicines affect NUBEQA exposure through CYP3A4. NUBEQA also affects BCRP substrates. [1]",
+    });
+
+    expect(result.references[0]?.title).toContain("Safety, Dosing, and DDI");
+    expect(result.answer).toContain("CYP3A4");
+    expect(result.answer).not.toContain("For nmCRPC, ARAMIS frames");
+  });
+
+  it("composes the original clarification with DDI evidence and history, excluding parked questions", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const composeControlledRagAnswer = vi.fn().mockResolvedValue({
+      result: { answerBody: "Some medicines can change NUBEQA exposure. [1]" },
+    });
+    vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({
+      composeControlledRagAnswer,
+    } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
+
+    const result = await askControlledRagForSurveyInterviewerTurn({
+      ...parkedFactorsInput,
+      surveyContext: [
+        parkedFactorsInput.surveyContext,
+        `Current question: ${parkedFactorsInput.currentQuestion}`,
+        `Selected next question: ${parkedFactorsInput.selectedNextQuestion}`,
+        `Parked survey question to resume after a source-answer pause: ${parkedFactorsInput.currentQuestion}`,
+        "Upcoming unasked guide preview: What do you think of ARANOTE?",
+      ].join("\n"),
+    });
+
+    expect(result.enabled).toBe(true);
+    expect(composeControlledRagAnswer).toHaveBeenCalledWith(expect.objectContaining({
+      participantMessage: parkedFactorsInput.participantMessage,
+      currentQuestion: null,
+      selectedNextQuestion: null,
+      surveyContext: parkedFactorsInput.surveyContext,
+      selectedQuestionSourceContext: parkedFactorsInput.selectedQuestionSourceContext,
+      recentInterviewerContext: parkedFactorsInput.recentInterviewerContext,
+      clinicalEvidenceCard: expect.objectContaining({ topic: "nubeqa_safety_dosing" }),
+    }));
+  });
+
   it("retrieves cited BRUKINSA SEQUOIA context and returns to the selected question", async () => {
     const result = await askControlledRagForSurveyInterviewerTurn({
       surveySlug: "brukinsa",
