@@ -274,6 +274,7 @@ export const sourceGroundingReviewResultSchema = z.object({
 
 export const contextualSourceCompositionInputSchema = controlledRagCompositionInputSchema.extend({
   groundingViolations: z.array(sourceGroundingViolationSchema).max(16),
+  previousDraft: controlledRagContextualCompositionResultSchema.pick({ practicalAnswer: true, qualification: true }).nullable().optional(),
 }).strict();
 
 export type SourceGroundingReviewResult = z.infer<typeof sourceGroundingReviewResultSchema>;

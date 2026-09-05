@@ -17,7 +17,7 @@ import {
   mvpCustomGptSurveyVoiceTurnResponseSchema,
 } from "@interview/schemas";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
-import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, withSourceNavigationHint } from "./mvp-source-discussion";
+import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
 import { isReferentialClarification } from "./controlled-rag-service";
 import { applyParticipantUnderstanding, presentationFor } from "./mvp-presentation";
 import { getOptionalOpenAIGateway } from "./model-gateway";
@@ -3806,7 +3806,7 @@ export async function submitMvpCustomGptSurveyTurn(
     failSourceDiscussion(session.moderatorState, sourceDiscussionFailure(sourceOutcome, customGptReason ?? "Source answer unavailable."));
     actualAskedQuestion = null;
     references = [];
-    assistantContent = withSourceNavigationHint(session.moderatorState, "I couldn't produce a supported answer to that question. I've kept our place in the interview.");
+    assistantContent = withSourceNavigationHint(session.moderatorState, sourceFailureParticipantMessage(sourceOutcome));
     nextAction = "ask";
   }
 

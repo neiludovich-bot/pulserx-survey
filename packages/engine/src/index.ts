@@ -27,6 +27,7 @@ export * from "./demo-study";
 export * from "./medical-survey-study";
 export * from "./openai-workflows";
 export * from "./moderator-planning";
+export * from "./source-failure";
 export * from "./policy-rules";
 export * from "./stop-rules";
 export * from "./study-compiler";

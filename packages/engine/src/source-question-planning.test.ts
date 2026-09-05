@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { zodTextFormat } from "openai/helpers/zod";
 import { sourceQuestionPlanInputSchema, sourceQuestionPlanSchema, type SourceQuestionPlan, type SourceQuestionPlanInput } from "../../schemas/src/source-question";
 import { moderatorEvidenceSelectionInputSchema } from "../../schemas/src/moderator";
-import { controlledRagCompositionInputSchema, controlledRagContextualCompositionResultSchema, sourceGroundingReviewResultSchema, sourceGroundingReviewInputSchema } from "../../schemas/src/index";
+import { controlledRagCompositionInputSchema, controlledRagContextualCompositionResultSchema, contextualSourceCompositionInputSchema, sourceGroundingReviewResultSchema, sourceGroundingReviewInputSchema } from "../../schemas/src/index";
 vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../prompts/src/index"));
 import { OpenAIResponsesGateway } from "./openai-workflows";
@@ -179,6 +179,10 @@ describe("contextual composition contract", () => {
     expect(JSON.stringify(reviewInput)).not.toContain("Assume");
     const repairInput = JSON.parse(parse.mock.calls[2][0].input[0].content[0].text);
     expect(repairInput.groundingViolations).toEqual([violation]);
+    expect(JSON.parse(parse.mock.calls[0][0].input[0].content[0].text)).not.toHaveProperty("previousDraft");
+    expect(repairInput.previousDraft).toEqual({ practicalAnswer: draft.practicalAnswer, qualification: draft.qualification });
+    expect(repairInput.sources).toEqual(compositionInput.sources);
+    expect(JSON.stringify(repairInput.sources)).not.toContain(draft.practicalAnswer);
     expect(parse.mock.calls[1][0].model).toBe("source");
     expect(parse).toHaveBeenCalledTimes(4);
     expect("groundingReview" in result && result.groundingReview).toEqual({ version: 1, status: "supported", attempt: 2, model: "source-model-returned", responseId: "review-supported" });
@@ -191,6 +195,32 @@ describe("contextual composition contract", () => {
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: draft }).mockResolvedValueOnce({ output_parsed: review }).mockResolvedValueOnce({ output_parsed: draft }).mockResolvedValueOnce({ output_parsed: review });
     await expect(gatewayFor(parse).composeControlledRagAnswer(compositionInput)).rejects.toThrow("unsupported claims");
     expect(parse).toHaveBeenCalledTimes(4);
+  });
+
+  it("repairs an unsupported absence qualification from the actual draft and reviews the retained supported answer again", async () => {
+    const first = { practicalAnswer: typedAnswer.practicalAnswer, qualification: "The label does not name a special toxicity checklist. [1]", usedSourceIndexes: [2, 1] };
+    const violation = { excerpt: "The label does not name a special toxicity checklist.", reason: "The sources do not establish this absence claim." };
+    const repaired = { practicalAnswer: first.practicalAnswer, qualification: null, usedSourceIndexes: [2] };
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: first })
+      .mockResolvedValueOnce({ output_parsed: { version: 1, supported: false, unsupportedClaims: [violation] } })
+      .mockResolvedValueOnce({ output_parsed: repaired }).mockResolvedValueOnce({ output_parsed: supportedReview });
+    const result = await gatewayFor(parse).composeControlledRagAnswer(compositionInput);
+    expect(result.result.answerBody).toBe(first.practicalAnswer);
+    const secondInput = JSON.parse(parse.mock.calls[2][0].input[0].content[0].text);
+    expect(secondInput.previousDraft).toEqual({ practicalAnswer: first.practicalAnswer, qualification: first.qualification });
+    expect(secondInput.groundingViolations).toEqual([violation]);
+    const secondReview = JSON.parse(parse.mock.calls[3][0].input[0].content[0].text);
+    expect(secondReview).toEqual({ draft: { practicalAnswer: repaired.practicalAnswer, qualification: null }, sources: compositionInput.sources.map(({ index, text }) => ({ index, text })) });
+    expect(secondReview).not.toHaveProperty("previousDraft");
+    expect(parse).toHaveBeenCalledTimes(4);
+  });
+
+  it("accepts legacy repair inputs while strictly validating optional prior-draft content", () => {
+    const legacy = { ...compositionInput, groundingViolations: [] };
+    expect(contextualSourceCompositionInputSchema.parse(legacy)).not.toHaveProperty("previousDraft");
+    expect(contextualSourceCompositionInputSchema.parse({ ...legacy, previousDraft: null }).previousDraft).toBeNull();
+    expect(contextualSourceCompositionInputSchema.safeParse({ ...legacy, previousDraft: { practicalAnswer: "Draft", qualification: null, inventedSource: "not evidence" } }).success).toBe(false);
+    expect(contextualSourceCompositionInputSchema.safeParse({ ...legacy, previousDraft: { practicalAnswer: "x".repeat(2001), qualification: null } }).success).toBe(false);
   });
 
   it.each([

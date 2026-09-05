@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { sourceTurnOutcome } from "./source-turn-outcome";
 
 describe("source outcome audit", () => {
+  it("retains failures after composition when the reviewer has no trace, then a provider failure without any trace", () => {
+    const outcome = sourceTurnOutcome("composition_failure", { contextualCompositionAttempts: [
+      { trace: { response: { id: "composition-id", model: "source-model" } }, error: "PRIVATE", failure: { stage: "grounding", errorName: "ZodError", status: null, issues: [{ code: "invalid_type", path: ["supported"], received: "PRIVATE" }] } },
+      { error: "PRIVATE", failure: { stage: "composition", errorName: "RateLimitError", status: 429, providerCode: "insufficient_quota" } },
+    ] });
+    expect(outcome.attempts).toEqual([
+      { stage: "composition", code: "composed", responseId: "composition-id", model: "source-model" },
+      { stage: "grounding", code: "invalid_schema", responseId: null, model: null },
+      { stage: "composition", code: "rate_limited", responseId: null, model: null },
+    ]);
+    expect(JSON.stringify(outcome)).not.toContain("PRIVATE");
+  });
   it("retains review failure stage and IDs without storing rejected drafts", () => {
     const result = sourceTurnOutcome("composition_failure", {
       contextualCompositionAttempts: [{

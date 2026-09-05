@@ -1,4 +1,5 @@
 import { sourceTurnOutcomeSchema, type SourceTurnOutcome } from "@interview/schemas";
+import { sanitizeSourceFailure } from "@interview/engine";
 
 type RecordValue = Record<string, unknown>;
 function record(value: unknown): RecordValue {
@@ -8,19 +9,7 @@ function record(value: unknown): RecordValue {
 // Persist diagnostic categories and provider IDs, never rejected drafts or
 // arbitrary provider error messages (which can contain respondent content).
 function failureCode(value: unknown): string {
-  const error = record(value);
-  const message = typeof error.message === "string" ? error.message : typeof value === "string" ? value : "";
-  if (message.includes("unsupported claims")) return "unsupported_claims";
-  if (message.includes("individual citations")) return "citation_mismatch";
-  if (message.includes("contextual source")) return "missing_contextual_citation";
-  if (message.includes("append a question")) return "unexpected_question";
-  if (message.includes("exact draft excerpts")) return "invalid_grounding_verdict";
-  if (message.includes("returned no parsed output")) return "missing_structured_output";
-  if (error.name === "ZodError") return "invalid_schema";
-  if (error.status === 429) return "rate_limited";
-  if (error.status === 401 || error.status === 403) return "authentication_failed";
-  if (error.name === "APIConnectionTimeoutError") return "provider_timeout";
-  return "composition_unavailable";
+  return sanitizeSourceFailure(value, "composition").code;
 }
 
 function traceAttempt(trace: unknown, stage: "composition" | "grounding", code: string) {
@@ -38,11 +27,14 @@ export function sourceTurnOutcome(status: SourceTurnOutcome["status"], value?: u
   const entries = Array.isArray(input.contextualCompositionAttempts) ? input.contextualCompositionAttempts.slice(-2) : [];
   const attempts = entries.flatMap((entry: unknown) => {
     const attempt = record(entry);
-    const code = attempt.error ? failureCode(attempt.error) : "supported";
+    const failure = attempt.failure ? sanitizeSourceFailure(attempt.failure, record(attempt.failure).stage === "grounding" ? "grounding" : "composition") : null;
+    const code = failure?.code ?? (attempt.error ? failureCode(attempt.error) : "supported");
+    const failedGrounding = failure?.stage === "grounding";
     return [
-      ...(attempt.trace ? [traceAttempt(attempt.trace, "composition", attempt.groundingTrace ? "composed" : code)] : []),
+      ...(attempt.trace ? [traceAttempt(attempt.trace, "composition", attempt.groundingTrace || failedGrounding ? "composed" : code)] : []),
       ...(attempt.groundingTrace ? [traceAttempt(attempt.groundingTrace, "grounding", code)] : []),
-      ...(!attempt.trace && !attempt.groundingTrace ? [traceAttempt(null, "composition", code)] : []),
+      ...(!attempt.groundingTrace && failedGrounding ? [traceAttempt(null, "grounding", code)] : []),
+      ...(!attempt.trace && !attempt.groundingTrace && !failedGrounding ? [traceAttempt(null, "composition", code)] : []),
     ];
   });
   if (!attempts.length && value) attempts.push(traceAttempt(input.trace, "composition", status === "success" ? "composed" : failureCode(value)));

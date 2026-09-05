@@ -30,6 +30,17 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
+  it.each(["rate_limited", "provider_timeout", "authentication_failed"])("describes temporary source unavailability without implying unsupported evidence (%s)", async (code) => {
+    const sessionId = startAtFamiliarity("nubeqa");
+    mocks.source.mockResolvedValueOnce({ ...success("nubeqa"), enabled: false, answer: null, reason: "PRIVATE PROVIDER MESSAGE", sourceOutcome: { version: 1, status: "composition_failure", attempts: [{ stage: "grounding", code, responseId: null, model: null }] } });
+    const response = await submitMvpCustomGptSurveyTurn({ sessionId, content: "What drug interactions are described?" });
+    expect(response.messages.at(-1)?.content).toContain("can't access the source information right now");
+    expect(response.messages.at(-1)?.content).toContain('say "retry"');
+    expect(response.messages.at(-1)?.content).not.toMatch(/supported answer|PRIVATE|429|API/);
+    expect(response.messages.at(-1)?.references).toEqual([]);
+    expect(mocks.persist.mock.calls.at(-1)![0].session).toMatchObject({ pendingReturnQuestionId: "familiarity", moderatorState: { sourceDiscussion: { status: "failed", pendingQuestion: "What drug interactions are described?" } } });
+  });
+
   it.each([true, false])("clarifies a failed practical question without losing it or reusing older evidence across reloads (replacement packet=%s)", async (hasReplacementPacket) => {
     const sessionId = startAtFamiliarity("nubeqa");
     mocks.source.mockResolvedValue(success("nubeqa"));

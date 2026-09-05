@@ -1,4 +1,5 @@
 import { sourceGroundingReviewInputSchema, sourceGroundingReviewResultSchema } from "@interview/schemas";
+import { sanitizeSourceFailure } from "@interview/engine";
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
@@ -12,6 +13,19 @@ export function logSyntheticGroundingDiagnostics(surveyContext: string, error: u
   try {
     const entries = record(error).contextualCompositionAttempts;
     if (!Array.isArray(entries)) return;
+    const failures = entries.slice(-2).flatMap((entry: unknown) => {
+      const attempt = record(entry);
+      if (!attempt.failure || typeof attempt.failure !== "object") return [];
+      const failure = sanitizeSourceFailure(attempt.failure, record(attempt.failure).stage === "grounding" ? "grounding" : "composition");
+      const trace = record(failure.stage === "grounding" ? attempt.groundingTrace : attempt.trace);
+      const response = record(trace.response);
+      const request = record(trace.request);
+      return [{ ...failure,
+        responseId: typeof response.id === "string" ? response.id.slice(0, 200) : null,
+        model: typeof response.model === "string" ? response.model.slice(0, 120) : typeof request.model === "string" ? request.model.slice(0, 120) : null,
+      }];
+    });
+    if (failures.length) console.warn(JSON.stringify({ event: "source_qa_failure_diagnostics", attempts: failures }));
     const attempts = entries.slice(-2).flatMap((entry: unknown) => {
       const trace = record(record(entry).groundingTrace);
       const response = record(trace.response);

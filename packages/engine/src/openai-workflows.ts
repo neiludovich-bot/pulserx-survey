@@ -68,6 +68,7 @@ import {
 } from "@interview/schemas";
 import type { CompiledStudy } from "./study-compiler";
 import { normalizeModeratorPlanModelResult, validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
+import { sanitizeSourceFailure, type SourceFailureMetadata } from "./source-failure";
 import {
   buildDecisionCandidates,
   commitSelection,
@@ -279,11 +280,13 @@ export class OpenAIResponsesGateway {
 
   private async composeContextualSourceAnswer(input: ControlledRagCompositionInput) {
     const contextualIndexes = input.sources.filter((source) => source.evidenceRole === "contextual").map((source) => source.index);
-    const attempts: Array<{ trace?: OpenAIDebugTrace; groundingTrace?: OpenAIDebugTrace; error: string | null }> = [];
+    const attempts: Array<{ trace?: OpenAIDebugTrace; groundingTrace?: OpenAIDebugTrace; error: string | null; failure?: SourceFailureMetadata }> = [];
     let groundingViolations: SourceGroundingReviewResult["unsupportedClaims"] = [];
+    let previousDraft: Pick<ControlledRagContextualCompositionResult, "practicalAnswer" | "qualification"> | undefined;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       let trace: OpenAIDebugTrace | undefined;
       let groundingTrace: OpenAIDebugTrace | undefined;
+      let failureStage: SourceFailureMetadata["stage"] = "composition";
       try {
         const call = await this.runStructuredCall<ControlledRagContextualCompositionResult>({
           callType: "source_composition",
@@ -295,11 +298,13 @@ export class OpenAIResponsesGateway {
             ...contextualSourceCompositionSystemPrompt.instructions,
             ...(attempt === 2 ? contextualSourceCompositionSystemPrompt.repairInstructions : []),
           ],
-          input: contextualSourceCompositionInputSchema.parse({ ...input, groundingViolations }),
+          input: contextualSourceCompositionInputSchema.parse({ ...input, groundingViolations, ...(previousDraft ? { previousDraft } : {}) }),
           metadata: { survey_slug: input.surveySlug, composition_attempt: String(attempt) },
         });
         trace = call.trace;
         const result = controlledRagContextualCompositionResultSchema.parse(call.result);
+        // The next call edits this actual draft; it remains separate from source evidence.
+        previousDraft = { practicalAnswer: result.practicalAnswer, qualification: result.qualification };
         const answerBody = [result.practicalAnswer, result.qualification].filter(Boolean).join("\n\n");
         const citations = [...answerBody.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1]));
         const practicalCitations = [...result.practicalAnswer.matchAll(/\[(\d+)\]/g)].map((match) => Number(match[1]));
@@ -315,6 +320,7 @@ export class OpenAIResponsesGateway {
           throw new Error("Practical answer must cite at least one supplied contextual source.");
         }
         if (answerBody.includes("?")) throw new Error("Contextual composition cannot append a question.");
+        failureStage = "grounding";
         const review = await this.runStructuredCall<SourceGroundingReviewResult>({
           callType: "source_grounding_review",
           model: this.config.sourceModel ?? this.config.phrasingModel,
@@ -342,7 +348,8 @@ export class OpenAIResponsesGateway {
         };
       } catch (error) {
         const message = error instanceof Error ? error.message : "Contextual composition validation failed.";
-        attempts.push({ trace, groundingTrace, error: message });
+        const failure = sanitizeSourceFailure(error, failureStage);
+        attempts.push({ trace, groundingTrace, error: failure.code, failure });
         const recoverable = trace || (error instanceof Error && (error.name === "ZodError" || message.includes("returned no parsed output")));
         if (!recoverable || attempt === 2) {
           throw Object.assign(error instanceof Error ? error : new Error(message), { contextualCompositionAttempts: attempts });

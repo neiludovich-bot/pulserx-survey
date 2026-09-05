@@ -67,6 +67,12 @@ export function sourceDiscussionFailure(outcome: { status: string } | null | und
   return { stage, message: message.slice(0, 1000) };
 }
 
+export function sourceFailureParticipantMessage(outcome?: { attempts: Array<{ code: string }> } | null) {
+  return outcome?.attempts.some(({ code }) => ["rate_limited", "provider_timeout", "authentication_failed"].includes(code))
+    ? "I can't access the source information right now. I've kept our place in the interview."
+    : "I couldn't produce a supported answer to that question. I've kept our place in the interview.";
+}
+
 export function withSourceNavigationHint(state: ModeratorState, content: string) {
   const discussion = state.sourceDiscussion;
   if (!discussion || discussion.navigationHintShown) return content;

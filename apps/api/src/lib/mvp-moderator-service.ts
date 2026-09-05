@@ -4,7 +4,7 @@ import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSche
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 import { isReferentialClarification } from "./controlled-rag-service";
-import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, withSourceNavigationHint } from "./mvp-source-discussion";
+import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
 import { presentationFor } from "./mvp-presentation";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
@@ -137,7 +137,7 @@ export async function runModeratorTurn(input: Input) {
     if (answer) {
       completeSourceDiscussion(state, sourcePlanning.plan?.interpretedQuestion ?? discussionContext.pendingQuestion ?? (isReferentialClarification(request) && sourceTopic ? sourceTopic : request), sourceEvidencePacket);
     } else failSourceDiscussion(state, sourceDiscussionFailure(sourcePlanning.outcome, sourceReason ?? "Source answer unavailable."));
-    content = withSourceNavigationHint(state, answer ?? "I couldn't produce a supported answer to that question. I've kept our place in the interview.");
+    content = withSourceNavigationHint(state, answer ?? sourceFailureParticipantMessage(sourcePlanning.outcome));
   } else {
     const pendingPresentation = state.sourceDiscussion?.returnTarget?.kind === "priority" && state.priorities.some((p) => p.id === state.sourceDiscussion?.returnTarget?.id && p.status === "pending");
     if (!pendingPresentation) delete state.sourceDiscussion;
