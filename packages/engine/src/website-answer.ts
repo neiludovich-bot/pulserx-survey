@@ -23,7 +23,11 @@ export function validateWebsiteAnswer(input: ModeratorEvidenceSelectionInput, ou
   if (pfs.test(scope) && !otherEndpoints.test(scope) && result.paragraphs.some(p => otherEndpoints.test(p.text))) reject("unrequested_endpoint");
   const cited = new Set<string>();
   for (const paragraph of result.paragraphs) {
-    if (new Set(paragraph.sourceIds).size !== paragraph.sourceIds.length || /\[\d+\]|https?:\/\//i.test(paragraph.text)) reject("invalid_output");
+    // Remove only redundant markers for this paragraph's explicitly declared
+    // sources. The renderer adds numbered citations after ownership validation.
+    // Unknown/internal IDs still fail rather than silently losing provenance.
+    for (const sourceId of paragraph.sourceIds) paragraph.text = paragraph.text.split(`[${sourceId}]`).join("").trim();
+    if (!paragraph.text || new Set(paragraph.sourceIds).size !== paragraph.sourceIds.length || /\[(?:\d+|db:[^\]]+)\]|https?:\/\//i.test(paragraph.text)) reject("invalid_output");
     const sources = paragraph.sourceIds.map(id => evidence.selections.find(source => source.sourceId === id));
     if (sources.some(source => !source)) reject("invalid_output");
     paragraph.sourceIds.forEach(id => cited.add(id));

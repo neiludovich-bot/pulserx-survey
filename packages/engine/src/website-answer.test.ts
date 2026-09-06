@@ -18,6 +18,15 @@ const output = { version: 1, selections: [{ sourceId: "study-a", supportSpanRang
   unavailableReason: null, rationale: "Use the reported study result." };
 
 describe("one-pass website answers", () => {
+  it("removes redundant inline source IDs while preserving structured citations and clinical text", () => {
+    const id = "db:fixture";
+    const evidence = { ...input, candidates: [{ ...input.candidates[0], id }] };
+    const answer = { ...output, selections: [{ ...output.selections[0], sourceId: id, assetIds: [] }], paragraphs: [{ text: `${output.paragraphs[0].text}[${id}]`, sourceIds: [id] }] };
+    const result = validateWebsiteAnswer(evidence, answer);
+    expect(result.paragraphs).toEqual([{ text: output.paragraphs[0].text, sourceIds: [id] }]);
+    expect(() => validateWebsiteAnswer(evidence, { ...answer, paragraphs: [{ text: "A result.[db:unknown]", sourceIds: [id] }] })).toThrow("invalid_output");
+    expect(() => validateWebsiteAnswer(evidence, { ...answer, paragraphs: [{ text: `24 months.[${id}]`, sourceIds: [id] }] })).toThrow("unsupported_number");
+  });
   it("reconstructs original support and keeps paragraph/source ownership", () => {
     const result = validateWebsiteAnswer(input, output);
     expect(result.selections[0].supportExcerpt).toBe(input.candidates[0].text);
