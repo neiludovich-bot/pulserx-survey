@@ -1345,11 +1345,16 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
   // page's asset catalog. Prefer diverse pages, with a bounded second passage
   // only when fewer pages match. Keep the best content-search order intact.
   const pageCounts = new Map<string, number>();
+  const documentUrls = new Set<string>();
   const diverse: ControlledRagChunk[] = []; const additional: ControlledRagChunk[] = [];
   for (const source of activeDatabaseChunks) {
     const key = source.url || source.id;
+    const documentUrl = key.replace(/#page=\d+$/i, "");
     const count = pageCounts.get(key) ?? 0; pageCounts.set(key, count + 1);
-    if (!count) diverse.push(source); else if (count === 1) additional.push(source);
+    // PDF pages retain precise citations but share one document for diversity.
+    // Otherwise many pages from one label can displace every website figure.
+    if (!documentUrls.has(documentUrl)) { diverse.push(source); documentUrls.add(documentUrl); }
+    else if (count < 2) additional.push(source);
   }
   // Current-message relevance takes precedence; history only breaks ties.
   // Keep contextual candidates for anaphoric follow-ups without letting a

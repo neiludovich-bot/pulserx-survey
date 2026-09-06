@@ -10,6 +10,13 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("retains a website chart when multiple pages of one label rank ahead of it", async () => {
+    const rows = Array.from({ length: 10 }, (_, n) => ({ id: `page-${n}`, content: 'Adverse reactions.', tags: [], sourceDocument: { title: 'Safety', description: '', url: n < 9 ? `https://example.com/label.pdf#page=${n + 1}` : 'https://example.com/safety', tags: [], assets: n < 9 ? [] : [{ title: 'Adverse reactions chart', description: 'Adverse reactions', url: 'https://example.com/chart.png', assetKind: 'IMAGE', tags: [], priority: 1 }] } }));
+    mocks.query.mockResolvedValue(rows.map(row => ({ id: row.id }))); mocks.findMany.mockResolvedValue(rows);
+    const candidates = await controlledRagTestInternals.retrieveChunks({ ...input, participantMessage: 'side effect profile' });
+    expect(candidates[1].id).toBe('db:page-9');
+    expect(candidates[1].assets?.[0].title).toBe('Adverse reactions chart');
+  });
   it.each(["nubeqa", "brukinsa", "padcev"])("finds safety figures after a topic correction for %s", async brand => {
     const assets = ['Drug interactions', 'CYP3A4 drug interactions', 'Drug interactions dosing', 'Adverse reactions'].map((title, n) => ({ title, description: title, url: `https://example.com/${n}.png`, assetKind: 'IMAGE', tags: [], priority: n === 3 ? 1 : 100 }));
     mocks.query.mockResolvedValue([{ id: 'safety' }]);

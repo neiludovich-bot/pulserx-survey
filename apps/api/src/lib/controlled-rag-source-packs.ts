@@ -125,7 +125,7 @@ export const CONTROLLED_RAG_CHUNKS = [
       "infection",
     ],
     // Verified 2026-09-05: Important Safety Information at https://brukinsahcp.com/cll/efficacy/.
-    text: "BRUKINSA Important Safety Information covers hemorrhage, infections, cytopenias, second primary malignancies, cardiac arrhythmias, hepatotoxicity, and embryo-fetal toxicity. Practical guidance includes checking for bleeding or infection symptoms and monitoring complete blood counts during treatment. Arrhythmia symptoms to monitor include palpitations, dizziness, syncope, dyspnea, and chest discomfort. Assess bilirubin and transaminases before and during treatment; abnormal liver tests warrant more frequent monitoring. Withhold BRUKINSA for suspected drug-induced liver injury and discontinue if confirmed. These are general treatment precautions; they do not establish which individual adverse reactions result from a specific drug interaction.",
+    text: "BRUKINSA Important Safety Information covers hemorrhage, infections, cytopenias, second primary malignancies, cardiac arrhythmias, hepatotoxicity, and embryo-fetal toxicity. Practical guidance includes checking for bleeding or infection symptoms and monitoring complete blood counts during treatment. Arrhythmia symptoms to monitor include palpitations, dizziness, syncope, dyspnea, and chest discomfort. Assess bilirubin and transaminases before and during treatment; abnormal liver tests warrant more frequent monitoring. Withhold BRUKINSA for suspected drug-induced liver injury and discontinue if confirmed.",
   },
   {
     // Verified 2026-09-05 against the manufacturer's US PI, section 7.1,
@@ -229,7 +229,7 @@ export const CONTROLLED_RAG_CHUNKS = [
       "checklist",
     ],
     // Verified 2026-09-05: https://astellas.us/docs/PADCEV_label.pdf, sections 5.1-5.5.
-    text: "PADCEV prescribing information calls for close skin-reaction monitoring throughout treatment and blood-glucose monitoring in patients with or at risk for diabetes or hyperglycemia. Monitor new or worsening peripheral neuropathy, ocular disorders, and pneumonitis/ILD symptoms such as cough, dyspnea, or hypoxia. Management may require treatment interruption, dose reduction, or discontinuation according to the specific reaction and grade. These general warnings do not establish which adverse reactions are caused by a particular interacting medicine.",
+    text: "PADCEV prescribing information calls for close skin-reaction monitoring throughout treatment and blood-glucose monitoring in patients with or at risk for diabetes or hyperglycemia. Monitor new or worsening peripheral neuropathy, ocular disorders, and pneumonitis/ILD symptoms such as cough, dyspnea, or hypoxia. Management may require treatment interruption, dose reduction, or discontinuation according to the specific reaction and grade.",
   },
   {
     id: "padcev-resources",
@@ -433,7 +433,7 @@ export const CONTROLLED_RAG_CHUNKS = [
     ],
     // Verified 2026-09-05 against the cited HCP dosing page and its Important Safety Information.
     // Keep practical general warnings separate from the dedicated interaction source.
-    text: "The NUBEQA HCP dosing page gives 600 mg twice daily with food. Severe renal impairment (eGFR 15-29 mL/min/1.73 m2, without hemodialysis) or moderate hepatic impairment (Child-Pugh B) calls for 300 mg twice daily. For Grade 3 or greater toxicity or an intolerable adverse reaction, withhold treatment or reduce to 300 mg twice daily until symptoms improve; 600 mg twice daily may resume when the reaction returns to baseline. General safety guidance includes monitoring ischemic heart disease symptoms and managing cardiovascular risk factors, including hypertension, diabetes, and dyslipidemia; discontinue NUBEQA for Grade 3-4 ischemic heart disease. Counsel patients about seizure risk and activities where loss of consciousness could cause harm; consider discontinuation if a seizure develops during treatment. These are general NUBEQA warnings, not evidence that a particular interacting medicine causes ischemic heart disease or seizure.",
+    text: "The NUBEQA HCP dosing page gives 600 mg twice daily with food. Severe renal impairment (eGFR 15-29 mL/min/1.73 m2, without hemodialysis) or moderate hepatic impairment (Child-Pugh B) calls for 300 mg twice daily. For Grade 3 or greater toxicity or an intolerable adverse reaction, withhold treatment or reduce to 300 mg twice daily until symptoms improve; 600 mg twice daily may resume when the reaction returns to baseline. General safety guidance includes monitoring ischemic heart disease symptoms and managing cardiovascular risk factors, including hypertension, diabetes, and dyslipidemia; discontinue NUBEQA for Grade 3-4 ischemic heart disease. Counsel patients about seizure risk and activities where loss of consciousness could cause harm; consider discontinuation if a seizure develops during treatment.",
     assets: [
       {
         title: "NUBEQA mCSPC dosing options",
