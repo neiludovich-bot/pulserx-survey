@@ -1018,6 +1018,7 @@ export function MvpCustomGptSurveyModal({
   >(null);
   const didStart = useRef(false);
   const threadRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const speechAudioRef = useRef<HTMLAudioElement | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -1466,6 +1467,16 @@ export function MvpCustomGptSurveyModal({
   const isChoosingIntent =
     intentOptions.length > 0 && !survey && !selectedIntentSlug;
 
+  useEffect(() => {
+    if (textDisabled || isChoosingIntent || !survey) return;
+    // Restore typing after startup, sending, recovery or recording. Do not
+    // take focus away from a figure/link the participant chose while waiting.
+    const active = document.activeElement;
+    if (!active || active === document.body || active === composerRef.current || active.closest(".mvp-composer, .mvp-intent-picker")) {
+      composerRef.current?.focus({ preventScroll: true });
+    }
+  }, [textDisabled, isChoosingIntent, survey?.sessionId]);
+
   function handleOpenReference(
     input: SourcePanelReference,
   ) {
@@ -1512,7 +1523,7 @@ export function MvpCustomGptSurveyModal({
               {isSpeaking ? "Stop" : "Speak"}
             </button>
             <span className="mvp-timer">
-              {survey ? formatSeconds(survey.remainingSeconds) : "10:00"}
+              {survey?.remainingSeconds === 0 && survey.status !== "completed" ? "Extra time" : survey ? formatSeconds(survey.remainingSeconds) : "10:00"}
             </span>
             <span className={`mvp-status mvp-status-${survey?.status ?? "active"}`}>
               {survey?.status === "needs_setup"
@@ -1585,8 +1596,11 @@ export function MvpCustomGptSurveyModal({
 
         <form className="mvp-composer" onSubmit={handleSubmit}>
           <textarea
+            ref={composerRef}
             aria-label="Survey response"
-            disabled={textDisabled || isChoosingIntent}
+            disabled={isStarting || isRecording || survey?.status === "completed" || isChoosingIntent}
+            readOnly={isSending}
+            aria-busy={isSending}
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
