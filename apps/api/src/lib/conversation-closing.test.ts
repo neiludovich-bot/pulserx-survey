@@ -32,7 +32,8 @@ describe("optional final questions and recap", () => {
     const last = await runConversationRuntime({ ...input, state: second.state, question: second.question, message: "I'm all set" });
     expect(last.completed).toBe(true);
     expect(last.content).toContain("A brief recap");
-    expect(last.content).toContain("Trial efficacy");
+    expect(last.content).toContain("What is the result?");
+    expect(last.content).not.toContain("Trial efficacy");
     expect(last.content).not.toContain("A supported fact.");
     expect(mocks.present).not.toHaveBeenCalled();
   });

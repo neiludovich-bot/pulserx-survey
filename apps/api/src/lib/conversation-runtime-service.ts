@@ -91,14 +91,14 @@ export async function runConversationRuntime(input: Input) {
       prepared = understood;
       observation = understood.observation;
       if (state.research) state.research = updateResearchCoverage(state.research, observation, input.message);
-      if (observation.answerEvidence.length && input.question && !input.question.id.startsWith("conversation-") && !input.question.id.startsWith("objective-probe:")) remember([input.question.module]);
+      if (observation.answerEvidence.length && input.question && !input.question.id.startsWith("conversation-") && !input.question.id.startsWith("objective-probe:")) remember([input.question.canonicalQuestion]);
     }
     // The final-Q&A phase has no guide advancement or clinical reaction probes.
     // A current question always wins over a simultaneous signal to finish.
     if (state.closing) {
       if (observation?.request) {
         if (prepared?.text) {
-          remember(prepared.references.map(reference => reference.title));
+          remember([observation.request.text]);
           state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
         }
         return invite(state.closing.reason, prepared?.text ?? "I don't have enough information in the available material to answer that reliably. You can rephrase it or ask about another topic.", prepared?.references ?? []);
@@ -109,7 +109,7 @@ export async function runConversationRuntime(input: Input) {
     // Process the just-submitted response before moving into optional Q&A.
     if (input.timeExpired) {
       if (prepared?.text && observation?.request) {
-        remember(prepared.references.map(reference => reference.title));
+        remember([observation.request.text]);
         state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
       }
       return invite("time", observation?.request ? prepared?.text ?? "I don't have enough information in the available material to answer that reliably." : "", prepared?.references ?? []);
@@ -124,7 +124,7 @@ export async function runConversationRuntime(input: Input) {
       if (!prepared?.text) return done("I don't have enough information in the available material to answer that reliably. Could you narrow the question, or would you like to move on?", input.question);
       const wasDiscussing = Boolean(initialState.discussion);
       state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
-      remember(prepared.references.map(reference => reference.title));
+      remember([action === "present_topic" ? topic!.label : observation!.request!.text]);
       if (!wasDiscussing || action === "present_topic") state.reactionPending = true;
       if (topic && action === "present_topic") topic.status = "presented";
       const question = syntheticQuestion(`${wasDiscussing && action !== "present_topic" ? "conversation-clarification" : "conversation-reaction"}:${topic?.id ?? "discussion"}`,
@@ -191,7 +191,7 @@ export async function runConversationRuntime(input: Input) {
         : `Briefly explain the clinical information needed to consider this question: ${question.canonicalQuestion}. ${question.sourceContextRequirement}`;
       const result = await present(presentationQuery);
       if (result.text) {
-        remember(result.references.map(reference => reference.title));
+        remember([question.canonicalQuestion]);
         state.discussion = { query: question.canonicalQuestion, lastAnswer: result.text, sourceIds: result.sourceIds };
         return done(`${transition}${result.text}\n\n${question.canonicalQuestion}`, question, result.references);
       }
