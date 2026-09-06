@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { moderatorPlanRepairContextSchema, type ModeratorPlanRepairContext } from "@interview/schemas";
-import { moderatorReactionEvidenceOutsideRequest } from "@interview/engine";
+import { conversationModeratorPlan, moderatorReactionEvidenceOutsideRequest } from "@interview/engine";
 import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference, type SourceQuestionPlan, type SourceAnswerGroundingAudit } from "@interview/schemas";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
@@ -12,7 +12,7 @@ import { sanitizeModeratorPlanningFailure } from "./synthetic-moderator-diagnost
 import { prioritySourceLabel, prioritySourceQuestion } from "./mvp-priority-source-scope";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
-type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string };
+type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string; interpretation?: import("@interview/schemas").ConversationInterpretationResult };
 const normalized = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export async function runModeratorTurn(input: Input) {
@@ -30,6 +30,13 @@ export async function runModeratorTurn(input: Input) {
   const plannerErrors: string[] = [];
   const plannerFailures: ReturnType<typeof sanitizeModeratorPlanningFailure>[] = [];
   let repairContext: ModeratorPlanRepairContext | undefined;
+  if (!plan && input.interpretation) {
+    try { plan = conversationModeratorPlan(planningInput, input.interpretation); }
+    catch (error) {
+      plannerFailures.push(sanitizeModeratorPlanningFailure(error));
+      plannerErrors.push(error instanceof Error ? error.message : "Conversation interpretation failed validation.");
+    }
+  }
   // Retry the typed planning boundary once before mutating state or calling
   // the source/phrasing providers. Invalid output must not consume a probe.
   while (gateway && plannerAttempts < 2 && plan === null) {
@@ -126,7 +133,7 @@ export async function runModeratorTurn(input: Input) {
   const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket, requestOrigin: "participant" | "selected_priority" = "participant") => {
     sourceUsed = true;
     try {
-      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, requestOrigin, presentationPlan: presentationFor(state, "source_answer"), surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, requestOrigin, sourceQuestionPlan: requestOrigin === "participant" && plan?.sourceRequest ? input.interpretation?.sourceQuestionPlan : undefined, presentationPlan: presentationFor(state, "source_answer"), surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
       sourcePlanning.plan = answer.sourceQuestionPlan ?? null;
       sourcePlanning.grounding = answer.sourceAnswerGrounding ?? null;
       sourcePlanning.outcome = answer.sourceOutcome;

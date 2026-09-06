@@ -4,7 +4,7 @@ export * from "./evidence-ranges";
 import { sourceRequestSchema } from "./source-request";
 export * from "./source-request";
 import { sourceQuestionPlanSchema, sourceQuestionRecentTurnsSchema } from "./source-question";
-import { moderatorEvidenceRoleSchema, moderatorEvidenceContributionSchema } from "./moderator";
+import { moderatorEvidenceRoleSchema, moderatorEvidenceContributionSchema, moderatorStateSchema, moderatorPlanTokenModelResultSchema } from "./moderator";
 import { participantUnderstandingSchema, participantUnderstandingUpdateSchema, presentationPlanSchema } from "./presentation";
 export * from "./presentation";
 export * from "./moderator";
@@ -274,6 +274,30 @@ export function mvpTurnRouteModelSchemaForSurvey(surveySlug: z.infer<typeof mvpT
   const topics = mvpDisplayTopicSchema.options.filter((topic) => topic === "unknown_in_domain" || topic.startsWith(`${surveySlug}_`));
   return mvpTurnRouteAnalysisIndexedModelResultSchema.extend({ topic: z.enum(topics as [typeof topics[number], ...typeof topics[number][]]).nullable() }).strict();
 }
+
+// One interpretation boundary owns the current utterance. Application policy
+// still selects the action; a separate response boundary phrases that action.
+export const conversationInterpretationInputSchema = mvpTurnRouteAnalysisIndexedInputSchema.extend({
+  version: z.literal(1),
+  state: moderatorStateSchema,
+  isPriorityQuestion: z.boolean(),
+  isResumeCue: z.boolean(),
+}).strict();
+export const conversationInterpretationResultSchema = mvpTurnRouteAnalysisIndexedModelResultSchema
+  .omit({ schemaVersion: true, asksSourceQuestion: true, needsSource: true, kind: true, isUnanticipated: true, sourceDirective: true })
+  .extend({
+    version: z.literal(1),
+    reactionStatus: moderatorPlanTokenModelResultSchema.shape.reactionStatus,
+    reactionTargetPriorityId: moderatorPlanTokenModelResultSchema.shape.reactionTargetPriorityId,
+    reactionEvidenceRanges: moderatorPlanTokenModelResultSchema.shape.reactionEvidenceRanges,
+    priorityMentions: moderatorPlanTokenModelResultSchema.shape.priorityMentions,
+    sourceQuestionPlan: sourceQuestionPlanSchema.nullable(),
+  }).strict();
+export function conversationInterpretationSchemaForSurvey(surveySlug: z.infer<typeof mvpTurnRouteAnalysisInputSchema>["surveySlug"]) {
+  return conversationInterpretationResultSchema.extend({ topic: mvpTurnRouteModelSchemaForSurvey(surveySlug).shape.topic }).strict();
+}
+export type ConversationInterpretationInput = z.infer<typeof conversationInterpretationInputSchema>;
+export type ConversationInterpretationResult = z.infer<typeof conversationInterpretationResultSchema>;
 
 export const controlledRagContextualCompositionResultSchema = z.object({
   practicalAnswer: z.string().trim().min(1).max(2000),
@@ -659,6 +683,8 @@ export const openAIDebugTraceSchema = z.object({
     "source_composition",
     "source_grounding_review",
     "turn_route",
+    "conversation_interpretation",
+    "website_answer",
     "moderator_plan",
     "moderator_phrasing",
     "moderator_evidence",

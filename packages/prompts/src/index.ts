@@ -85,6 +85,9 @@ export const phraserSystemPrompt = {
   ],
 };
 
+export { conversationInterpreterSystemPrompt } from "./conversation";
+export { websiteAnswerSystemPrompt } from "./website-answer";
+
 export const interviewGuardrails = [
   "This system is an adaptive interviewer, not a generic chatbot.",
   "Canonical state belongs in Postgres.",

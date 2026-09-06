@@ -8,7 +8,7 @@ vi.mock("./prisma", () => ({ prisma: { $queryRaw: mocks.query, sourceChunk: { fi
 import { OpenAIResponsesGateway } from "../../../../packages/engine/src/openai-workflows";
 import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
 
-describe("reviewed answer scope and rendered references", () => {
+describe("legacy reviewed answer scope and rendered references", () => {
   afterEach(() => vi.unstubAllEnvs());
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s selected PFS scope through an adversarial expanded search and actual grounding repair", async (surveySlug) => {
     vi.stubEnv("NODE_ENV", "production");
@@ -29,6 +29,8 @@ describe("reviewed answer scope and rendered references", () => {
       .mockResolvedValueOnce({ output_parsed: { answerBody: fact, usedSourceIndexes: [1], limitations: [] } })
       .mockResolvedValueOnce({ output_parsed: { version: 1, supported: true, unsupportedClaims: [] } });
     mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    // Exercise the retained reviewed-provider fallback explicitly.
+    Object.defineProperty(mocks.gateway, "answerFromWebsite", { value: undefined });
     const result = await askControlledRagForSurveyInterviewerTurn({ surveySlug, participantMessage: selectedQuestion, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, surveyContext: "Synthetic scope regression", responseMode: "answer_only" });
     expect(result.enabled).toBe(true);
     expect(result.answer).toBe(fact);
@@ -56,6 +58,8 @@ describe("reviewed answer scope and rendered references", () => {
       .mockResolvedValueOnce({ output_parsed: repaired })
       .mockResolvedValueOnce({ output_parsed: { version: 1, supported: true, unsupportedClaims: [] } });
     mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    // Exercise the retained reviewed-provider fallback explicitly.
+    Object.defineProperty(mocks.gateway, "answerFromWebsite", { value: undefined });
     const sources = [
       { id: "trial-a", title: "Trial A rPFS", text: "Trial A reports radiographic progression-free survival in population A." },
       { id: "trial-b", title: "Trial B MFS", text: "Trial B reports metastasis-free survival in population B." },

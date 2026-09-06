@@ -16,3 +16,18 @@ export const sourceEvidenceSpanSelectionModelResultSchema = moderatorEvidenceSel
 export const contextualSourceEvidenceSpanSelectionModelResultSchema = moderatorContextualEvidenceSelectionModelResultSchema.extend({ selections: z.array(contextualSpanSelection).max(3) }).strict();
 export type SourceEvidenceSpanSelectionModelResult = z.infer<typeof sourceEvidenceSpanSelectionModelResultSchema>;
 export type SourceEvidenceSpanRange = z.infer<typeof sourceEvidenceSpanRangeSchema>;
+
+// Source selection and a concise explanation share one response boundary.
+// Citations are attached by the application from these owned source IDs.
+export const websiteAnswerModelResultSchema = sourceEvidenceSpanSelectionModelResultSchema.extend({
+  version: z.literal(1),
+  paragraphs: z.array(z.object({
+    text: z.string().trim().min(1).max(1400),
+    sourceIds: z.array(z.string().min(1)).min(1).max(3),
+  }).strict()).max(3),
+  unavailableReason: z.enum(["not_in_sources", "ambiguous_request"]).nullable(),
+}).strict();
+export type WebsiteAnswerModelResult = z.infer<typeof websiteAnswerModelResultSchema>;
+export const websiteAnswerInputSchema = sourceEvidenceSpansInputSchema.extend({
+  repairFeedback: z.enum(["invalid_output", "unsupported_number", "too_verbose"]).nullable(),
+}).strict();

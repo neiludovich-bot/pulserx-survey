@@ -16,7 +16,7 @@ const sources = ["nubeqa-ddi-profile", "nubeqa-safety-dosing"].map((id, index) =
 const base = { surveySlug: "nubeqa" as const, participantMessage: "What does that mean?", sourceTopicContext: "What should I monitor in practical terms?", evidencePacket: { sources }, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, surveyContext: "Synthetic requested-context regression", responseMode: "answer_only" as const };
 const reviewed = { version: 1, supported: true, unsupportedClaims: [] };
 
-describe("selected requested context through the actual composer gateway", () => {
+describe("legacy selected requested context through the actual composer gateway", () => {
   afterEach(() => vi.unstubAllEnvs());
   it.each(["direct", "contextual"] as const)("repairs a %s draft that only repeats the original relationship before grounding review", async (mode) => {
     vi.stubEnv("NODE_ENV", "production");
@@ -25,6 +25,8 @@ describe("selected requested context through the actual composer gateway", () =>
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: wrap("The interacting medicine changes exposure. [2]", [2]) })
       .mockResolvedValueOnce({ output_parsed: wrap(body, [1]) }).mockResolvedValueOnce({ output_parsed: reviewed });
     mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    // Exercise the retained reviewed-provider fallback explicitly.
+    Object.defineProperty(mocks.gateway, "answerFromWebsite", { value: undefined });
     const result = await askControlledRagForSurveyInterviewerTurn({ ...base, evidencePacket: { sources: sources.map((source) => ({ ...source, evidenceRole: mode === "direct" ? "direct" : source.evidenceRole })) } });
     expect(result.enabled).toBe(true);
     expect(result.answer).toBe(body);
@@ -41,6 +43,8 @@ describe("selected requested context through the actual composer gateway", () =>
     const omitted = { practicalAnswer: "The interacting medicine changes exposure. [2]", usedSourceIndexes: [2, 1], qualification: "General monitoring is separate. [1]" };
     const parse = vi.fn().mockResolvedValue({ output_parsed: omitted });
     mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    // Exercise the retained reviewed-provider fallback explicitly.
+    Object.defineProperty(mocks.gateway, "answerFromWebsite", { value: undefined });
     const result = await askControlledRagForSurveyInterviewerTurn(base);
     expect(parse).toHaveBeenCalledTimes(2);
     expect(result.enabled).toBe(true);
@@ -54,6 +58,8 @@ describe("selected requested context through the actual composer gateway", () =>
     vi.stubEnv("NODE_ENV", "production");
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { practicalAnswer: "The original relationship is described. [1]", usedSourceIndexes: [1], qualification: null } }).mockResolvedValueOnce({ output_parsed: reviewed });
     mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    // Exercise the retained reviewed-provider fallback explicitly.
+    Object.defineProperty(mocks.gateway, "answerFromWebsite", { value: undefined });
     const result = await askControlledRagForSurveyInterviewerTurn({ ...base, evidencePacket: { sources: [sources[0], { ...sources[1], contribution }] } });
     expect(result.enabled).toBe(true);
     expect(result.sourceOutcome?.status).toBe("success");

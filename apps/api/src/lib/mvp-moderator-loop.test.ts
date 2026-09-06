@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { sourceQuestionPlanSchema, sourceAnswerGroundingAuditSchema } from "@interview/schemas";
+import { sourceQuestionPlanSchema, sourceAnswerGroundingAuditSchema, conversationInterpretationResultSchema } from "@interview/schemas";
 import type { ModeratorPlanResult, ModeratorPhrasingInput, ModeratorEvidencePacket } from "@interview/schemas";
 import type { SourceAnswerProviderInput } from "./source-answer-service";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
@@ -670,4 +670,17 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(first.content).not.toMatch(/How does this information/);
     expect(mocks.phrase).not.toHaveBeenCalled();
   });
+});
+
+it.each(['nubeqa', 'brukinsa', 'padcev'] as const)('uses the validated shared %s interpretation without another moderator call', async (surveySlug) => {
+  const interpretation = conversationInterpretationResultSchema.parse({ version: 1, answerStatus: 'answered', answerEvidenceRanges: [{ startToken: 0, endToken: 2 }],
+    sourceRequest: null, sourceQuestionPlan: null, understandingUpdate: null, isOutOfScope: false, topic: null, suggestedQuestionIds: [], rationale: 'Retain both priorities.',
+    reactionStatus: 'not_answered', reactionTargetPriorityId: null, reactionEvidenceRanges: [],
+    priorityMentions: ['PFS', 'DDI'].map((label, index) => ({ label, sourceQuestion: `What ${label} information is available for ${surveySlug}?`, kind: 'initial_priority',
+      existingPriorityId: null, additionEvidenceRange: null, participantEvidenceRange: { startToken: index * 2, endToken: index * 2 } })) });
+  const turn = await runModeratorTurn(inputFor(surveySlug, { interpretation }));
+  expect(mocks.plan).not.toHaveBeenCalled();
+  expect(turn?.state.priorities.map(p => [p.label, p.status])).toEqual([['PFS', 'presented'], ['DDI', 'pending']]);
+  expect(turn?.decision.plannerAttempts).toBe(0);
+  expect(mocks.source).toHaveBeenCalledOnce();
 });

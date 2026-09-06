@@ -3221,6 +3221,12 @@ export async function submitMvpCustomGptSurveyTurn(
     !fixedFlow && contentLooksLikeSurveyStop(input.content);
   const sourceFastPath = !fixedFlow && !participantRequestedStop
     ? sourceDiscussionFastPath(session.moderatorState, input.content, contentLooksLikeReturnToSurveyCue(input.content)) : null;
+  const isPriorityQuestion = Boolean(currentQuestionBefore &&
+    !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id) &&
+    !currentQuestionBefore.id.startsWith("moderator-reaction:") &&
+    /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
+  const canInterpretConversation = discussionBefore?.returnTarget?.kind !== "guide" && session.surveySlug !== "data" && !hardTimeboxExpired(session) &&
+    ((currentQuestionBefore && !currentQuestionBefore.close && currentQuestionBefore.id !== "intro_consent") || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some(p => p.status === "pending" || p.status === "presented"));
   // Interpret answers and participant questions independently, before answer
   // rejection or research selection. Medical terms alone are not requests.
   let participantAnalysis: MvpHybridTurnRouteDecision | null = sourceFastPath
@@ -3248,6 +3254,7 @@ export async function submitMvpCustomGptSurveyTurn(
       }
     : !fixedFlow && !participantRequestedStop
     ? await classifyMvpTurnRouteHybrid({
+        ...(canInterpretConversation ? { conversationContext: { state: session.moderatorState, isPriorityQuestion, isResumeCue: contentLooksLikeReturnToSurveyCue(input.content) } } : {}),
         surveySlug: session.surveySlug,
         sourceBrand: session.sourceBrand,
         understanding: session.moderatorState.understanding,
@@ -3275,6 +3282,7 @@ export async function submitMvpCustomGptSurveyTurn(
     answerEvidence: participantAnalysis.answerEvidence, modelResult: participantAnalysis.modelResult,
     error: participantAnalysis.error, failureDiagnosis: participantAnalysis.failureDiagnosis,
     modelAttempts: participantAnalysis.modelAttempts, modelFailures: participantAnalysis.modelFailures,
+    conversationInterpretation: participantAnalysis.conversationInterpretation,
   } : null;
   if (participantAnalysis?.sourceRequest !== undefined) {
     const asksSourceQuestion = Boolean(participantAnalysis.sourceRequest);
@@ -3313,14 +3321,11 @@ export async function submitMvpCustomGptSurveyTurn(
       if (participantAnalysis.answerStatus === "answered" && !session.answeredQuestionIds.includes(currentQuestionBefore.id)) session.answeredQuestionIds.push(currentQuestionBefore.id);
     }
   }
-  const isPriorityQuestion = Boolean(currentQuestionBefore &&
-    !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id) &&
-    !currentQuestionBefore.id.startsWith("moderator-reaction:") &&
-    /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
   if (!fixedFlow && discussionBefore?.returnTarget?.kind !== "guide" && session.surveySlug !== "data" && !participantRequestedStop && !hardTimeboxExpired(session) && participantAnalysis && !participantAnalysis.decision.isOutOfScope &&
       ((currentQuestionBefore && !currentQuestionBefore.close && currentQuestionBefore.id !== "intro_consent") || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some((p) => p.status === "pending" || p.status === "presented"))) {
     logSyntheticModeratorDecision({ studyName: session.studyName, surveySlug: session.surveySlug, phase: "before_moderator", turnSequence: sequenceBase, participantMessage: input.content, route: participantAnalysis, state: session.moderatorState });
     const moderator = await runModeratorTurn({
+      interpretation: participantAnalysis.conversationInterpretation,
       state: session.moderatorState,
       brand: session.sourceBrand,
       surveySlug: session.surveySlug,
@@ -3738,6 +3743,7 @@ export async function submitMvpCustomGptSurveyTurn(
         surveySlug: sourceSurveySlug as "brukinsa" | "padcev" | "nubeqa",
         projectId: session.projectId,
         participantMessage: sourceRequestContent,
+        sourceQuestionPlan: participantAnalysis?.conversationInterpretation?.sourceQuestionPlan,
         sourceTopicContext: priorSourceContext.sourceTopicContext,
         evidencePacket: priorSourceContext.evidencePacket,
         surveyContext: surveyContext(

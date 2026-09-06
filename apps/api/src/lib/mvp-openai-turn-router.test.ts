@@ -2,11 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { env } from "../env";
 import { classifyMvpTurnRouteHybrid, sanitizeMvpRouteFailure } from "./mvp-openai-turn-router";
 
-const gateway = vi.hoisted(() => ({ analyzeMvpTurnRoute: vi.fn() }));
+const gateway = vi.hoisted(() => ({ analyzeMvpTurnRoute: vi.fn(), interpretConversation: vi.fn() }));
 vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => gateway }));
 
 const originalProvider = env.MVP_TURN_ROUTER_PROVIDER;
-beforeEach(() => { env.MVP_TURN_ROUTER_PROVIDER = "openai_hybrid"; gateway.analyzeMvpTurnRoute.mockReset(); });
+beforeEach(() => { env.MVP_TURN_ROUTER_PROVIDER = "openai_hybrid"; gateway.analyzeMvpTurnRoute.mockReset(); gateway.interpretConversation.mockReset(); });
 afterEach(() => { env.MVP_TURN_ROUTER_PROVIDER = originalProvider; });
 
 const input = {
@@ -37,6 +37,16 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it("uses one shared interpreter when conversation state is supplied", async () => {
+    const interpretation = { version: 1, rationale: "Retain both priorities." };
+    gateway.interpretConversation.mockResolvedValue({ result, interpretation });
+    const conversationContext = { state: { version: 1 as const, priorities: [], activePriorityId: null }, isPriorityQuestion: true, isResumeCue: false };
+    const routed = await classifyMvpTurnRouteHybrid({ ...input, conversationContext });
+    expect(routed).toMatchObject({ answerStatus: "answered", modelAttempts: 1, conversationInterpretation: interpretation });
+    expect(gateway.interpretConversation).toHaveBeenCalledOnce();
+    expect(gateway.interpretConversation.mock.calls[0][0]).toMatchObject(conversationContext);
+    expect(gateway.analyzeMvpTurnRoute).not.toHaveBeenCalled();
+  });
   it.each(["wrong_survey_topic", "invalid_schema"])("repairs one local %s failure without changing the original participant/question context", async (category) => {
     const participantContent = "Not very familiar with it.";
     const invalid = { ...result, answerEvidence: [participantContent], ...(category === "wrong_survey_topic" ? { topic: "padcev_safety_management" } : { answerStatus: "UNKNOWN" }) };

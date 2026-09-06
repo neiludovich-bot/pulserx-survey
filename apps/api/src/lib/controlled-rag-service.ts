@@ -13,6 +13,7 @@ import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocus
 import { recoverSelectedSourceExcerpt } from "./source-extractive-recovery";
 import { sourceContentSearchSql } from "./source-retrieval-query";
 import { planSourceQuestion } from "./source-question-planner";
+import { answerFromWebsite, renderWebsiteAnswer } from "./website-answer-service";
 import { sourceTurnOutcome } from "./source-turn-outcome";
 import { logSyntheticGroundingDiagnostics } from "./synthetic-grounding-diagnostics";
 import { sourcePresentationForTurn } from "./source-presentation";
@@ -1665,6 +1666,8 @@ export async function askControlledRagForSurveyInterviewerTurn(
     ? sourceQuestionPlanSchema.parse({ version: 1, interpretedQuestion: original.retrievalQuery, retrievalQueries: [original.retrievalQuery],
         answerApproach: "direct", usesSourceContext: false, contextBoundary: null,
         rationale: "Use the application-selected priority directly; preserve its participant-derived scope." })
+    : input.sourceQuestionPlan
+    ? sourceQuestionPlanSchema.parse(input.sourceQuestionPlan)
     : input.responseMode === "answer_only" && !(pureClarification && retained)
     ? await planSourceQuestion({ surveySlug: input.surveySlug, participantMessage: input.participantMessage.slice(0, 12000),
         sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null, recentTurns, presentationPlan: input.presentationPlan })
@@ -1683,6 +1686,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     sourceTopicContext: pureClarification ? input.sourceTopicContext : sourceTopicContext };
   let chunks: ControlledRagChunk[];
   let evidenceCard: ClinicalEvidenceCard | null;
+  let websiteAnswer: Awaited<ReturnType<typeof answerFromWebsite>> = null;
   const narrowRetainedPresentation = pureClarification && retained && (input.presentationPlan?.maxFacts ?? Infinity) <= 2;
   if (pureClarification && retained) {
     // Simplification selects useful complete facts from original evidence,
@@ -1699,7 +1703,11 @@ export async function askControlledRagForSurveyInterviewerTurn(
     const presentationCandidates = requestedContextIds.size
       ? retained.sources.filter((source) => requestedContextIds.has(source.id) || source.contribution === "essential_qualification")
       : retained.sources;
-    chunks = narrowRetainedPresentation ? (await selectFocusedSourceEvidence({
+    websiteAnswer = await answerFromWebsite({ surveySlug: input.surveySlug, query: input.participantMessage.slice(0, 4000),
+      candidates: presentationCandidates, sourceTopicContext: resolvedSourceQuestion.slice(0, 6000),
+      sourceQuestionPlan, presentationPlan: input.presentationPlan, priorSourceIds: presentationCandidates.map(source => source.id), evidenceFocus: "all",
+      presentationContext: { version: 1, kind: "simplify_previous_answer", participantRequest: input.participantMessage.slice(0, 12000), lastSourceAnswer: lastSourceAnswer?.slice(0, 12000) ?? null } });
+    chunks = websiteAnswer ? websiteAnswer.chunks : narrowRetainedPresentation ? (await selectFocusedSourceEvidence({
       surveySlug: input.surveySlug, query: input.participantMessage, candidates: presentationCandidates,
       sourceTopicContext: resolvedSourceQuestion, priorSourceIds: presentationCandidates.map((source) => source.id),
       presentationPlan: input.presentationPlan,
@@ -1738,7 +1746,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
     scoreChunk(chunk, retrievalTokenGroups(retrievalInput)) + displayTopicChunkScore(chunk, displayTopicForTurn(retrievalInput)) + (chunk.id === focusedNubeqaEvidenceId(retrievalInput) ? 6000 : 0) > 0,
   );
   const preferredFallbackIds = (initialEvidenceCard?.preferredSourceIds ?? []).filter((id) => fallbackMatches.some((chunk) => chunk.id === id));
-  const selection = await selectFocusedSourceEvidence({
+  websiteAnswer = await answerFromWebsite({ surveySlug: input.surveySlug, query: resolvedSourceQuestion.slice(0, 4000), candidates,
+    sourceTopicContext, sourceQuestionPlan, presentationPlan: input.presentationPlan, priorSourceIds: priorSources.map(source => source.id), evidenceFocus: "all" });
+  const selection = websiteAnswer ? { chunks: websiteAnswer.chunks, mode: "semantic" as const } : await selectFocusedSourceEvidence({
     surveySlug: input.surveySlug,
     query: resolvedSourceQuestion,
     candidates,
@@ -1775,7 +1785,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
   chunks = [...chunks].sort((left, right) => Number(right.contribution === "requested_context") - Number(left.contribution === "requested_context"));
   const references = referencesForChunks(chunks);
   const responseMode = input.responseMode ?? "answer_then_ask";
-  const composition = await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, resolvedSourceQuestion);
+  const composition = websiteAnswer
+    ? { available: true, answer: renderWebsiteAnswer(websiteAnswer.paragraphs, chunks), grounding: null, outcome: websiteAnswer.outcome }
+    : await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, resolvedSourceQuestion);
   const extractiveRecovery = composition.outcome.status === "extractive_recovery" ? composition.outcome.recovery : null;
   const composedAnswer = extractiveRecovery ? composition.answer : stripComposerFollowUpQuestions(
     composition.answer,

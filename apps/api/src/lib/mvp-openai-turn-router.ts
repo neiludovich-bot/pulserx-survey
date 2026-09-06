@@ -4,6 +4,8 @@ import {
   type MvpTurnRouteAnalysisInput,
   type MvpTurnRouteAnalysisResult,
   type MvpTurnRouteCandidate,
+  type ModeratorState,
+  type ConversationInterpretationResult,
   type MvpDisplayTopic as SchemaMvpDisplayTopic,
 } from "@interview/schemas";
 import { env } from "../env";
@@ -20,6 +22,7 @@ import { interpretMvpParticipantIntent, participantOnlyRequestsInformation, part
 export type MvpRouteAnalysisCandidate = MvpTurnRouteCandidate;
 
 export type MvpHybridTurnRouteInput = MvpParticipantIntentInput & {
+  conversationContext?: { state: ModeratorState; isPriorityQuestion: boolean; isResumeCue: boolean };
   understanding?: import("@interview/schemas").ParticipantUnderstanding;
   surveySlug: MvpSurveySlug;
   sourceBrand: string;
@@ -37,6 +40,7 @@ export type MvpHybridTurnRouteInput = MvpParticipantIntentInput & {
 };
 
 export type MvpHybridTurnRouteDecision = MvpParticipantIntent & {
+  conversationInterpretation?: ConversationInterpretationResult;
   sourceRequest?: MvpTurnRouteAnalysisResult["sourceRequest"];
   understandingUpdate?: MvpTurnRouteAnalysisResult["understandingUpdate"];
   decision: MvpTurnRouteDecision;
@@ -193,7 +197,10 @@ export async function classifyMvpTurnRouteHybrid(
   let repairContext: MvpTurnRouteAnalysisInput["repairContext"];
   for (let attempt = 1; attempt <= 2; attempt += 1) {
   try {
-    const route = await gateway.analyzeMvpTurnRoute({ ...modelInput, ...(repairContext ? { repairContext } : {}) });
+    const callInput = { ...modelInput, ...(repairContext ? { repairContext } : {}) };
+    const route = input.conversationContext && gateway.interpretConversation
+      ? await gateway.interpretConversation({ ...callInput, ...input.conversationContext })
+      : await gateway.analyzeMvpTurnRoute(callInput);
     const result = mvpTurnRouteAnalysisResultSchema.parse(route.result);
     if (result.sourceRequest && !input.participantContent.includes(result.sourceRequest.participantEvidence)) {
       throw new Error("Source requests require an exact participant excerpt.");
@@ -241,6 +248,7 @@ export async function classifyMvpTurnRouteHybrid(
       error: null,
       modelAttempts: attempt,
       modelFailures,
+      ...("interpretation" in route ? { conversationInterpretation: route.interpretation as ConversationInterpretationResult } : {}),
     };
   } catch (error) {
     const failureDiagnosis = sanitizeMvpRouteFailure(error);
