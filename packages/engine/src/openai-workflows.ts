@@ -324,15 +324,15 @@ export class OpenAIResponsesGateway {
         candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
       metadata: { survey_slug: parsedEvidence.surveySlug },
     });
-    const { answerEvidenceRanges, request, priorities, familiarityEvidenceRange, ...fields } = call.result.observation;
+    const { answerEvidenceRanges, priorities, familiarityEvidenceRange, ...fields } = call.result.observation;
+    const request = call.result.source?.request;
     const excerpt = (range: import("@interview/schemas").EvidenceTokenRange) => evidenceFromTokenRange(parsedContext.participantMessage, range);
     const observation = validateConversationObservation(parsedContext, { ...fields,
       answerEvidence: answerEvidenceRanges.map(excerpt), request: request ? { text: request.text, evidence: excerpt(request.evidenceRange) } : null,
       priorities: priorities.map(({ evidenceRange, ...priority }) => ({ ...priority, evidence: excerpt(evidenceRange) })),
       familiarityEvidence: familiarityEvidenceRange ? excerpt(familiarityEvidenceRange) : null,
     });
-    if (Boolean(observation.request) !== Boolean(call.result.answer)) throw new Error("Current request and answer must occur together.");
-    const answer = call.result.answer ? validateWebsiteAnswer({ ...parsedEvidence, query: observation.request!.text }, call.result.answer) : null;
+    const answer = call.result.source ? validateWebsiteAnswer({ ...parsedEvidence, query: observation.request!.text }, call.result.source.answer) : null;
     return { observation, answer, trace: call.trace };
   }
 

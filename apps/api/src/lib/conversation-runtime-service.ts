@@ -24,7 +24,7 @@ export async function runConversationRuntime(input: Input) {
   let state = conversationStateSchema.parse(input.state ?? emptyConversationState());
   const initialState = structuredClone(state);
   let observation: ConversationObservation | null = null;
-  let trace: unknown = null;
+  const trace: unknown[] = [];
   let action = "end";
   const done = (content: string, question: MvpGuideQuestion | null, references: GroundedReference[] = [], completed = false) => ({ state, observation, trace, action, content, question, references, completed, initialState });
   if (input.stop) return done("Thank you for sharing your perspective. That completes the interview.", null, [], true);
@@ -43,7 +43,7 @@ export async function runConversationRuntime(input: Input) {
     const call = await gateway.conversationTurn(context, { surveySlug: input.surveySlug, query: message.slice(0, 4000),
       candidates: websiteCandidatesForModel(candidates), sourceTopicContext: state.discussion?.query ?? null,
       priorSourceIds: state.discussion?.sourceIds ?? [], sourceQuestionPlan: null, evidenceFocus: "all" });
-    trace = call.trace;
+    trace.push(call.trace);
     const chunks = call.answer ? websiteAnswerChunks(candidates, call.answer) : [];
     return { ...call, text: call.answer && !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null,
       references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };
@@ -97,7 +97,7 @@ export async function runConversationRuntime(input: Input) {
     return done(`${transition}${question.canonicalQuestion}`, question);
   } catch (error) {
     state = initialState; observation = null; action = "unavailable";
-    trace = { failure: error instanceof Error ? error.message : "Conversation validation failed." };
+    trace.push({ failure: error instanceof Error ? error.message : "Conversation validation failed." });
     console.warn(JSON.stringify({ event: "conversation_v2_failure", surveySlug: input.surveySlug, message: error instanceof Error ? error.message : "Unknown failure" }));
     return done("I couldn't complete that response. Please try again, or say continue to move on.", input.question);
   }
