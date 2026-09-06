@@ -1,5 +1,7 @@
 import {
   mvpTurnRouteAnalysisResultSchema,
+  mvpTurnRouteRepairContextSchema,
+  type MvpTurnRouteAnalysisInput,
   type MvpTurnRouteAnalysisResult,
   type MvpTurnRouteCandidate,
   type MvpDisplayTopic as SchemaMvpDisplayTopic,
@@ -43,6 +45,8 @@ export type MvpHybridTurnRouteDecision = MvpParticipantIntent & {
   modelResult: MvpTurnRouteAnalysisResult | null;
   error: string | null;
   failureDiagnosis?: ReturnType<typeof sanitizeMvpRouteFailure>;
+  modelAttempts?: number;
+  modelFailures?: ReturnType<typeof sanitizeMvpRouteFailure>[];
   skipReason?: "provider_disabled" | "no_candidates" | "out_of_scope" | "consent" | "empty_message" | "gateway_unavailable";
 };
 
@@ -168,8 +172,7 @@ export async function classifyMvpTurnRouteHybrid(
     };
   }
 
-  try {
-    const route = await gateway.analyzeMvpTurnRoute({
+  const modelInput: MvpTurnRouteAnalysisInput = {
       surveySlug: input.surveySlug,
       sourceBrand: input.sourceBrand,
       understanding: input.understanding,
@@ -185,7 +188,12 @@ export async function classifyMvpTurnRouteHybrid(
       participantMessage: input.participantContent,
       recentInterviewerContext: input.recentInterviewerContext ?? null,
       candidateQuestions: input.candidateQuestions,
-    });
+    };
+  const modelFailures: ReturnType<typeof sanitizeMvpRouteFailure>[] = [];
+  let repairContext: MvpTurnRouteAnalysisInput["repairContext"];
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  try {
+    const route = await gateway.analyzeMvpTurnRoute({ ...modelInput, ...(repairContext ? { repairContext } : {}) });
     const result = mvpTurnRouteAnalysisResultSchema.parse(route.result);
     if (result.sourceRequest && !input.participantContent.includes(result.sourceRequest.participantEvidence)) {
       throw new Error("Source requests require an exact participant excerpt.");
@@ -231,19 +239,38 @@ export async function classifyMvpTurnRouteHybrid(
       suggestedQuestionIds,
       modelResult: result,
       error: null,
+      modelAttempts: attempt,
+      modelFailures,
     };
   } catch (error) {
+    const failureDiagnosis = sanitizeMvpRouteFailure(error);
+    modelFailures.push(failureDiagnosis);
+    const repair = mvpTurnRouteRepairContextSchema.safeParse({ version: 1, validationCategory: failureDiagnosis.code });
+    // Only retry a local typed interpretation failure. Provider/access failures
+    // are not corrected by asking the same provider again immediately.
+    if (attempt === 1 && failureDiagnosis.status === null && repair.success) {
+      repairContext = repair.data;
+      continue;
+    }
     return {
-      failureDiagnosis: sanitizeMvpRouteFailure(error),
+      failureDiagnosis,
       ...fallbackIntent,
+      // A rejected model interpretation cannot establish research coverage.
+      // Retain local source requests so a failure cannot strand a detour.
+      answerStatus: "not_answered",
+      answerEvidence: [],
       decision: deterministic,
       provider: "deterministic",
       suggestedQuestionIds: [],
       modelResult: null,
+      modelAttempts: attempt,
+      modelFailures,
       error:
         error instanceof Error
           ? error.message
           : "OpenAI route analysis failed.",
     };
   }
+  }
+  throw new Error("Route interpretation exceeded its bounded attempt limit.");
 }

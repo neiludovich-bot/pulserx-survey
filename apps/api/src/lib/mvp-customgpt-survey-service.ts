@@ -3269,6 +3269,13 @@ export async function submitMvpCustomGptSurveyTurn(
     : null;
   let moderatorCompleted = false;
   let moderatorDecision: Record<string, unknown> | null = null;
+  const routeAnalysisAudit = () => participantAnalysis ? {
+    provider: participantAnalysis.provider, suggestedQuestionIds: participantAnalysis.suggestedQuestionIds,
+    answerStatus: participantAnalysis.answerStatus, asksSourceQuestion: participantAnalysis.asksSourceQuestion,
+    answerEvidence: participantAnalysis.answerEvidence, modelResult: participantAnalysis.modelResult,
+    error: participantAnalysis.error, failureDiagnosis: participantAnalysis.failureDiagnosis,
+    modelAttempts: participantAnalysis.modelAttempts, modelFailures: participantAnalysis.modelFailures,
+  } : null;
   if (participantAnalysis?.sourceRequest !== undefined) {
     const asksSourceQuestion = Boolean(participantAnalysis.sourceRequest);
     participantAnalysis = { ...participantAnalysis, asksSourceQuestion,
@@ -3368,6 +3375,7 @@ export async function submitMvpCustomGptSurveyTurn(
           currentQuestionBefore: questionText(currentQuestionBefore), currentQuestionAfter: questionText(currentQuestion(session)),
           actualAskedQuestionId: actualQuestionId, actualAskedQuestion: moderator.question,
           moderatorDecision, nextAction, remainingSeconds: remainingSeconds(session),
+          turnRouteAnalysis: routeAnalysisAudit(),
           needsCustomGpt: moderator.sourceUsed,
           references: moderator.references.map((r) => ({ citationId: r.citationId, title: r.title, url: r.url })),
         };
@@ -3395,6 +3403,7 @@ export async function submitMvpCustomGptSurveyTurn(
       activeDiseaseAreas: [...session.activeDiseaseAreas],
       primaryDiseaseArea: session.primaryDiseaseArea,
       rejectionReason: answerQuality.message,
+      turnRouteAnalysis: routeAnalysisAudit(),
       assistantMessage: answerQuality.message,
       nextAction: "ask",
     });
@@ -3408,6 +3417,7 @@ export async function submitMvpCustomGptSurveyTurn(
         currentQuestionBefore: currentQuestionBefore?.canonicalQuestion ?? null,
         currentQuestionAfter: questionText(currentQuestion(session)),
         rejectionReason: answerQuality.message,
+        turnRouteAnalysis: routeAnalysisAudit(),
         nextAction: "ask",
         remainingSeconds: remainingSeconds(session),
       },
@@ -3613,7 +3623,7 @@ export async function submitMvpCustomGptSurveyTurn(
     preSelectionRouteAnalysis.asksSourceQuestion;
   const shouldReturnToCurrentQuestion =
     Boolean(currentQuestionBefore) &&
-    participantSourceDetour &&
+    (participantSourceDetour || Boolean(preSelectionRouteAnalysis.failureDiagnosis)) &&
     preSelectionRouteAnalysis.answerStatus !== "answered" &&
     !session.answeredQuestionIds.includes(currentQuestionBefore!.id) &&
     !contentLooksLikeReturnToSurveyCue(input.content);
@@ -3908,7 +3918,7 @@ export async function submitMvpCustomGptSurveyTurn(
       asksSourceQuestion: preSelectionRouteAnalysis.asksSourceQuestion,
       answerEvidence: preSelectionRouteAnalysis.answerEvidence,
       modelResult: preSelectionRouteAnalysis.modelResult,
-      error: preSelectionRouteAnalysis.error,
+      error: preSelectionRouteAnalysis.error, modelAttempts: preSelectionRouteAnalysis.modelAttempts, modelFailures: preSelectionRouteAnalysis.modelFailures,
     },
     activeDiseaseAreas: [...session.activeDiseaseAreas],
     primaryDiseaseArea: session.primaryDiseaseArea,
@@ -3956,7 +3966,7 @@ export async function submitMvpCustomGptSurveyTurn(
         asksSourceQuestion: preSelectionRouteAnalysis.asksSourceQuestion,
         answerEvidence: preSelectionRouteAnalysis.answerEvidence,
         modelResult: preSelectionRouteAnalysis.modelResult,
-        error: preSelectionRouteAnalysis.error,
+        error: preSelectionRouteAnalysis.error, modelAttempts: preSelectionRouteAnalysis.modelAttempts, modelFailures: preSelectionRouteAnalysis.modelFailures,
       },
       needsCustomGpt,
       customGptStatus,

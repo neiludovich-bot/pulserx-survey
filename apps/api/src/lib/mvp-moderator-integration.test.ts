@@ -39,6 +39,7 @@ function planResult(input: ModeratorPlanInput): ModeratorPlanResult {
   const reaction = [firstReaction, secondReaction, mixedMessage].includes(input.participantMessage);
   const reactionTopic = input.participantMessage === firstReaction ? "PFS" : "DDI";
   return {
+    ...(input.participantMessage === mixedMessage ? { sourceRequest: { kind: "question" as const, participantEvidence: "So someone on those medications are at risk for what adverse reactions", resolvedQuestion: "What adverse reactions are described for the medications just discussed?" } } : {}),
     newPriorities: input.participantMessage === "PFS and DDI" ? [
       { label: "PFS", participantEvidence: "PFS", sourceQuestion: `What PFS evidence is available for ${input.brand}?` },
       { label: "DDI", participantEvidence: "DDI", sourceQuestion: `What drug interactions are documented for ${input.brand}?` },
@@ -95,6 +96,33 @@ function auditFor(participantMessage: string) {
 }
 
 describe("moderator controller integration", () => {
+  it.each(["topic", "schema"].flatMap((failure) => [false, true].map((recovers) => ({ failure, recovers }))))("keeps clinical role unanswered after low familiarity with a $failure routing failure (repair=$recovers)", async ({ failure, recovers }) => {
+    const started = startMvpCustomGptSurvey({ surveySlug: "padcev", targetDurationSeconds: 600 });
+    await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Yes, we can begin." });
+    env.MVP_TURN_ROUTER_PROVIDER = "openai_hybrid";
+    const participantMessage = "Not very familiar with it.";
+    const valid = { schemaVersion: 5, sourceRequest: null, answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: false,
+      kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false,
+      suggestedQuestionIds: [], sourceDirective: null, rationale: "Familiarity does not answer clinical role.",
+      understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidence: [participantMessage] } };
+    const invalid = { ...valid, answerStatus: failure === "schema" ? "INVALID" : "answered", answerEvidence: [participantMessage], topic: failure === "topic" ? "nubeqa_safety_dosing" : null };
+    mocks.analyze.mockResolvedValueOnce({ result: invalid }).mockResolvedValueOnce({ result: recovers ? valid : invalid });
+    const response = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: participantMessage });
+    expect(mocks.analyze).toHaveBeenCalledTimes(2);
+    const audit = auditFor(participantMessage);
+    expect(audit.session.answeredQuestionIds).not.toContain("role");
+    expect(audit.session.answerEvidenceByQuestionId.role ?? []).toEqual([]);
+    expect(response.currentQuestion).toBe(recovers ? "What would you most like clarified about PADCEV before we go further?" : "What is your clinical role?");
+    if (recovers) {
+      expect(audit.session.moderatorState.understanding).toMatchObject({ productFamiliarity: "low", preferredDepth: "brief" });
+      expect(audit.session.pendingReturnQuestionId).toBe("role");
+    } else {
+      expect(audit.session.moderatorState.understanding).toBeUndefined();
+      expect(audit.turn.turnRouteAnalysis).toMatchObject({ answerStatus: "not_answered", answerEvidence: [], modelAttempts: 2 });
+      expect(audit.turn.turnRouteAnalysis.modelFailures).toHaveLength(2);
+    }
+  });
+
   it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((surveySlug) => [
     { surveySlug, router: "deterministic" as const }, { surveySlug, router: "openai_hybrid" as const },
   ]))("handles the exact mixed reaction and adverse-reaction question for $surveySlug ($router)", async ({ surveySlug, router }) => {
@@ -115,7 +143,11 @@ describe("moderator controller integration", () => {
     mocks.source.mockClear();
     const mixed = await turn(mixedMessage);
     const mixedAudit = auditFor(mixedMessage);
-    expect(mocks.plan).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage: mixedMessage, asksSourceQuestion: true, answerStatus: "answered" }));
+    if (router === "openai_hybrid") {
+      expect(mixedAudit.turn.turnRouteAnalysis).toMatchObject({ answerStatus: "not_answered", modelAttempts: 2 });
+      expect(mixedAudit.turn.turnRouteAnalysis.modelFailures).toHaveLength(2);
+    }
+    expect(mocks.plan).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage: mixedMessage, asksSourceQuestion: true, answerStatus: router === "openai_hybrid" ? "not_answered" : "answered" }));
     expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ participantMessage: mixedMessage, responseMode: "answer_only" }));
     expect(mixed.messages.at(-1)?.content).toContain("source summary");
     expect(mixed.messages.at(-1)?.content).not.toContain(second.currentQuestion!);

@@ -24,7 +24,8 @@ describe("semantic validation after indexed quote reconstruction", () => {
     const parse = vi.fn().mockResolvedValue({ output_parsed: { schemaVersion: 6, sourceRequest: { kind: "explanation_request", participantEvidenceRange: range, resolvedQuestion: "Explain DDI." }, understandingUpdate: null, answerStatus: "answered", answerEvidenceRanges: [range], asksSourceQuestion: true, kind: "source_question", topic: null, needsSource: true, isOutOfScope: false, isUnanticipated: false, suggestedQuestionIds: [], sourceDirective: null, rationale: "Mistaken research credit for an exact question span." } });
     mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     const routed = await classifyMvpTurnRouteHybrid({ surveySlug: "nubeqa", sourceBrand: "NUBEQA", currentQuestionId: "factors", currentQuestion: "What factors matter most?", participantContent: "Can you explain DDI", sourceConversationActive: true, candidateQuestions: [{ id: "fit", question: "What about patient fit?", objective: "Patient fit", module: "Research", allowedByIntent: true, alreadyAsked: false, routeKeywords: [], sourceContextRequirement: null }] });
-    expect(parse).toHaveBeenCalledTimes(1);
+    expect(parse).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(parse.mock.calls[1][0].input[0].content[0].text).repairContext).toEqual({ version: 1, validationCategory: "invalid_question_credit" });
     expect(routed).toMatchObject({ provider: "deterministic", answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: true, failureDiagnosis: { code: "invalid_question_credit" } });
   });
 });

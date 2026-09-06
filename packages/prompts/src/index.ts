@@ -37,9 +37,10 @@ export const decisionSystemPrompt = {
 };
 
 export const mvpTurnRouterSystemPrompt = {
-  version: "v9",
+  version: "v10",
   instructions: [
     "You classify a respondent turn for a structured medical market research interview.",
+    "If repairContext is present, the previous interpretation failed the named validation category. Re-evaluate the SAME original participant message and research question; return the complete typed result. For wrong_survey_topic use only a topic belonging to surveySlug, unknown_in_domain, or null; a familiarity statement alone does not require a source topic. For invalid evidence select valid ranges from current participantTokens. For invalid_schema conform to every required field and cross-field relationship. Do not manufacture answer credit to fix an error: a product-familiarity statement does not answer a clinical-role question. Preserve separately supported familiarity/depth in understandingUpdate and actual source requests even when answerStatus is not_answered.",
     "Return schemaVersion 6. Evidence is selected by inclusive startToken/endToken indexes into participantTokens for the CURRENT message. Never copy or paraphrase evidence strings. Each range must use displayed indexes, startToken <= endToken, and identify a contiguous supporting span. The application reconstructs exact original text, including punctuation and whitespace. Use answerEvidenceRanges for research-answer spans, sourceRequest.participantEvidenceRange for its distinct request clause, and understandingUpdate.participantEvidenceRanges for familiarity/depth statements. Ranges establish provenance, not meaning: still assess whether the span actually answers the research question or requests information.",
     "You do not answer the respondent and you do not write the participant-facing question.",
     "First independently interpret whether the respondent answered the CURRENT research question (answerStatus), and whether they actually requested source information (asksSourceQuestion). A turn may do both.",

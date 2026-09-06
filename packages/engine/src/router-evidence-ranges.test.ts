@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../prompts/src/index"));
-import { mvpTurnRouteAnalysisIndexedModelResultSchema, mvpTurnRouteAnalysisResultSchema, type MvpTurnRouteAnalysisInput } from "../../schemas/src/index";
+import { mvpTurnRouteAnalysisIndexedModelResultSchema, mvpTurnRouteAnalysisResultSchema, mvpTurnRouteModelSchemaForSurvey, type MvpTurnRouteAnalysisInput } from "../../schemas/src/index";
 import { zodTextFormat } from "openai/helpers/zod";
 import { evidenceFromTokenRange, participantTokensForModel } from "./evidence-ranges";
 import { OpenAIResponsesGateway } from "./openai-workflows";
@@ -16,6 +16,19 @@ const output = { schemaVersion: 6, sourceRequest: null, answerStatus: "answered"
 const gateway = (parse: ReturnType<typeof vi.fn>) => new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
 
 describe("indexed participant evidence", () => {
+  it.each(["nubeqa", "brukinsa", "padcev", "data"] as const)("restricts the actual structured output topic enum to %s without substituting another brand", async (surveySlug) => {
+    const schema = mvpTurnRouteModelSchemaForSurvey(surveySlug);
+    const parse = vi.fn().mockResolvedValue({ output_parsed: output });
+    await gateway(parse).analyzeMvpTurnRoute({ ...input, surveySlug, repairContext: { version: 1, validationCategory: "wrong_survey_topic" } });
+    const request = parse.mock.calls[0][0];
+    expect(request.text.format.name).toBe(`mvp_turn_route_analysis_result_v6_${surveySlug}`);
+    expect(JSON.parse(request.input[0].content[0].text).repairContext).toEqual({ version: 1, validationCategory: "wrong_survey_topic" });
+    for (const topic of schema.shape.topic.unwrap().options) expect(topic === "unknown_in_domain" || topic.startsWith(`${surveySlug}_`)).toBe(true);
+    const otherTopic = surveySlug === "nubeqa" ? "padcev_safety_management" : "nubeqa_safety_dosing";
+    expect(schema.safeParse({ ...output, topic: otherTopic }).success).toBe(false);
+    expect(schema.safeParse({ ...output, topic: null }).success).toBe(true);
+    expect(schema.safeParse({ ...output, topic: "unknown_in_domain" }).success).toBe(true);
+  });
   it("preserves original typography and internal whitespace without copying or normalizing text", () => {
     const message = "  I’m\t not  very\nfamiliar.\u00a0🙂 ";
     expect(participantTokensForModel(message)).toEqual([{ index: 0, text: "I’m" }, { index: 1, text: "not" }, { index: 2, text: "very" }, { index: 3, text: "familiar." }, { index: 4, text: "🙂" }]);
@@ -31,7 +44,7 @@ describe("indexed participant evidence", () => {
     expect(routed.result).toMatchObject({ schemaVersion: 5, answerEvidence: [input.participantMessage], understandingUpdate: { productFamiliarity: "low", participantEvidence: [input.participantMessage] } });
     expect(mvpTurnRouteAnalysisResultSchema.parse(routed.result)).toEqual(routed.result);
     const request = parse.mock.calls[0][0];
-    expect(request.text.format.name).toBe("mvp_turn_route_analysis_result_v6");
+    expect(request.text.format.name).toBe("mvp_turn_route_analysis_result_v6_nubeqa");
     expect(JSON.parse(request.input[0].content[0].text).participantTokens).toEqual(participantTokensForModel(input.participantMessage));
     expect(request.instructions).not.toContain("Return schemaVersion 4");
   });

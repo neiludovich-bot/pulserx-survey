@@ -198,7 +198,13 @@ export const mvpTurnRouteCandidateSchema = z.object({
   sourceContextRequirement: z.string().min(1).nullable().default(null),
 }).strict();
 
+export const mvpTurnRouteRepairContextSchema = z.object({
+  version: z.literal(1),
+  validationCategory: z.enum(["invalid_schema", "invalid_evidence_range", "invalid_request_excerpt", "invalid_understanding_excerpt", "invalid_answer_excerpt", "lost_priority_credit", "lost_mixed_request", "missing_active_question", "invalid_question_credit", "wrong_survey_topic"]),
+}).strict();
+
 export const mvpTurnRouteAnalysisInputSchema = z.object({
+  repairContext: mvpTurnRouteRepairContextSchema.optional(),
   understanding: participantUnderstandingSchema.optional(),
   surveySlug: z.enum(["brukinsa", "padcev", "data", "nubeqa"]),
   sourceBrand: z.string().min(1),
@@ -263,6 +269,11 @@ export const mvpTurnRouteAnalysisIndexedModelResultSchema = mvpTurnRouteAnalysis
   understandingUpdate: participantUnderstandingUpdateSchema.innerType().omit({ participantEvidence: true }).extend({ participantEvidenceRanges: z.array(evidenceTokenRangeSchema).min(1).max(8) }).strict().nullable(),
 }).strict();
 export type MvpTurnRouteAnalysisIndexedModelResult = z.infer<typeof mvpTurnRouteAnalysisIndexedModelResultSchema>;
+
+export function mvpTurnRouteModelSchemaForSurvey(surveySlug: z.infer<typeof mvpTurnRouteAnalysisInputSchema>["surveySlug"]) {
+  const topics = mvpDisplayTopicSchema.options.filter((topic) => topic === "unknown_in_domain" || topic.startsWith(`${surveySlug}_`));
+  return mvpTurnRouteAnalysisIndexedModelResultSchema.extend({ topic: z.enum(topics as [typeof topics[number], ...typeof topics[number][]]).nullable() }).strict();
+}
 
 export const controlledRagContextualCompositionResultSchema = z.object({
   practicalAnswer: z.string().trim().min(1).max(2000),

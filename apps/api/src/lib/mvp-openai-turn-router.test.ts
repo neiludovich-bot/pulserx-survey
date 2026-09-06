@@ -37,6 +37,32 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it.each(["wrong_survey_topic", "invalid_schema"])("repairs one local %s failure without changing the original participant/question context", async (category) => {
+    const participantContent = "Not very familiar with it.";
+    const invalid = { ...result, answerEvidence: [participantContent], ...(category === "wrong_survey_topic" ? { topic: "padcev_safety_management" } : { answerStatus: "UNKNOWN" }) };
+    const valid = { ...result, topic: null, answerStatus: "not_answered", answerEvidence: [], understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidence: [participantContent] } };
+    gateway.analyzeMvpTurnRoute.mockResolvedValueOnce({ result: invalid }).mockResolvedValueOnce({ result: valid });
+    const routed = await classifyMvpTurnRouteHybrid({ ...input, currentQuestionId: "role", currentQuestion: "What is your clinical role?", participantContent });
+    expect(routed).toMatchObject({ provider: "openai_hybrid", answerStatus: "not_answered", answerEvidence: [], understandingUpdate: valid.understandingUpdate, modelAttempts: 2, modelFailures: [{ code: category }] });
+    const [first, second] = gateway.analyzeMvpTurnRoute.mock.calls.map(([request]) => request);
+    expect(second).toEqual({ ...first, repairContext: { version: 1, validationCategory: category } });
+  });
+
+  it.each([null, 429, 401, 403])("does not retry provider/access failures or fabricate answer credit (status=%s)", async (status) => {
+    gateway.analyzeMvpTurnRoute.mockRejectedValue({ name: "APIError", status, message: "PRIVATE PROVIDER DETAILS" });
+    const route = await classifyMvpTurnRouteHybrid({ ...input, currentQuestionId: "role", currentQuestion: "What is your clinical role?", participantContent: "Not very familiar with it." });
+    expect(route).toMatchObject({ answerStatus: "not_answered", answerEvidence: [], modelAttempts: 1 });
+    expect(gateway.analyzeMvpTurnRoute).toHaveBeenCalledOnce();
+    expect(JSON.stringify(route.modelFailures)).not.toContain("PRIVATE");
+  });
+
+  it("retains legitimate explicit deterministic behavior when the hybrid provider is disabled", async () => {
+    env.MVP_TURN_ROUTER_PROVIDER = "deterministic";
+    const route = await classifyMvpTurnRouteHybrid({ ...input, currentQuestionId: "role", currentQuestion: "What is your clinical role?", participantContent: "I am a medical oncologist." });
+    expect(route).toMatchObject({ answerStatus: "answered", skipReason: "provider_disabled", error: null });
+    expect(gateway.analyzeMvpTurnRoute).not.toHaveBeenCalled();
+  });
+
   it("distinguishes a deliberate skip from a failed model interpretation", async () => {
     env.MVP_TURN_ROUTER_PROVIDER = "deterministic";
     expect(await classifyMvpTurnRouteHybrid(input)).toMatchObject({ provider: "deterministic", skipReason: "provider_disabled", error: null });
@@ -63,11 +89,11 @@ describe("typed hybrid participant turn interpretation", () => {
     expect(route).toMatchObject({ provider: "deterministic", asksSourceQuestion: true, answerStatus: "not_answered", answerEvidence: [] });
     expect(route.error).toContain("only information requests");
   });
-  it("falls back from a v5 source flag with no request provenance without losing a declarative reaction", async () => {
+  it("does not manufacture answer credit from a rejected v5 source flag without provenance", async () => {
     const participantContent = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
     gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, schemaVersion: 5, sourceRequest: null, asksSourceQuestion: true, needsSource: true, answerEvidence: [participantContent] } });
     const route = await classifyMvpTurnRouteHybrid({ ...input, participantContent });
-    expect(route).toMatchObject({ provider: "deterministic", asksSourceQuestion: false, answerStatus: "answered" });
+    expect(route).toMatchObject({ provider: "deterministic", asksSourceQuestion: false, answerStatus: "not_answered", answerEvidence: [] });
     expect(route.error).toContain("source request");
   });
 
@@ -97,7 +123,7 @@ describe("typed hybrid participant turn interpretation", () => {
       answerEvidence: [participantContent],
     } });
     const route = await classifyMvpTurnRouteHybrid({ ...input, participantContent, sourceConversationActive: true });
-    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "answered", asksSourceQuestion: true, answerEvidence: [reaction] });
+    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "not_answered", asksSourceQuestion: true, answerEvidence: [] });
     expect(route.error).toContain("trailing information question");
   });
   it.each(["not_answered", "partial"])("retains explicit mixed-turn priorities when the model says %s", async (answerStatus) => {
@@ -110,8 +136,8 @@ describe("typed hybrid participant turn interpretation", () => {
     const route = await classifyMvpTurnRouteHybrid({ ...input,
       participantContent: `${statement} What drug interactions should I consider?`,
     });
-    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "answered",
-      asksSourceQuestion: true, answerEvidence: [statement] });
+    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "not_answered",
+      asksSourceQuestion: true, answerEvidence: [] });
     expect(route.error).toContain("explicit statement of priorities");
   });
   it("runs the mocked model in tests and passes authored question context", async () => {
@@ -154,10 +180,10 @@ describe("typed hybrid participant turn interpretation", () => {
     { ...result, topic: "padcev_safety_management" },
     { ...result, schemaVersion: 2 },
     { ...result, unexpected: true },
-  ])("fails back to contextual local interpretation for invalid model output", async (invalid) => {
+  ])("preserves unanswered research after two invalid model interpretations", async (invalid) => {
     gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: invalid });
     const route = await classifyMvpTurnRouteHybrid(input);
-    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "answered", asksSourceQuestion: false, answerEvidence: ["PFS and DDI"] });
+    expect(route).toMatchObject({ provider: "deterministic", answerStatus: "not_answered", asksSourceQuestion: false, answerEvidence: [], modelAttempts: 2 });
     expect(route.decision.needsSource).toBe(false);
     expect(route.error).not.toBeNull();
   });

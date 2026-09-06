@@ -34,6 +34,7 @@ import {
   mvpTurnRouteAnalysisResultSchema,
   mvpTurnRouteAnalysisIndexedInputSchema,
   mvpTurnRouteAnalysisIndexedModelResultSchema,
+  mvpTurnRouteModelSchemaForSurvey,
   type MvpTurnRouteAnalysisIndexedModelResult,
   moderatorPlanInputSchema,
   moderatorPlanTokenModelResultSchema,
@@ -246,13 +247,14 @@ export class OpenAIResponsesGateway {
 
   async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {
     const parsed = mvpTurnRouteAnalysisInputSchema.parse(input);
+    const schema = mvpTurnRouteModelSchemaForSurvey(parsed.surveySlug);
 
     const call = await this.runStructuredCall<MvpTurnRouteAnalysisIndexedModelResult>({
       callType: "turn_route",
       model: this.config.analysisModel,
       promptVersion: mvpTurnRouterSystemPrompt.version,
-      schemaName: "mvp_turn_route_analysis_result_v6",
-      schema: mvpTurnRouteAnalysisIndexedModelResultSchema,
+      schemaName: `mvp_turn_route_analysis_result_v6_${parsed.surveySlug}`,
+      schema,
       instructions: mvpTurnRouterSystemPrompt.instructions,
       input: mvpTurnRouteAnalysisIndexedInputSchema.parse({ ...parsed, participantTokens: participantTokensForModel(parsed.participantMessage) }),
       metadata: {
@@ -261,7 +263,7 @@ export class OpenAIResponsesGateway {
         current_question_id: parsed.currentQuestionId ?? "none"
       }
     });
-    const { answerEvidenceRanges, sourceRequest, understandingUpdate, ...wire } = mvpTurnRouteAnalysisIndexedModelResultSchema.parse(call.result);
+    const { answerEvidenceRanges, sourceRequest, understandingUpdate, ...wire } = schema.parse(call.result);
     const result = mvpTurnRouteAnalysisResultSchema.parse({ ...wire, schemaVersion: 5,
       answerEvidence: answerEvidenceRanges.map((range) => evidenceFromTokenRange(parsed.participantMessage, range)),
       sourceRequest: sourceRequest ? { kind: sourceRequest.kind, resolvedQuestion: sourceRequest.resolvedQuestion, participantEvidence: evidenceFromTokenRange(parsed.participantMessage, sourceRequest.participantEvidenceRange) } : null,

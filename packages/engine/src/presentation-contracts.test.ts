@@ -56,7 +56,7 @@ describe("presentation and understanding contracts", () => {
     const result = await gateway(parse).analyzeMvpTurnRoute(routeInput);
     expect(result.result.understandingUpdate).toEqual(routeResult.understandingUpdate);
     expect(result.result.asksSourceQuestion).toBe(false);
-    expect(parse.mock.calls[0][0].text.format.name).toBe("mvp_turn_route_analysis_result_v6");
+    expect(parse.mock.calls[0][0].text.format.name).toBe("mvp_turn_route_analysis_result_v6_nubeqa");
     expect(parse.mock.calls[0][0].text.format.schema.required).toContain("understandingUpdate");
     expect([...parse.mock.calls[0][0].text.format.schema.required].sort()).toEqual(Object.keys(parse.mock.calls[0][0].text.format.schema.properties).sort());
     expect(mvpTurnRouteAnalysisResultSchema.parse({ ...routeResult, schemaVersion: 3, understandingUpdate: undefined }).schemaVersion).toBe(3);
