@@ -34,6 +34,19 @@ function moderatorInput(input: ConversationInterpretationInput, wire: Conversati
 }
 
 describe("shared conversation interpretation", () => {
+  it("credits a familiarity answer and leaves orientation selection to application policy", () => {
+    const input = context("nubeqa", "Not very familiar with it.");
+    input.currentQuestionId = "familiarity";
+    input.currentQuestion = "How familiar are you with this product?";
+    input.isPriorityQuestion = false;
+    const evidence = range(input.participantMessage, input.participantMessage);
+    const wire = result({ answerStatus: "answered", answerEvidenceRanges: [evidence], understandingUpdate: {
+      version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidenceRanges: [evidence],
+    } });
+    const validated = validateConversationInterpretation(input, wire);
+    expect(conversationRouteResult(input.participantMessage, validated)).toMatchObject({ answerStatus: "answered", asksSourceQuestion: false });
+    expect(conversationModeratorPlan(moderatorInput(input, validated), validated).action).toBe("resume_guide");
+  });
   it("makes one structured call and exposes both route and moderator interpretation", async () => {
     const input = context("nubeqa", "Not very familiar with it.");
     input.isPriorityQuestion = false;
