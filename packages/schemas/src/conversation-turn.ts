@@ -4,7 +4,7 @@ import { evidenceTokenRangeSchema, participantTokensSchema } from "./evidence-ra
 
 export const conversationTurnContextSchema = z.object({
   version: z.literal(2), brand: z.string(), participantMessage: z.string().min(1).max(12000),
-  question: z.object({ id: z.string(), text: z.string(), kind: z.enum(["guide", "priorities", "reaction", "information_need"]) }).strict().nullable(),
+  question: z.object({ id: z.string(), text: z.string(), kind: z.enum(["guide", "priorities", "reaction", "clarification", "information_need"]) }).strict().nullable(),
   discussionQuery: z.string().nullable(),
   recentTurns: z.array(z.object({ role: z.enum(["participant", "interviewer"]), content: z.string() }).strict()).max(12),
   topics: z.array(z.object({ id: z.string(), label: z.string(), status: z.string() }).strict()).max(64),
@@ -12,14 +12,16 @@ export const conversationTurnContextSchema = z.object({
 export const conversationObservationSchema = z.object({
   answerStatus: z.enum(["answered", "partial", "not_answered"]),
   answerEvidence: z.array(z.string().min(1).max(12000)).max(8),
+  reactionEvidence: z.array(z.string().min(1).max(12000)).max(8).default([]),
   request: z.object({ text: z.string().min(1).max(4000), evidence: z.string().min(1).max(12000) }).strict().nullable(),
   priorities: z.array(z.object({ label: z.string().min(1).max(200), query: z.string().min(1).max(4000), evidence: z.string().min(1).max(12000) }).strict()).max(16),
   familiarity: z.enum(["low", "moderate", "high"]).nullable(),
   familiarityEvidence: z.string().nullable(),
   outOfScope: z.boolean(),
 }).strict();
-export const conversationObservationModelSchema = conversationObservationSchema.omit({ answerEvidence: true, request: true, priorities: true, familiarityEvidence: true }).extend({
+export const conversationObservationModelSchema = conversationObservationSchema.omit({ answerEvidence: true, reactionEvidence: true, request: true, priorities: true, familiarityEvidence: true }).extend({
   answerEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
+  reactionEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
   request: z.object({ text: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
   priorities: z.array(z.object({ label: z.string().min(1).max(200), query: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict()).max(16),
   familiarityEvidenceRange: evidenceTokenRangeSchema.nullable(),

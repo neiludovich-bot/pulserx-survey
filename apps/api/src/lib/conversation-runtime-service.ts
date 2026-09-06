@@ -15,6 +15,7 @@ type Input = {
 const syntheticQuestion = (id: string, text: string): MvpGuideQuestion => ({ id, canonicalQuestion: text, module: "Conversation", objective: "Capture the participant's perspective without leading them.", sourceContextRequirement: null, routeKeywords: [], completionSignals: [], adaptiveProbes: [], analyzableOutputs: ["conversation_response"] });
 function questionKind(question: MvpGuideQuestion | null): NonNullable<ConversationTurnContext["question"]>["kind"] {
   if (question?.id.startsWith("conversation-reaction:")) return "reaction";
+  if (question?.id.startsWith("conversation-clarification:")) return "clarification";
   if (question?.id === "conversation-information-need") return "information_need";
   return /\b(priorities|decision drivers|top factors)\b/i.test(`${question?.canonicalQuestion} ${question?.objective}`) ? "priorities" : "guide";
 }
@@ -55,22 +56,27 @@ export async function runConversationRuntime(input: Input) {
       prepared = await understand(input.message, input.question);
       observation = prepared.observation;
     }
-    const selection = selectConversationAction(state, observation, input.resume);
+    const selection = selectConversationAction(state, observation, input.resume, Boolean(observation?.reactionEvidence?.length));
     state = selection.state; action = selection.action;
     if (action === "answer_request" || action === "present_topic") {
-      if (!state.parkedGuideId && input.question && questionKind(input.question) !== "reaction" && observation?.answerStatus !== "answered") state.parkedGuideId = input.question.id;
+      if (!state.parkedGuideId && input.question && !["reaction", "clarification"].includes(questionKind(input.question)) && observation?.answerStatus !== "answered") state.parkedGuideId = input.question.id;
       const topic = state.topics.find(t => t.id === state.activeTopicId);
       const query = action === "present_topic" ? topic!.query : observation!.request!.text;
       if (action === "present_topic") prepared = await understand(query, null);
       if (!prepared?.text) return done("I don't have enough information in the available material to answer that reliably. Could you narrow the question, or would you like to move on?", input.question);
       const wasDiscussing = Boolean(initialState.discussion);
       state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
-      state.reactionPending = true;
+      if (!wasDiscussing || action === "present_topic") state.reactionPending = true;
       if (topic && action === "present_topic") topic.status = "presented";
-      const question = syntheticQuestion(`conversation-reaction:${topic?.id ?? "discussion"}`,
+      const question = syntheticQuestion(`${wasDiscussing && action !== "present_topic" ? "conversation-clarification" : "conversation-reaction"}:${topic?.id ?? "discussion"}`,
         action === "present_topic" ? `What, if anything, stands out to you about ${topic!.label}?` : wasDiscussing ? "Does that address what you wanted to clarify?" : "What is your reaction to that?");
       const transition = action === "present_topic" && initialState.topics.some(t => t.status === "presented" || t.status === "discussed") ? `Turning to ${topic!.label}:\n\n` : "";
       return done(`${transition}${prepared.text}\n\n${question.canonicalQuestion}`, question, prepared.references);
+    }
+    if (action === "ask_reaction") {
+      const topic = state.topics.find(t => t.id === state.activeTopicId);
+      const question = syntheticQuestion(`conversation-reaction:${topic?.id ?? "discussion"}`, topic ? `What, if anything, stands out to you about ${topic.label}?` : "Having clarified that, what is your reaction to the information?");
+      return done(question.canonicalQuestion, question);
     }
     if (action === "ask_information_need") {
       if (input.question && observation?.answerStatus !== "answered") state.parkedGuideId ??= input.question.id;

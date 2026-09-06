@@ -31,7 +31,7 @@ function fixture(surveySlug: "nubeqa" | "brukinsa" | "padcev") {
 describe("single-call conversation boundary", () => {
   it("represents familiarity without an unsolicited answer in the v2 source envelope", async () => {
     const f = fixture("nubeqa");
-    f.parse.mockResolvedValue({ id: "v2", output_parsed: { observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 4 }], priorities: [], familiarity: "low", familiarityEvidenceRange: { startToken: 0, endToken: 4 }, outOfScope: false }, source: null } });
+    f.parse.mockResolvedValue({ id: "v2", output_parsed: { observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 4 }], reactionEvidenceRanges: [], priorities: [], familiarity: "low", familiarityEvidenceRange: { startToken: 0, endToken: 4 }, outOfScope: false }, source: null } });
     const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: "Not very familiar with it.", question: { id: "familiarity", text: "How familiar are you?", kind: "guide" }, discussionQuery: null, recentTurns: [], topics: [] }, f.evidence);
     expect(result.answer).toBeNull(); expect(result.observation.request).toBeNull(); expect(result.observation.familiarityEvidence).toBe("Not very familiar with it.");
   });
@@ -39,7 +39,7 @@ describe("single-call conversation boundary", () => {
     const f = fixture(brand);
     const message = "That sounds useful. What did Study A report?";
     f.parse.mockResolvedValue({ id: "v2", model: "gpt-5.4-mini", output_parsed: {
-      observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], priorities: [], familiarity: null, familiarityEvidenceRange: null, outOfScope: false },
+      observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], reactionEvidenceRanges: [{ startToken: 0, endToken: 2 }], priorities: [], familiarity: null, familiarityEvidenceRange: null, outOfScope: false },
       source: { request: { text: "What did Study A report?", evidenceRange: { startToken: 3, endToken: 7 } }, answer: f.answer },
     } });
     const result = await f.gateway.conversationTurn({ version: 2, brand, participantMessage: message,

@@ -5,6 +5,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import { conversationTurnSystemPrompt } from "@interview/prompts";
 import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnContextSchema, type ConversationTurnContext } from "@interview/schemas";
 import { validateConversationObservation } from "./conversation-runtime";
+import { coalesceConversationSources } from "./conversation-sources";
 import {
   analysisSystemPrompt,
   decisionSystemPrompt,
@@ -324,15 +325,15 @@ export class OpenAIResponsesGateway {
         candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
       metadata: { survey_slug: parsedEvidence.surveySlug },
     });
-    const { answerEvidenceRanges, priorities, familiarityEvidenceRange, ...fields } = call.result.observation;
+    const { answerEvidenceRanges, reactionEvidenceRanges, priorities, familiarityEvidenceRange, ...fields } = call.result.observation;
     const request = call.result.source?.request;
     const excerpt = (range: import("@interview/schemas").EvidenceTokenRange) => evidenceFromTokenRange(parsedContext.participantMessage, range);
     const observation = validateConversationObservation(parsedContext, { ...fields,
-      answerEvidence: answerEvidenceRanges.map(excerpt), request: request ? { text: request.text, evidence: excerpt(request.evidenceRange) } : null,
+      answerEvidence: answerEvidenceRanges.map(excerpt), reactionEvidence: reactionEvidenceRanges.map(excerpt), request: request ? { text: request.text, evidence: excerpt(request.evidenceRange) } : null,
       priorities: priorities.map(({ evidenceRange, ...priority }) => ({ ...priority, evidence: excerpt(evidenceRange) })),
       familiarityEvidence: familiarityEvidenceRange ? excerpt(familiarityEvidenceRange) : null,
     });
-    const answer = call.result.source ? validateWebsiteAnswer({ ...parsedEvidence, query: observation.request!.text }, call.result.source.answer) : null;
+    const answer = call.result.source ? validateWebsiteAnswer({ ...parsedEvidence, query: observation.request!.text }, coalesceConversationSources(call.result.source.answer)) : null;
     return { observation, answer, trace: call.trace };
   }
 

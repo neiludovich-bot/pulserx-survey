@@ -2,21 +2,22 @@ import { conversationObservationSchema, conversationStateSchema, type Conversati
 
 export function validateConversationObservation(context: ConversationTurnContext, output: unknown) {
   const value = conversationObservationSchema.parse(output);
-  const excerpts = [...value.answerEvidence, ...value.priorities.map(p => p.evidence), ...(value.request ? [value.request.evidence] : []), ...(value.familiarityEvidence ? [value.familiarityEvidence] : [])];
+  const excerpts = [...value.answerEvidence, ...value.reactionEvidence, ...value.priorities.map(p => p.evidence), ...(value.request ? [value.request.evidence] : []), ...(value.familiarityEvidence ? [value.familiarityEvidence] : [])];
   if (excerpts.some(text => !context.participantMessage.includes(text))) throw new Error("Observation evidence must be an exact current-message excerpt.");
   if ((value.answerStatus !== "not_answered") !== Boolean(value.answerEvidence.length)) throw new Error("Answer credit requires evidence and vice versa.");
   if (value.answerEvidence.length && !context.question) throw new Error("No active question may receive answer credit.");
   if (value.request && context.question?.kind !== "information_need" && value.answerEvidence.some(text => text.includes(value.request!.evidence) || value.request!.evidence.includes(text))) throw new Error("An information request is not research-answer evidence.");
+  if (value.request && value.reactionEvidence.some(text => text.includes(value.request!.evidence) || value.request!.evidence.includes(text))) throw new Error("An information request is not clinical-reaction evidence.");
   if (value.priorities.length && context.question?.kind !== "priorities") throw new Error("Only a priorities question may establish initial priorities.");
   if (Boolean(value.familiarity) !== Boolean(value.familiarityEvidence)) throw new Error("Familiarity requires participant evidence.");
   return value;
 }
 
 export const emptyConversationState = (): ConversationState => conversationStateSchema.parse({ version: 2, parkedGuideId: null, topics: [], activeTopicId: null, discussion: null, reactionPending: false });
-export type ConversationAction = "answer_request" | "present_topic" | "advance_guide" | "resume_guide" | "clarify" | "ask_information_need";
+export type ConversationAction = "answer_request" | "present_topic" | "advance_guide" | "resume_guide" | "clarify" | "ask_information_need" | "ask_reaction";
 
 /** Select independently of wording, after validated participant evidence. */
-export function selectConversationAction(original: ConversationState, observation: ConversationObservation | null, resume: boolean) {
+export function selectConversationAction(original: ConversationState, observation: ConversationObservation | null, resume: boolean, clinicalReaction = true) {
   const state = conversationStateSchema.parse(structuredClone(original));
   if (resume) {
     // Resume finishes the discussion, not the unanswered parked research question.
@@ -26,8 +27,8 @@ export function selectConversationAction(original: ConversationState, observatio
   }
   if (!observation || observation.outOfScope) return { state, action: "clarify" as ConversationAction };
   const active = state.topics.find(t => t.id === state.activeTopicId);
-  if (state.reactionPending && observation.answerStatus === "answered") {
-    if (active) { active.status = "discussed"; active.evidence.push(...observation.answerEvidence); }
+  if (state.reactionPending && clinicalReaction && (observation.reactionEvidence.length || observation.answerStatus === "answered")) {
+    if (active) { active.status = "discussed"; active.evidence.push(...(observation.reactionEvidence.length ? observation.reactionEvidence : observation.answerEvidence)); }
     state.reactionPending = false;
   }
   for (const priority of observation.priorities) {
@@ -36,6 +37,7 @@ export function selectConversationAction(original: ConversationState, observatio
     }
   }
   if (observation.request) return { state, action: "answer_request" as ConversationAction };
+  if (state.reactionPending && observation.answerStatus === "answered" && !clinicalReaction) return { state, action: "ask_reaction" as ConversationAction };
   if (state.reactionPending) return { state, action: "clarify" as ConversationAction };
   const pending = state.topics.find(t => t.status === "pending");
   if (pending) { state.activeTopicId = pending.id; return { state, action: "present_topic" as ConversationAction }; }
