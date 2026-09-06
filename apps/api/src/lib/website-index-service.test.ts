@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
+import { Prisma } from "@prisma/client";
 const mocks = vi.hoisted(() => ({ findMany: vi.fn(), create: vi.fn(), updateMany: vi.fn(), chunks: vi.fn(), assets: vi.fn(), lock: vi.fn(), transaction: vi.fn() }));
 vi.mock("./prisma", () => ({ prisma: { $transaction: mocks.transaction } }));
 import { applyWebsiteIndex, prepareWebsiteIndex } from "./website-index-service";
@@ -11,6 +12,11 @@ beforeEach(() => {
   mocks.transaction.mockImplementation(fn => fn({ $executeRaw: mocks.lock, sourceDocument: { findMany: mocks.findMany, create: mocks.create, updateMany: mocks.updateMany }, sourceChunk: { createMany: mocks.chunks }, sourceAsset: { createMany: mocks.assets } }));
 });
 describe("website ingestion", () => {
+  it("retries a serialization conflict without losing the snapshot", async () => {
+    mocks.transaction.mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError("write conflict", { code: "P2034", clientVersion: "6" }));
+    expect(await applyWebsiteIndex(snapshot())).toMatchObject({created:1});
+    expect(mocks.transaction).toHaveBeenCalledTimes(2);
+  });
   it("indexes a new survey only under its configured website profile", () => {
     const custom = snapshot(); custom.surveySlug = "future-bot"; custom.rootUrl = "https://example.com/";
     custom.pages[0].url = "https://example.com/safety"; custom.pages[0].discoveredFrom = custom.rootUrl;

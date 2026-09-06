@@ -29,6 +29,16 @@ export function prepareWebsiteIndex(input: unknown, profile?: WebsiteProfile) {
 /** Append versions and archive only superseded crawler-owned versions. Never
  * delete evidence or remove pages merely because a crawl failed to find them. */
 export async function applyWebsiteIndex(input: unknown, profile?: WebsiteProfile) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await applyWebsiteIndexOnce(input, profile); }
+    catch (error) {
+      if (attempt >= 3 || !(error instanceof Prisma.PrismaClientKnownRequestError) || error.code !== "P2034") throw error;
+      await new Promise(resolve => setTimeout(resolve, 250 * (attempt + 1)));
+    }
+  }
+}
+
+async function applyWebsiteIndexOnce(input: unknown, profile?: WebsiteProfile) {
   const { snapshot, pages } = prepareWebsiteIndex(input, profile);
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`website-index:${snapshot.surveySlug}`}))`;
