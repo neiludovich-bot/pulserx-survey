@@ -320,11 +320,17 @@ export class OpenAIResponsesGateway {
       promptVersion: conversationTurnSystemPrompt.version,
       schemaName: "conversation_turn_v2", schema: conversationTurnResultSchema,
       instructions: conversationTurnSystemPrompt.instructions,
-      input: conversationTurnInputSchema.parse({ context: parsedContext, evidence: { ...parsedEvidence,
+      input: conversationTurnInputSchema.parse({ context: { ...parsedContext, participantTokens: participantTokensForModel(parsedContext.participantMessage) }, evidence: { ...parsedEvidence,
         candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
       metadata: { survey_slug: parsedEvidence.surveySlug },
     });
-    const observation = validateConversationObservation(parsedContext, call.result.observation);
+    const { answerEvidenceRanges, request, priorities, familiarityEvidenceRange, ...fields } = call.result.observation;
+    const excerpt = (range: import("@interview/schemas").EvidenceTokenRange) => evidenceFromTokenRange(parsedContext.participantMessage, range);
+    const observation = validateConversationObservation(parsedContext, { ...fields,
+      answerEvidence: answerEvidenceRanges.map(excerpt), request: request ? { text: request.text, evidence: excerpt(request.evidenceRange) } : null,
+      priorities: priorities.map(({ evidenceRange, ...priority }) => ({ ...priority, evidence: excerpt(evidenceRange) })),
+      familiarityEvidence: familiarityEvidenceRange ? excerpt(familiarityEvidenceRange) : null,
+    });
     if (Boolean(observation.request) !== Boolean(call.result.answer)) throw new Error("Current request and answer must occur together.");
     const answer = call.result.answer ? validateWebsiteAnswer({ ...parsedEvidence, query: observation.request!.text }, call.result.answer) : null;
     return { observation, answer, trace: call.trace };

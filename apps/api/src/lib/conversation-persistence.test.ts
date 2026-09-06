@@ -1,0 +1,33 @@
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
+import { env } from "../env";
+import { startMvpCustomGptSurvey, submitMvpCustomGptSurveyTurn, resetMvpCustomGptSurveySessions } from "./mvp-customgpt-survey-service";
+const mocks = vi.hoisted(() => ({ start: vi.fn(), load: vi.fn(), persist: vi.fn(), turn: vi.fn(), retrieve: vi.fn(), legacy: vi.fn() }));
+vi.mock("./mvp-survey-persistence", () => ({ persistMvpSurveySessionStarted: mocks.start, loadMvpSurveySessionSnapshot: mocks.load, persistMvpSurveyTurnAudit: mocks.persist }));
+vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => ({ conversationTurn: mocks.turn }) }));
+vi.mock("./mvp-openai-turn-router", () => ({ classifyMvpTurnRouteHybrid: mocks.legacy }));
+vi.mock("./controlled-rag-service", () => ({ retrieveWebsiteCandidates: mocks.retrieve }));
+const provider = env.MVP_SOURCE_PROVIDER;
+beforeEach(() => { vi.resetAllMocks(); env.MVP_SOURCE_PROVIDER = "controlled_rag"; });
+afterEach(() => { env.MVP_SOURCE_PROVIDER = provider; resetMvpCustomGptSurveySessions(); });
+describe("replacement persistence boundary", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("rehydrates %s discussion and resumes without re-answering it", async brand => {
+    const started = startMvpCustomGptSurvey({ surveySlug: brand, conversationRuntime: "conversation_v2", guide: ["Which factors matter?", "How does access affect your view?"], targetDurationSeconds: 3600 });
+    const snapshot = mocks.start.mock.calls[0][0].session;
+    mocks.load.mockResolvedValue({ session: snapshot, messages: started.messages, turnCount: 0 });
+    resetMvpCustomGptSurveySessions();
+    mocks.retrieve.mockResolvedValue([{ id: "fact", surveySlug: brand, title: "Evidence", url: "https://example.test/evidence", description: "", text: "A supported fact.", tags: [], assets: [] }]);
+    mocks.turn.mockResolvedValue({ observation: { answerStatus: "not_answered", answerEvidence: [], request: { text: "What is the evidence?", evidence: "What is the evidence?" }, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false }, trace: {}, answer: { selections: [{ sourceId: "fact", supportExcerpt: "A supported fact.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported fact.", sourceIds: ["fact"] }], unavailableReason: null } });
+    const response = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "What is the evidence?" });
+    const saved = mocks.persist.mock.calls.at(-1)![0];
+    expect(saved.session.moderatorState.conversation.parkedGuideId).toBe("imported_1");
+    expect(saved.session.answeredQuestionIds).toEqual([]);
+    expect(saved.turn.moderatorDecision.runtime).toBe("conversation_v2");
+    mocks.load.mockResolvedValue({ session: structuredClone(saved.session), messages: response.messages, turnCount: 1 });
+    resetMvpCustomGptSurveySessions(); mocks.turn.mockClear();
+    const resumed = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Thanks, continue." });
+    expect(resumed.messages.at(-1)?.content).toContain("Which factors matter?");
+    expect(resumed.messages.at(-1)?.content).not.toContain("A supported fact.");
+    expect(mocks.turn).not.toHaveBeenCalled(); expect(mocks.legacy).not.toHaveBeenCalled();
+    expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.conversation.discussion).toBeNull();
+  });
+});

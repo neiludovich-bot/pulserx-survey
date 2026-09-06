@@ -33,7 +33,7 @@ describe("single-call conversation boundary", () => {
     const f = fixture(brand);
     const message = "That sounds useful. What did Study A report?";
     f.parse.mockResolvedValue({ id: "v2", model: "gpt-5.4-mini", output_parsed: {
-      observation: { answerStatus: "answered", answerEvidence: ["That sounds useful."], request: { text: "What did Study A report?", evidence: "What did Study A report?" }, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false }, answer: f.answer,
+      observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], request: { text: "What did Study A report?", evidenceRange: { startToken: 3, endToken: 7 } }, priorities: [], familiarity: null, familiarityEvidenceRange: null, outOfScope: false }, answer: f.answer,
     } });
     const result = await f.gateway.conversationTurn({ version: 2, brand, participantMessage: message,
       question: { id: "reaction", text: "What is your reaction?", kind: "reaction" }, discussionQuery: "Study A", recentTurns: [], topics: [] }, f.evidence);

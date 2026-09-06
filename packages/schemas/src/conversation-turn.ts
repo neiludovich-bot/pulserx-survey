@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { sourceEvidenceSpansInputSchema, websiteAnswerModelResultSchema } from "./source-evidence-spans";
+import { evidenceTokenRangeSchema, participantTokensSchema } from "./evidence-ranges";
 
 export const conversationTurnContextSchema = z.object({
   version: z.literal(2), brand: z.string(), participantMessage: z.string().min(1).max(12000),
@@ -17,7 +18,13 @@ export const conversationObservationSchema = z.object({
   familiarityEvidence: z.string().nullable(),
   outOfScope: z.boolean(),
 }).strict();
-export const conversationTurnInputSchema = z.object({ context: conversationTurnContextSchema, evidence: sourceEvidenceSpansInputSchema }).strict();
-export const conversationTurnResultSchema = z.object({ observation: conversationObservationSchema, answer: websiteAnswerModelResultSchema.nullable() }).strict();
+export const conversationObservationModelSchema = conversationObservationSchema.omit({ answerEvidence: true, request: true, priorities: true, familiarityEvidence: true }).extend({
+  answerEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
+  request: z.object({ text: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
+  priorities: z.array(z.object({ label: z.string().min(1).max(200), query: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict()).max(16),
+  familiarityEvidenceRange: evidenceTokenRangeSchema.nullable(),
+}).strict();
+export const conversationTurnInputSchema = z.object({ context: conversationTurnContextSchema.extend({ participantTokens: participantTokensSchema }).strict(), evidence: sourceEvidenceSpansInputSchema }).strict();
+export const conversationTurnResultSchema = z.object({ observation: conversationObservationModelSchema, answer: websiteAnswerModelResultSchema.nullable() }).strict();
 export type ConversationTurnContext = z.infer<typeof conversationTurnContextSchema>;
 export type ConversationObservation = z.infer<typeof conversationObservationSchema>;
