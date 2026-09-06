@@ -7,10 +7,12 @@ import { evidenceTokenRangeSchema, participantTokensSchema } from "./evidence-ra
 const evidenceExcerptSchema = z.string().min(1).max(4000);
 const answerStatusSchema = z.enum(["answered", "partial", "not_answered"]);
 export const moderatorEvidenceRoleSchema = z.enum(["direct", "contextual"]);
+export const moderatorEvidenceContributionSchema = z.enum(["answer", "essential_qualification", "requested_context", "contrast_or_limit_only"]);
 
 export const moderatorEvidencePacketSchema = z.object({
   sources: z.array(z.object({
     evidenceRole: moderatorEvidenceRoleSchema.optional(),
+    contribution: moderatorEvidenceContributionSchema.optional(),
     id: z.string().min(1),
     surveySlug: z.enum(["brukinsa", "padcev", "nubeqa"]),
     title: z.string().min(1),
@@ -227,8 +229,6 @@ export const moderatorEvidenceSelectionInputSchema = z.object({
     }).strict()).max(32),
   }).strict()).max(24),
 }).strict();
-
-export const moderatorEvidenceContributionSchema = z.enum(["answer", "essential_qualification", "requested_context", "contrast_or_limit_only"]);
 
 const moderatorEvidenceSelectionSchema = z.object({
     sourceId: z.string().min(1),

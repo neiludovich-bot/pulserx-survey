@@ -125,7 +125,7 @@ async function selectEvidenceUnits(input: FocusedEvidenceInput, hasPriorAnswer =
         // A true statement about an unasked contrast/absence is not an answer.
         // Remove it before composition so it cannot bring its chart along.
         if (contribution === "contrast_or_limit_only" || contribution === "essential_qualification" && !hasAnswer) return [];
-        return [{ chunk: { ...source, text: supportExcerpt, assets: contribution === "essential_qualification" ? [] : assets, ...(evidenceRole ? { evidenceRole } : {}) }, contribution: contribution ?? "answer" }];
+        return [{ chunk: { ...source, text: supportExcerpt, assets: contribution === "essential_qualification" ? [] : assets, ...(evidenceRole ? { evidenceRole } : {}), ...(contribution ? { contribution } : {}) }, contribution: contribution ?? "answer" }];
       });
       if (input.presentationPlan?.maxFacts !== 1 && input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation") {
         // The original relation and the useful background are different evidence

@@ -22,7 +22,7 @@ function traceAttempt(trace: unknown, stage: "composition" | "grounding", code: 
   };
 }
 
-export function sourceTurnOutcome(status: SourceTurnOutcome["status"], value?: unknown): SourceTurnOutcome {
+export function sourceTurnOutcome(status: Exclude<SourceTurnOutcome["status"], "extractive_recovery">, value?: unknown): SourceTurnOutcome {
   const input = record(value);
   const entries = Array.isArray(input.contextualCompositionAttempts) ? input.contextualCompositionAttempts.slice(-3) : [];
   const attempts = entries.flatMap((entry: unknown) => {

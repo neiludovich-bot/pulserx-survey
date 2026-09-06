@@ -10,6 +10,26 @@ describe("presentation evidence focus", () => {
   beforeEach(() => { vi.stubEnv("NODE_ENV", "production"); Object.values(mocks).forEach((mock) => mock.mockReset()); });
   afterEach(() => vi.unstubAllEnvs());
 
+  it("focuses the first simplification on requested practical context while retaining all raw evidence", async () => {
+    const sources = ["nubeqa-ddi-profile", "nubeqa-safety-dosing"].map((id, index) => {
+      const source = CONTROLLED_RAG_CHUNKS.find((candidate) => candidate.id === id)!;
+      return { ...source, assets: source.assets ?? [], evidenceRole: index === 0 ? "direct" as const : "contextual" as const, contribution: index === 0 ? "answer" as const : "requested_context" as const };
+    });
+    const fact = "General safety guidance includes monitoring ischemic heart disease symptoms and managing cardiovascular risk factors, including hypertension, diabetes, and dyslipidemia; discontinue NUBEQA for Grade 3-4 ischemic heart disease.";
+    expect(sources[1].text).toContain(fact);
+    mocks.select.mockResolvedValue({ result: { selections: [{ sourceId: sources[1].id, supportExcerpt: fact, assetIds: [], evidenceRole: "contextual", contribution: "requested_context" }], rationale: "Preserve one complete practical point, rather than repeating the interaction mechanism." } });
+    mocks.compose.mockResolvedValue({ result: { answerBody: `${fact} [1]`, usedSourceIndexes: [1], limitations: [] } });
+    const lastSourceAnswer = "The prior answer explained interaction exposure and practical monitoring. [1] [2]";
+    const result = await askControlledRagForSurveyInterviewerTurn({ surveySlug: "nubeqa", participantMessage: "Can you explain that more simply?", sourceTopicContext: "What does that mean for what to monitor in practical terms?", evidencePacket: { sources }, recentTurns: [{ role: "interviewer", content: lastSourceAnswer }], surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" });
+    expect(mocks.select).toHaveBeenCalledOnce();
+    expect(mocks.select.mock.calls[0][0]).toMatchObject({ presentationPlan: { maxFacts: 2 }, presentationContext: { kind: "simplify_previous_answer", lastSourceAnswer } });
+    expect(mocks.compose.mock.calls[0][0].sources).toEqual([expect.objectContaining({ text: fact })]);
+    expect(result.references.map((reference) => reference.citationId)).toEqual([`rag:${sources[1].id}`]);
+    expect(result.evidencePacket).toEqual({ sources });
+    expect(mocks.query).not.toHaveBeenCalled();
+    expect(mocks.plan).not.toHaveBeenCalled();
+  });
+
   it.each(["supported", "empty", "invented"] as const)("carries the actual dcc2d80 monitoring explanation as presentation context only (%s selector)", async (selectionCase) => {
     // Actual last successful answer from the saved production replay. It mixes
     // two interaction cases and general monitoring; it is context, not evidence.

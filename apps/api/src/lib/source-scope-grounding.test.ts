@@ -61,7 +61,7 @@ describe("reviewed answer scope and rendered references", () => {
     ].map((source, index) => ({ ...source, surveySlug: "nubeqa" as const, url: `https://example.test/${source.id}`, description: "Synthetic fixture", tags: [], evidenceRole: index === 0 ? "direct" as const : "contextual" as const,
       assets: [{ title: source.title, url: `https://example.test/${source.id}.svg`, description: null, assetKind: "CHART", tags: [], priority: 1 }],
     }));
-    const result = await askControlledRagForSurveyInterviewerTurn({ surveySlug: "nubeqa", participantMessage: "Can you explain that more simply?", sourceTopicContext: "What progression-free survival results are described?", evidencePacket: { sources }, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, surveyContext: "SYNTHETIC scope regression", responseMode: "answer_only" });
+    const result = await askControlledRagForSurveyInterviewerTurn({ surveySlug: "nubeqa", participantMessage: "Can you explain that?", sourceTopicContext: "What progression-free survival results are described?", evidencePacket: { sources }, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, surveyContext: "SYNTHETIC scope regression", responseMode: "answer_only" });
     expect(result.enabled).toBe(true);
     expect(result.answer).toBe(fact);
     expect(result.references.map((reference) => reference.citationId)).toEqual(["rag:trial-a"]);
@@ -72,7 +72,7 @@ describe("reviewed answer scope and rendered references", () => {
     expect(parse).toHaveBeenCalledTimes(4);
     const review = JSON.parse(parse.mock.calls[1][0].input[0].content[0].text);
     const repair = JSON.parse(parse.mock.calls[2][0].input[0].content[0].text);
-    expect(review.answerScope).toMatchObject({ version: 1, resolvedSourceQuestion: "What progression-free survival results are described?", currentParticipantRequest: "Can you explain that more simply?" });
+    expect(review.answerScope).toMatchObject({ version: 1, resolvedSourceQuestion: "What progression-free survival results are described?", currentParticipantRequest: "Can you explain that?" });
     expect(review.sources).toEqual(sources.map((source, index) => ({ index: index + 1, text: source.text })));
     expect(repair.groundingViolations).toEqual([violation]);
     expect(repair.previousDraft.practicalAnswer).toBe(initial.practicalAnswer);

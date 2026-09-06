@@ -18,7 +18,7 @@ const packet: ModeratorEvidencePacket = { sources: [{
   }],
 }] };
 const input = {
-  surveySlug: "padcev" as const, participantMessage: "Can you explain that more simply?",
+  surveySlug: "padcev" as const, participantMessage: "Can you explain that?",
   surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
   responseMode: "answer_only" as const, sourceTopicContext: "What drug-drug interactions are described for PADCEV?",
   recentInterviewerContext: "interviewer: GENERATED ANSWER MUST NOT BECOME SOURCE EVIDENCE.", evidencePacket: packet,

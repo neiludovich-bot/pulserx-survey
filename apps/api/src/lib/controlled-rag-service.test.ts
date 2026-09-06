@@ -31,7 +31,7 @@ describe("controlled RAG source provider", () => {
       ? vi.fn().mockResolvedValue({ result: { answerBody: "Synthetic supported guidance. [1]", usedSourceIndexes: [1], limitations: [] }, groundingReview: audit })
       : vi.fn().mockRejectedValue(new Error("Unsupported invented monitoring instruction rejected."));
     vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({ composeControlledRagAnswer: compose } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
-    const result = await askControlledRagForSurveyInterviewerTurn({ ...parkedFactorsInput, evidencePacket: { sources: [{
+    const result = await askControlledRagForSurveyInterviewerTurn({ ...parkedFactorsInput, participantMessage: "Can you explain that?", evidencePacket: { sources: [{
       id: "synthetic-evidence", surveySlug: "nubeqa", title: "Synthetic source", url: "https://example.test/evidence", description: "", tags: [],
       text: "Synthetic supported guidance.", evidenceRole: "contextual", assets: [],
     }] } });
@@ -63,7 +63,7 @@ describe("controlled RAG source provider", () => {
       id: `synthetic-reviewed-${index}`, surveySlug: "nubeqa" as const, title: `Synthetic source ${index + 1}`,
       url: `https://example.test/reviewed-${index}`, description: "", tags: [], assets: [], text, evidenceRole: "direct" as const,
     }));
-    const result = await askControlledRagForSurveyInterviewerTurn({ ...parkedFactorsInput, evidencePacket: { sources } });
+    const result = await askControlledRagForSurveyInterviewerTurn({ ...parkedFactorsInput, participantMessage: "Can you explain that?", evidencePacket: { sources } });
 
     expect(result.enabled).toBe(true);
     expect(result.answer).toBe([answerBody, limitations.join("\n")].join("\n\n"));

@@ -40,6 +40,11 @@ const sourceTurnAttemptSchema = z.object({
 const outcomeFields = { version: z.literal(1), attempts: z.array(sourceTurnAttemptSchema).max(5).default([]) };
 export const sourceTurnOutcomeSchema = z.discriminatedUnion("status", [
   z.object({ ...outcomeFields, status: z.literal("success") }).strict(),
+  z.object({ ...outcomeFields, status: z.literal("extractive_recovery"), recovery: z.object({
+    method: z.literal("verbatim_curated_source_card"),
+    sourceId: z.string().min(1),
+    cause: z.enum(["grounding_rejected", "composition_validation"]),
+  }).strict() }).strict(),
   z.object({ ...outcomeFields, status: z.literal("no_evidence") }).strict(),
   z.object({ ...outcomeFields, status: z.literal("composition_failure") }).strict(),
   z.object({ ...outcomeFields, status: z.literal("grounding_rejected") }).strict(),

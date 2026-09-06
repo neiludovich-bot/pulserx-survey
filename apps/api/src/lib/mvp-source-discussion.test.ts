@@ -30,6 +30,29 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
+  it("completes and persists a delivered extractive recovery without claiming model grounding", async () => {
+    const sessionId = startAtFamiliarity("nubeqa");
+    const outcome = { version: 1, status: "extractive_recovery", attempts: [{ stage: "grounding", code: "unsupported_claims", responseId: "rejected-review", model: "fixture" }], recovery: { method: "verbatim_curated_source_card", sourceId: "fixture", cause: "grounding_rejected" } };
+    const answer = { ...success("nubeqa"), answer: 'Here is the wording from the source: “Exact prior evidence.” [1]', sourceAnswerGrounding: null, sourceOutcome: outcome };
+    mocks.source.mockResolvedValueOnce(answer);
+    const response = await submitMvpCustomGptSurveyTurn({ sessionId, content: "What practical monitoring is described?" });
+    expect(response.messages.at(-1)?.content).toContain(answer.answer);
+    expect(response.messages.at(-1)?.content).not.toContain("couldn't produce a supported answer");
+    const persisted = mocks.persist.mock.calls.at(-1)![0];
+    expect(persisted.session.moderatorState.sourceDiscussion).toMatchObject({ status: "open", failure: null, evidencePacket: answer.evidencePacket });
+    expect(persisted.session.moderatorState.sourceDiscussion.pendingQuestion).toBeUndefined();
+    expect(persisted.turn.moderatorDecision.sourceOutcome).toEqual(outcome);
+    expect(persisted.turn.moderatorDecision.sourceAnswerGrounding ?? null).toBeNull();
+    rehydrate(response);
+    mocks.source.mockResolvedValueOnce(answer);
+    const followup = await submitMvpCustomGptSurveyTurn({ sessionId, content: "Can you explain that more simply?" });
+    expect(mocks.source.mock.calls.at(-1)![0].evidencePacket).toEqual(answer.evidencePacket);
+    rehydrate(followup);
+    const resumed = await submitMvpCustomGptSurveyTurn({ sessionId, content: "Thanks, continue." });
+    expect(resumed.messages.at(-1)?.content).toMatch(/How familiar/);
+    expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion).toBeUndefined();
+    expect(mocks.persist.mock.calls.at(-1)![0].session.answeredQuestionIds).not.toContain("familiarity");
+  });
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps the actual %s source request across reload despite a broader search plan", async (brand) => {
     const sessionId = startAtFamiliarity(brand);
     const request = `What PFS evidence is available for ${brand}?`;

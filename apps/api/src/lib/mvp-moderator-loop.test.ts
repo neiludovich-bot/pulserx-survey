@@ -107,6 +107,18 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("treats an attributed recovery as delivered evidence and retains its distinct audit", async () => {
+    const packet = evidenceFor(surveySlug, "PFS");
+    const outcome = { version: 1, status: "extractive_recovery", attempts: [{ stage: "grounding", code: "unsupported_claims", responseId: "rejected", model: "fixture" }], recovery: { method: "verbatim_curated_source_card", sourceId: packet.sources[0].id, cause: "grounding_rejected" } };
+    mocks.source.mockResolvedValueOnce({ enabled: true, answer: `Here is the wording from the source: “${packet.sources[0].text}” [1]`, references: [{ citationId: `rag:${packet.sources[0].id}`, title: packet.sources[0].title, url: packet.sources[0].url, description: null, assets: [] }], evidencePacket: packet, sourceAnswerGrounding: null, sourceOutcome: outcome });
+    const result = await presentAgenda(surveySlug);
+    expect(result.state.priorities[0]).toMatchObject({ status: "presented", evidencePacket: packet });
+    expect(result.state.priorities[1].status).toBe("pending");
+    expect(result.content).toContain(packet.sources[0].text);
+    expect(result.content).not.toContain("couldn't produce a supported answer");
+    expect(result.decision.sourceOutcome).toEqual(outcome);
+    expect(result.decision.sourceAnswerGrounding).toBeNull();
+  });
   it("grounds priority presentations and reloaded followups in participant wording instead of an expanded model source question", async () => {
     const generated = initialPlan(surveySlug);
     generated.newPriorities[0].sourceQuestion = "Compare PFS and MFS across every disease stage and population.";

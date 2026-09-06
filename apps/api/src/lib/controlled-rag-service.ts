@@ -10,6 +10,7 @@ import { classifyMvpTurnRoute, type MvpDisplayTopic } from "./mvp-turn-router";
 import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
 import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
+import { recoverSelectedSourceExcerpt } from "./source-extractive-recovery";
 import { sourceContentSearchSql } from "./source-retrieval-query";
 import { planSourceQuestion } from "./source-question-planner";
 import { sourceTurnOutcome } from "./source-turn-outcome";
@@ -1638,9 +1639,9 @@ async function composeSourceAnswer(
     logSyntheticGroundingDiagnostics(input.surveyContext, error);
     const outcome = sourceTurnOutcome("composition_failure", error);
     console.warn(JSON.stringify({ event: "source_answer_composition_failed", outcome }));
-    // A rejected draft is not permission to expose unedited or truncated
-    // retrieval fragments as a clinical explanation. Keep the source links
-    // and the interview state available for clarification or resumption.
+    const recovery = recoverSelectedSourceExcerpt(chunks, outcome,
+      input.sourceQuestionPlan?.answerApproach === "contextual_explanation" || chunks.some((chunk) => chunk.contribution === "requested_context"));
+    if (recovery) return { available: true, answer: recovery.answer, grounding: null, outcome: recovery.outcome, recoveredSource: recovery.source };
     return { available: false, answer: SOURCE_EXPLANATION_UNAVAILABLE, grounding: null, outcome };
   }
 }
@@ -1673,9 +1674,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
     sourceTopicContext: pureClarification ? input.sourceTopicContext : sourceTopicContext };
   let chunks: ControlledRagChunk[];
   let evidenceCard: ClinicalEvidenceCard | null;
-  const narrowRetainedPresentation = pureClarification && retained && input.presentationPlan?.maxFacts === 1;
+  const narrowRetainedPresentation = pureClarification && retained && (input.presentationPlan?.maxFacts ?? Infinity) <= 2;
   if (pureClarification && retained) {
-    // Repeated simplification selects one complete fact from original evidence,
+    // Simplification selects useful complete facts from original evidence,
     // rather than asking composition to compress every prior monitoring case.
     // No retrieval or generated interviewer text can supply new facts here.
     const lastSourceAnswer = [...recentTurns].reverse().find((turn) => turn.role === "interviewer" && /\[\d+\]/.test(turn.content))?.content
@@ -1753,10 +1754,14 @@ export async function askControlledRagForSurveyInterviewerTurn(
     };
   }
 
+  // Lead contextual composition with the detail the participant requested,
+  // rather than the already-established relationship that prompted the question.
+  chunks = [...chunks].sort((left, right) => Number(right.contribution === "requested_context") - Number(left.contribution === "requested_context"));
   const references = referencesForChunks(chunks);
   const responseMode = input.responseMode ?? "answer_then_ask";
   const composition = await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, resolvedSourceQuestion);
-  const composedAnswer = stripComposerFollowUpQuestions(
+  const extractiveRecovery = composition.outcome.status === "extractive_recovery" ? composition.outcome.recovery : null;
+  const composedAnswer = extractiveRecovery ? composition.answer : stripComposerFollowUpQuestions(
     composition.answer,
     input.selectedNextQuestion,
     responseMode,
@@ -1764,7 +1769,11 @@ export async function askControlledRagForSurveyInterviewerTurn(
   let cited: ReturnType<typeof alignCitedSourceReferences>;
   let explanationAvailable = composition.available;
   try {
-    cited = alignCitedSourceReferences(composedAnswer, references);
+    // This is a whole source quotation, not a model draft: preserve its exact
+    // wording, punctuation, questions, and conditions without rewriting markers.
+    cited = extractiveRecovery
+      ? { answer: composedAnswer, references: references.filter((reference) => reference.citationId === `rag:${extractiveRecovery.sourceId}`) }
+      : alignCitedSourceReferences(composedAnswer, references);
   } catch {
     cited = { answer: SOURCE_EXPLANATION_UNAVAILABLE, references };
     composition.grounding = null;
@@ -1777,8 +1786,11 @@ export async function askControlledRagForSurveyInterviewerTurn(
   ]
     .join("")
     .trim();
+  const recoveredSource = "recoveredSource" in composition ? composition.recoveredSource : null;
   const packet = moderatorEvidencePacketSchema.safeParse({
-    sources: cited.references.flatMap((reference) => {
+    sources: extractiveRecovery ? (narrowRetainedPresentation ? retained.sources : chunks).map((source) => ({
+      ...source, ...(recoveredSource?.id === source.id ? { text: recoveredSource.text } : {}), assets: source.assets ?? [],
+    })) : cited.references.flatMap((reference) => {
       const source = chunks.find((chunk) => `rag:${chunk.id}` === reference.citationId);
       return source ? [{ ...source, assets: source.assets ?? [] }] : [];
     }),
@@ -1793,7 +1805,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     reason: explanationAvailable ? null : "The source explanation could not be verified.",
     // Narrow only this presentation. Preserve the full prior source context for
     // a subsequent question about a different case within the same discussion.
-    evidencePacket: narrowRetainedPresentation ? retained : packet.success ? packet.data : null,
+    evidencePacket: narrowRetainedPresentation && !extractiveRecovery ? retained : packet.success ? packet.data : null,
     sourceQuestionPlan,
     sourceAnswerGrounding: composition.grounding,
     sourceOutcome: composition.outcome,

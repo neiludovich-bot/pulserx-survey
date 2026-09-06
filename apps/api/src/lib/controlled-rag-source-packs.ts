@@ -7,6 +7,7 @@ export type ControlledRagChunk = {
   tags: string[];
   text: string;
   evidenceRole?: "direct" | "contextual";
+  contribution?: import("@interview/schemas").ModeratorEvidencePacket["sources"][number]["contribution"];
   assets?: Array<{
     title: string;
     url: string;

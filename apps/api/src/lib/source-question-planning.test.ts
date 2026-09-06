@@ -201,7 +201,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
   it("rephrases a retained pure clarification without planning or retrieving again", async () => {
     const { input, packet } = setup();
     mocks.compose.mockResolvedValue({ result: { answerBody: "The same monitoring excerpt, explained more simply. [1]", usedSourceIndexes: [1] } });
-    const result = await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: "Can you explain that more simply?" });
+    const result = await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: "Can you explain that?" });
     expect(mocks.plan).not.toHaveBeenCalled();
     expect(mocks.query).not.toHaveBeenCalled();
     expect(mocks.select).not.toHaveBeenCalled();
