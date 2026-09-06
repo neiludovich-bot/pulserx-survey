@@ -316,7 +316,7 @@ export class OpenAIResponsesGateway {
     const parsedContext = conversationTurnContextSchema.parse(context);
     const parsedEvidence = moderatorEvidenceSelectionInputSchema.parse(evidence);
     const call = await this.runStructuredCall<import("zod").infer<typeof conversationTurnResultSchema>>({
-      callType: "single_call_conversation", model: this.config.analysisModel,
+      callType: "single_call_conversation", model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: conversationTurnSystemPrompt.version,
       schemaName: "conversation_turn_v2", schema: conversationTurnResultSchema,
       instructions: conversationTurnSystemPrompt.instructions,
@@ -619,7 +619,7 @@ export class OpenAIResponsesGateway {
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
       ? (callType === "conversation_interpretation" ? this.config.conversationReasoningEffort ?? "low" : callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : callType === "moderator_plan" ? this.config.moderatorReasoningEffort ?? this.config.interpretationReasoningEffort : callType === "turn_route" ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
-    const effectiveReasoningEffort = callType === "single_call_conversation" ? "none" : reasoningEffort;
+    const effectiveReasoningEffort = callType === "single_call_conversation" ? schemaName === "conversation_turn_v2" ? "low" : "none" : reasoningEffort;
     const effectiveMetadata = { ...metadata, ...(effectiveReasoningEffort ? { reasoning_effort: effectiveReasoningEffort } : {}) };
     const requestPayload = {
       model,
