@@ -16,7 +16,7 @@ describe("evidence presentation contract", () => {
     expect((await gateway.selectModeratorEvidence({ ...input, evidenceFocus })).result).toEqual(output);
     const request = parse.mock.calls[0][0];
     expect(request.text.format.schema.properties.selections.maxItems).toBe(1);
-    expect(request.text.format.name).toBe(`moderator_${evidenceFocus}_single_fact_selection_result_v1`);
+    expect(request.text.format.name).toBe(`moderator_${evidenceFocus}_single_fact_selection_result_v2`);
     expect(JSON.parse(request.input[0].content[0].text).presentationPlan).toEqual(presentationPlan);
     expect(() => validateModeratorEvidenceSelection(input, { ...output, selections: [...output.selections, { ...output.selections[0], sourceId: "second" }] })).toThrow("at most one");
     expect(() => validateModeratorEvidenceSelection(input, { ...output, selections: [{ ...output.selections[0], supportExcerpt: "Invented condition." }] })).toThrow("exact supporting excerpt");

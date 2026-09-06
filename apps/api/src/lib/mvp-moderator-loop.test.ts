@@ -107,6 +107,32 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("grounds priority presentations and reloaded followups in participant wording instead of an expanded model source question", async () => {
+    const generated = initialPlan(surveySlug);
+    generated.newPriorities[0].sourceQuestion = "Compare PFS and MFS across every disease stage and population.";
+    mocks.plan.mockResolvedValueOnce({ result: generated });
+    const first = await runModeratorTurn(inputFor(surveySlug));
+    const expected = `What information about PFS is available for ${surveySlug.toUpperCase()}?`;
+    expect(mocks.source.mock.calls[0][0].participantMessage).toBe(expected);
+    expect(first?.state.priorities[0].sourceQuestion).toBe(expected);
+    // Keep the model proposal in the audited decision, not in canonical scope.
+    expect(first?.decision.plan.newPriorities[0].sourceQuestion).toBe(generated.newPriorities[0].sourceQuestion);
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first!.state.activePriorityId }) });
+    const detour = await runModeratorTurn(inputFor(surveySlug, { state: JSON.parse(JSON.stringify(first!.state)), currentQuestion: first!.question, participantMessage: "Can you explain that more simply?", isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ sourceTopicContext: expected, evidencePacket: evidenceFor(surveySlug, "PFS") });
+    expect(detour?.state.sourceDiscussion?.query).toBe(expected);
+    expect(detour?.state.priorities[0].status).toBe("presented");
+  });
+
+  it("does not let a broadened model label override its original evidence", async () => {
+    const generated = initialPlan(surveySlug);
+    generated.newPriorities[0] = { label: "PFS and MFS across stages", participantEvidence: "PFS", sourceQuestion: "Compare all endpoints across stages." };
+    mocks.plan.mockResolvedValueOnce({ result: generated });
+    const result = await runModeratorTurn(inputFor(surveySlug));
+    expect(mocks.source.mock.calls[0][0].participantMessage).toBe(`What information about PFS is available for ${surveySlug.toUpperCase()}?`);
+    expect(result?.state.priorities[0].label).toBe("PFS");
+  });
+
   it("does not pass the previous priority's evidence to phrasing when the next answer has no packet", async () => {
     const first = await presentAgenda(surveySlug);
     expect(first.state.priorities[0].evidencePacket).toBeDefined();
@@ -382,7 +408,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       evidencePacket: expectedPacket,
       responseMode: "answer_only",
     }));
-    expect(activeSourceQuestion).toMatch(/drug interactions/);
+    expect(activeSourceQuestion).toBe(`What information about DDI is available for ${surveySlug.toUpperCase()}?`);
   });
 
   it("audits the search interpretation while retaining the actual discussion request and structured conversation", async () => {

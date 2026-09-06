@@ -454,9 +454,11 @@ describe("moderator evidence ID validation", () => {
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     expect((await gateway.selectModeratorEvidence(evidenceInput)).result).toEqual(output);
     const format = parse.mock.calls[0][0].text.format;
-    expect(format.name).toBe("moderator_evidence_selection_result_v3");
+    expect(format.name).toBe("moderator_evidence_selection_result_v4");
     const selectionSchema = format.schema.properties.selections.items;
     expect(selectionSchema.required).toContain("evidenceRole");
+    expect(selectionSchema.required).toContain("contribution");
+    expect(selectionSchema.properties.contribution).not.toHaveProperty("default");
     expect(selectionSchema.properties.evidenceRole).not.toHaveProperty("default");
     expect(moderatorEvidenceSelectionModelResultSchema.safeParse({ ...output, selections: [{ ...output.selections[0], evidenceRole: undefined }] }).success).toBe(false);
     const packet = { sources: [{ ...evidencePacket.sources[0], evidenceRole: "contextual" }] };
@@ -469,7 +471,7 @@ describe("moderator evidence ID validation", () => {
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     await gateway.selectModeratorEvidence({ ...evidenceInput, evidenceFocus: "contextual" });
     const format = parse.mock.calls[0][0].text.format;
-    expect(format.name).toBe("moderator_contextual_evidence_selection_result_v1");
+    expect(format.name).toBe("moderator_contextual_evidence_selection_result_v2");
     expect(format.schema.properties.selections.items.properties.evidenceRole.enum).toEqual(["contextual"]);
     expect(moderatorContextualEvidenceSelectionModelResultSchema.parse({ selections: [], rationale: "No relevant contextual facts" }).selections).toEqual([]);
     expect(moderatorContextualEvidenceSelectionModelResultSchema.safeParse({ ...output, selections: [{ ...output.selections[0], evidenceRole: "direct" }] }).success).toBe(false);

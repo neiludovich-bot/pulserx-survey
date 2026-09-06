@@ -446,7 +446,7 @@ export class OpenAIResponsesGateway {
       callType: "moderator_evidence",
       model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: moderatorEvidenceSelectorSystemPrompt.version,
-      schemaName: singleFact ? `moderator_${parsed.evidenceFocus}_single_fact_selection_result_v1` : parsed.evidenceFocus === "contextual" ? "moderator_contextual_evidence_selection_result_v1" : "moderator_evidence_selection_result_v3",
+      schemaName: singleFact ? `moderator_${parsed.evidenceFocus}_single_fact_selection_result_v2` : parsed.evidenceFocus === "contextual" ? "moderator_contextual_evidence_selection_result_v2" : "moderator_evidence_selection_result_v4",
       schema: singleFact ? baseSchema.extend({ selections: baseSchema.shape.selections.max(1) }) : baseSchema,
       instructions: moderatorEvidenceSelectorSystemPrompt.instructions,
       input: parsed,

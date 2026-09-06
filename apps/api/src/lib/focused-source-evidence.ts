@@ -1,4 +1,4 @@
-import type { GroundedReference, ModeratorEvidenceSelectionInput, SourceQuestionPlan } from "@interview/schemas";
+import { moderatorEvidenceSelectionResultSchema, type GroundedReference, type ModeratorEvidenceSelectionInput, type SourceQuestionPlan } from "@interview/schemas";
 import type { ControlledRagChunk } from "./controlled-rag-source-packs";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { sourceContentSearchTerms } from "./source-retrieval-query";
@@ -58,7 +58,7 @@ function fallbackAssets(chunk: ControlledRagChunk, query: string): EvidenceAsset
   return scored.slice(0, 1).map(({ asset }) => asset);
 }
 
-export async function selectFocusedSourceEvidence(input: {
+type FocusedEvidenceInput = {
   surveySlug: ControlledRagChunk["surveySlug"];
   query: string;
   candidates: ControlledRagChunk[];
@@ -69,7 +69,18 @@ export async function selectFocusedSourceEvidence(input: {
   presentationPlan?: ModeratorEvidenceSelectionInput["presentationPlan"];
   presentationContext?: ModeratorEvidenceSelectionInput["presentationContext"];
   evidenceFocus?: "all" | "contextual";
-}): Promise<{ chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" | "unavailable" }> {
+};
+type EvidenceContribution = NonNullable<import("@interview/schemas").ModeratorEvidenceSelectionResult["selections"][number]["contribution"]>;
+type EvidenceUnit = { chunk: ControlledRagChunk; contribution: EvidenceContribution };
+type FocusedEvidenceResult = { chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" | "unavailable"; units?: EvidenceUnit[] };
+const isAnswerUnit = (unit: EvidenceUnit) => unit.contribution === "answer" || unit.contribution === "requested_context";
+
+export async function selectFocusedSourceEvidence(input: FocusedEvidenceInput): Promise<Omit<FocusedEvidenceResult, "units">> {
+  const { chunks, mode } = await selectEvidenceUnits(input);
+  return { chunks, mode };
+}
+
+async function selectEvidenceUnits(input: FocusedEvidenceInput, hasPriorAnswer = false): Promise<FocusedEvidenceResult> {
   const candidates = input.candidates.slice(0, 24);
   const selectionInput: ModeratorEvidenceSelectionInput = {
     surveySlug: input.surveySlug, query: input.query.slice(0, 4000),
@@ -93,10 +104,12 @@ export async function selectFocusedSourceEvidence(input: {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const selection = await gateway.selectModeratorEvidence(selectionInput);
+      const selected = moderatorEvidenceSelectionResultSchema.parse(selection.result);
       const selectionLimit = input.presentationPlan?.maxFacts === 1 ? 1 : 3;
-      if (selection.result.selections.length > selectionLimit) throw new Error("Too many selected sources.");
+      if (selected.selections.length > selectionLimit) throw new Error("Too many selected sources.");
       const seen = new Set<string>();
-      const chunks = selection.result.selections.map(({ sourceId, assetIds, supportExcerpt, evidenceRole }) => {
+      const hasAnswer = hasPriorAnswer || selected.selections.some(({ contribution }) => contribution === undefined || contribution === "answer" || contribution === "requested_context");
+      const units: EvidenceUnit[] = selected.selections.flatMap(({ sourceId, assetIds, supportExcerpt, evidenceRole, contribution }) => {
         const sourceIndex = candidates.findIndex((chunk) => chunk.id === sourceId);
         const source = candidates[sourceIndex];
         if (!source || seen.has(sourceId)) throw new Error("Invalid evidence source selection.");
@@ -109,7 +122,10 @@ export async function selectFocusedSourceEvidence(input: {
           if (!asset) throw new Error("Selected asset does not belong to its evidence source.");
           return asset;
         });
-        return { ...source, text: supportExcerpt, assets, ...(evidenceRole ? { evidenceRole } : {}) };
+        // A true statement about an unasked contrast/absence is not an answer.
+        // Remove it before composition so it cannot bring its chart along.
+        if (contribution === "contrast_or_limit_only" || contribution === "essential_qualification" && !hasAnswer) return [];
+        return [{ chunk: { ...source, text: supportExcerpt, assets: contribution === "essential_qualification" ? [] : assets, ...(evidenceRole ? { evidenceRole } : {}) }, contribution: contribution ?? "answer" }];
       });
       if (input.presentationPlan?.maxFacts !== 1 && input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation") {
         // The original relation and the useful background are different evidence
@@ -117,16 +133,24 @@ export async function selectFocusedSourceEvidence(input: {
         // selection alone cannot establish that it contains useful background.
         // The plan's complementary search hints remain available, but the
         // selected request still owns scope in this focused pass.
-        const focused = await selectFocusedSourceEvidence({ ...input, evidenceFocus: "contextual", fallbackSourceIds: [] });
-        const context = focused.chunks.filter((chunk) => chunk.evidenceRole === "contextual").slice(0, 2);
-        if (context.length) return { mode: "semantic", chunks: [
-          ...chunks.filter((chunk) => !context.some((other) => other.id === chunk.id))
-            .sort((left, right) => Number(left.evidenceRole === "contextual") - Number(right.evidenceRole === "contextual"))
-            .slice(0, 3 - context.length), ...context,
-        ] };
+        const focused = await selectEvidenceUnits({ ...input, evidenceFocus: "contextual", fallbackSourceIds: [] }, units.some(isAnswerUnit));
+        const context = (focused.units ?? []).filter((unit) => unit.chunk.evidenceRole === "contextual" &&
+          // A qualifier from the same document cannot replace the actual answer.
+          !(unit.contribution === "essential_qualification" && units.some((prior) => prior.chunk.id === unit.chunk.id && isAnswerUnit(prior))))
+          .sort((left, right) => Number(!isAnswerUnit(left)) - Number(!isAnswerUnit(right))).slice(0, 2);
+        if (context.length) {
+          const remaining = units.filter((unit) => !context.some((other) => other.chunk.id === unit.chunk.id))
+            .sort((left, right) => Number(!isAnswerUnit(left)) - Number(!isAnswerUnit(right)) || Number(left.chunk.evidenceRole === "contextual") - Number(right.chunk.evidenceRole === "contextual"));
+          const combined = [...remaining.slice(0, 3 - context.length), ...context]
+            .sort((left, right) => Number(!isAnswerUnit(left)) - Number(!isAnswerUnit(right)));
+          // Re-check the final bounded merge, not the pre-merge candidates.
+          const accepted = combined.some(isAnswerUnit) ? combined : [];
+          return { mode: "semantic", chunks: accepted.map((unit) => unit.chunk), units: accepted };
+        }
       }
+      const chunks = units.map((unit) => unit.chunk);
       if (!chunks.length) console.info({ event: "source_evidence_selection_empty", candidateCount: candidates.length });
-      return { chunks, mode: "semantic" };
+      return { chunks, mode: "semantic", units };
     } catch (error) {
       const record = error !== null && typeof error === "object" ? error as { name?: unknown; status?: unknown; message?: unknown } : {};
       const names = new Set(["Error", "ZodError", "APIError", "AuthenticationError", "PermissionDeniedError", "RateLimitError", "APIConnectionError", "APIConnectionTimeoutError", "BadRequestError", "InternalServerError"]);

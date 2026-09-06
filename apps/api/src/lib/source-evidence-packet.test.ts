@@ -77,7 +77,7 @@ describe("retained source evidence for clarification", () => {
     mocks.compose.mockResolvedValue({ result: { answerBody: "The interaction information. [2]", usedSourceIndexes: [2] } });
     const result = await askControlledRagForSurveyInterviewerTurn({ ...input, surveySlug: "nubeqa", participantMessage: "What are the drug-drug interactions?", evidencePacket: null });
     expect(result.references.map((reference) => reference.citationId)).toEqual([`rag:${ddi.id}`]);
-    expect(result.evidencePacket?.sources).toEqual([{ ...ddi, text: excerpt, assets: [] }]);
+    expect(result.evidencePacket?.sources).toEqual([{ ...ddi, text: excerpt, assets: [], evidenceRole: "direct" }]);
     expect(result.answer).toContain("[1]");
   });
 

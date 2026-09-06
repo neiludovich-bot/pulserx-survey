@@ -45,7 +45,7 @@ describe("source-grounding calibration replay contracts", () => {
     expect(reviewer).toContain("require explicit support, not merely omission");
     expect(reviewer).toContain("does not need an explicit sentence declaring its own omission");
     expect(reviewer).toContain("Missing details never imply clinical reassurance");
-    expect(sourceGroundingReviewSystemPrompt.version).toBe("source-grounding-review-v6");
+    expect(sourceGroundingReviewSystemPrompt.version).toBe("source-grounding-review-v7");
     expect(reviewer).toContain("independently check relevance as well as factual support");
     expect(reviewer).toContain("do not require it to cover every case");
     expect(contextualSourceCompositionSystemPrompt.instructions.join("\n")).toContain("Do not call a checklist the label");

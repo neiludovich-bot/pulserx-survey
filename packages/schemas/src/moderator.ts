@@ -228,11 +228,15 @@ export const moderatorEvidenceSelectionInputSchema = z.object({
   }).strict()).max(24),
 }).strict();
 
+export const moderatorEvidenceContributionSchema = z.enum(["answer", "essential_qualification", "requested_context", "contrast_or_limit_only"]);
+
 const moderatorEvidenceSelectionSchema = z.object({
     sourceId: z.string().min(1),
     supportExcerpt: z.string().min(1).max(1500),
     assetIds: z.array(z.string().min(1)).max(6),
     evidenceRole: moderatorEvidenceRoleSchema.default("direct"),
+    // Older internal selections omit this and are treated as answer evidence.
+    contribution: moderatorEvidenceContributionSchema.optional(),
   }).strict();
 
 export const moderatorEvidenceSelectionResultSchema = z.object({
@@ -242,13 +246,13 @@ export const moderatorEvidenceSelectionResultSchema = z.object({
 
 // Model output requires the role; only application/legacy inputs receive a default.
 export const moderatorEvidenceSelectionModelResultSchema = moderatorEvidenceSelectionResultSchema.extend({
-  selections: z.array(moderatorEvidenceSelectionSchema.extend({ evidenceRole: moderatorEvidenceRoleSchema })).max(3),
+  selections: z.array(moderatorEvidenceSelectionSchema.extend({ evidenceRole: moderatorEvidenceRoleSchema, contribution: moderatorEvidenceContributionSchema })).max(3),
 }).strict();
 
 // A focused contextual pass may select no evidence, but cannot generate a direct role.
 // This constrains generation; exact excerpt and source validation still apply afterward.
 export const moderatorContextualEvidenceSelectionModelResultSchema = moderatorEvidenceSelectionResultSchema.extend({
-  selections: z.array(moderatorEvidenceSelectionSchema.extend({ evidenceRole: z.enum(["contextual"]) })).max(3),
+  selections: z.array(moderatorEvidenceSelectionSchema.extend({ evidenceRole: z.enum(["contextual"]), contribution: moderatorEvidenceContributionSchema })).max(3),
 }).strict();
 
 export type ModeratorPriority = z.infer<typeof moderatorPrioritySchema>;

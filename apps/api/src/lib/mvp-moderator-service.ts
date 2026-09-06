@@ -8,6 +8,7 @@ import { isReferentialClarification } from "./controlled-rag-service";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
 import { presentationFor } from "./mvp-presentation";
 import { sanitizeModeratorPlanningFailure } from "./synthetic-moderator-diagnostics";
+import { prioritySourceLabel, prioritySourceQuestion } from "./mvp-priority-source-scope";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
 type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string };
@@ -69,8 +70,9 @@ export async function runModeratorTurn(input: Input) {
   }
   for (const priority of plan.newPriorities) {
     if (state.priorities.length >= 64) break;
-    if (!state.priorities.some((p) => normalized(p.label) === normalized(priority.label))) {
-      state.priorities.push({ ...priority, id: randomUUID(), status: "pending", reactionEvidence: [], referenceIds: [], probeCount: 0 });
+    const label = prioritySourceLabel(priority);
+    if (!state.priorities.some((p) => normalized(p.label) === normalized(label))) {
+      state.priorities.push({ ...priority, label, sourceQuestion: prioritySourceQuestion(priority, input.brand), id: randomUUID(), status: "pending", reactionEvidence: [], referenceIds: [], probeCount: 0 });
     }
   }
   if (!state.priorities.length) return null;
@@ -136,7 +138,7 @@ export async function runModeratorTurn(input: Input) {
     action = "answer_source";
     const discussion = state.sourceDiscussion;
     const discussionContext = sourceDiscussionContextForTurn(discussion, isReferentialClarification(input.participantMessage));
-    const sourceTopic = discussionContext.sourceTopicContext ?? previousActive?.sourceQuestion ?? null;
+    const sourceTopic = discussionContext.sourceTopicContext ?? (previousActive ? prioritySourceQuestion(previousActive, input.brand) : null);
     const retainedPacket = discussion ? discussionContext.evidencePacket : previousActive?.evidencePacket;
     const request = sourceRequestForTurn(state, input.participantMessage);
     if (!discussion && sourceTopic) state.sourceDiscussion = { query: sourceTopic, ...(retainedPacket ? { evidencePacket: structuredClone(retainedPacket) } : {}) };
@@ -167,6 +169,8 @@ export async function runModeratorTurn(input: Input) {
       const next = state.priorities.find((p) => p.id === plan.selectedPriorityId && p.status === "pending") ?? state.priorities.find((p) => p.status === "pending");
       if (next) {
         action = "present_priority";
+        next.label = prioritySourceLabel(next);
+        next.sourceQuestion = prioritySourceQuestion(next, input.brand);
         beginSourceDiscussion(state, next.sourceQuestion, { kind: "priority", id: next.id });
         const answer = await source(next.sourceQuestion);
         if (answer) {
