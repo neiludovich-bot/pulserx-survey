@@ -8,7 +8,8 @@ import {
 } from "@interview/schemas";
 import { prisma } from "./prisma";
 
-const MAX_CHUNK_CHARS = 1200;
+import { chunkSourceText } from './source-text-chunks';
+export { chunkSourceText } from './source-text-chunks';
 
 type SourceLibraryDocumentRecord = {
   id: string;
@@ -84,47 +85,6 @@ function normalizeAssetKind(value: string): SourceAssetKind {
   }
 
   return "OTHER";
-}
-
-export function chunkSourceText(value: string) {
-  const paragraphs = value
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
-
-  const chunks: string[] = [];
-  let current = "";
-
-  for (const paragraph of paragraphs.length > 0 ? paragraphs : [value]) {
-    if (!current) {
-      current = paragraph;
-      continue;
-    }
-
-    if (`${current}\n\n${paragraph}`.length <= MAX_CHUNK_CHARS) {
-      current = `${current}\n\n${paragraph}`;
-      continue;
-    }
-
-    chunks.push(current);
-    current = paragraph;
-  }
-
-  if (current) {
-    chunks.push(current);
-  }
-
-  return chunks.flatMap((chunk) => {
-    if (chunk.length <= MAX_CHUNK_CHARS) {
-      return [chunk];
-    }
-
-    const pieces: string[] = [];
-    for (let index = 0; index < chunk.length; index += MAX_CHUNK_CHARS) {
-      pieces.push(chunk.slice(index, index + MAX_CHUNK_CHARS).trim());
-    }
-    return pieces.filter(Boolean);
-  });
 }
 
 function mapDocument(document: SourceLibraryDocumentRecord) {

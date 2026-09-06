@@ -75,6 +75,8 @@ import {
   listMvpSurveyAuditSessions,
 } from "./lib/mvp-survey-audit-service";
 import { previewSourceImages } from "./lib/source-preview-service";
+import { applyWebsiteIndex, websiteIndexReports } from "./lib/website-index-service";
+import { prisma } from "./lib/prisma";
 import {
   createSourceLibraryDocument,
   importSourceLibraryDocuments,
@@ -375,6 +377,22 @@ export function buildApp() {
       }
     },
   );
+
+  app.post<{ Body: unknown }>("/admin/source-library/website-index", async (request, reply) => {
+    try { return await applyWebsiteIndex(request.body); }
+    catch (error) {
+      request.log.error(error);
+      return reply.status(400).send({ message: error instanceof Error ? error.message : "Website index failed; no changes applied." });
+    }
+  });
+  app.get<{ Querystring: { surveySlug: string } }>("/admin/source-library/website-index/reports", async (request, reply) => {
+    if (!["nubeqa", "brukinsa", "padcev"].includes(request.query.surveySlug)) return reply.status(400).send({ message: "Unknown bot" });
+    return websiteIndexReports(request.query.surveySlug);
+  });
+  app.get<{ Querystring: { surveySlug: string } }>("/admin/source-library/export", async (request, reply) => {
+    if (!["nubeqa", "brukinsa", "padcev"].includes(request.query.surveySlug)) return reply.status(400).send({ message: "Unknown bot" });
+    return { documents: await prisma.sourceDocument.findMany({ where: { surveySlug: request.query.surveySlug }, include: { chunks: true, assets: true } }) };
+  });
 
   app.get<{
     Querystring: { surveySlug?: string };
