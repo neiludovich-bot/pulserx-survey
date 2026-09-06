@@ -5,6 +5,7 @@ import { websiteIndexSnapshotSchema, WEBSITE_PROFILES, allowedWebsiteIndexUrl, t
 import { CONTROLLED_RAG_CHUNKS } from "./controlled-rag-source-packs";
 import { extractWebsiteTables } from "./extract-website-tables";
 
+const crawlError = (error: unknown) => error instanceof Error ? `${error.message}${error.cause instanceof Error ? `: ${error.cause.message}` : ""}`.slice(0,1000) : "Download/extraction failed";
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const clean = (text: string) => text.replace(/[\t \u00a0]+/g, " ").replace(/\n\s*\n/g, "\n\n").trim();
 export function canonicalUrl(value: string, base: string) {
@@ -82,7 +83,7 @@ export async function indexMedicalWebsite(slug: WebsiteIndexSnapshot["surveySlug
       xml("loc").each((_i, el) => { const found = canonicalUrl(xml(el).text().trim(), url); if (!found) return;
         if (/\.xml$/i.test(new URL(found).pathname)) sitemapQueue.push(found); else enqueue(found, profile.rootUrl);
       });
-    } catch (error) { snapshot.issues.push({ url, reason: `Sitemap unavailable: ${error instanceof Error ? error.message : "unknown error"}` }); }
+    } catch (error) { snapshot.issues.push({ url, reason: `Sitemap unavailable: ${crawlError(error)}` }); }
   }
   if (sitemapQueue.length) { snapshot.truncated = true; snapshot.issues.push({ url: profile.rootUrl, reason: "Sitemap discovery limit reached" }); }
   let processed = 0;
@@ -107,11 +108,12 @@ export async function indexMedicalWebsite(slug: WebsiteIndexSnapshot["surveySlug
         addPage({ url: resource.url, discoveredFrom: item.from, title: extracted.title, content: extracted.content, sourceType: "URL", hash: hash(extracted.content), assets: extracted.assets, tables: extracted.tables });
         for (const link of extracted.links) enqueue(link, resource.url);
       } else snapshot.issues.push({ url: resource.url, reason: `Unsupported content type: ${resource.type}` });
-    } catch (error) { snapshot.issues.push({ url: item.url, reason: error instanceof Error ? error.message.slice(0, 1000) : "Download/extraction failed" }); }
+    } catch (error) { snapshot.issues.push({ url: item.url, reason: crawlError(error) }); }
     console.log(`${slug}: ${processed} resources, ${snapshot.pages.length} indexed pages, ${snapshot.issues.length} issues, ${queue.length} queued`);
   }
   snapshot.discoveredUrls = [...new Set([...seen, ...queue.map(item => item.url)])];
   snapshot.truncated ||= queue.length > 0;
+  if (!snapshot.pages.length) throw new Error(`No pages indexed. ${snapshot.issues.slice(0, 4).map(issue => `${issue.url}: ${issue.reason}`).join("; ")}`);
   return websiteIndexSnapshotSchema.parse(snapshot);
 }
 
