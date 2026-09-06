@@ -370,9 +370,9 @@ export class OpenAIResponsesGateway {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const call = await this.runStructuredCall<import("zod").infer<typeof conversationWebsiteAnswerSchema>>({
         callType: "website_answer", model: this.config.sourceModel ?? this.config.analysisModel,
-        promptVersion: `${websiteAnswerSystemPrompt.version}-selected-topic-1`, schemaName: "conversation_presentation_v2", schema: conversationWebsiteAnswerSchema,
+        promptVersion: `${websiteAnswerSystemPrompt.version}-selected-topic-2`, schemaName: "conversation_presentation_v2", schema: conversationWebsiteAnswerSchema,
         instructions: [...websiteAnswerSystemPrompt.instructions,
-          "This topic was selected by the interview application for an initial evidence presentation. For a broad topic such as efficacy or dosing, give a short qualified overview from the available passages, identifying each relevant treatment setting or regimen. A broad topic alone is not an ambiguous request. Do not require a study name before offering a useful supported overview. Still honor narrower named endpoints and preserve population/regimen differences; never invent missing results."],
+          "This topic was selected by the interview application for an initial evidence presentation. For a broad topic such as efficacy or dosing, start with one or two supported findings in 50–90 words total, clearly naming their treatment settings or regimens. This is a conversational starting point, not an exhaustive catalog: do not list every indication, enumerate dose-reduction levels, or discuss absent results for other settings unless requested. A broad topic alone is not an ambiguous request. Do not require a study name before offering a useful supported overview. Still honor narrower named endpoints and preserve population/regimen differences; never invent missing results."],
         input: websiteAnswerInputSchema.parse({ ...parsed, repairFeedback,
           candidates: parsed.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })),
         }), metadata: { survey_slug: parsed.surveySlug },

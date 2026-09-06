@@ -18,6 +18,7 @@ import {
 } from "@interview/schemas";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
 import { runConversationRuntime } from "./conversation-runtime-service";
+import { conversationRuntimeForNewSession } from "./conversation-runtime-policy";
 import { sourceDiscussionFastPath } from "./mvp-source-fast-path";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
 import { isReferentialClarification } from "./controlled-rag-service";
@@ -3134,7 +3135,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     answerEvidenceByQuestionId: {},
     currentQuestionId: firstQuestion.id,
     pendingReturnQuestionId: null,
-    moderatorState: { ...emptyModeratorState(), ...(input.conversationRuntime ? { runtime: input.conversationRuntime } : {}) },
+    moderatorState: { ...emptyModeratorState(), runtime: conversationRuntimeForNewSession(definition.slug, input.conversationRuntime, env) },
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
