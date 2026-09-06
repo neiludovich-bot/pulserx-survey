@@ -30,6 +30,21 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps the actual %s source request across reload despite a broader search plan", async (brand) => {
+    const sessionId = startAtFamiliarity(brand);
+    const request = `What PFS evidence is available for ${brand}?`;
+    const expanded = `Compare PFS and MFS results for ${brand}.`;
+    const answer = { ...success(brand), sourceQuestionPlan: { version: 1, interpretedQuestion: expanded, retrievalQueries: [expanded], answerApproach: "direct", usesSourceContext: false, contextBoundary: null, rationale: "Adversarial search broadens the original request." } };
+    mocks.source.mockResolvedValueOnce(answer);
+    const first = await submitMvpCustomGptSurveyTurn({ sessionId, content: request });
+    expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion.query).toBe(request);
+    rehydrate(first);
+    mocks.source.mockResolvedValueOnce(answer);
+    await submitMvpCustomGptSurveyTurn({ sessionId, content: "Can you explain that more simply?" });
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ sourceTopicContext: request, evidencePacket: answer.evidencePacket });
+    expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion.query).toBe(request);
+  });
+
   it.each(["rate_limited", "provider_timeout", "authentication_failed"])("describes temporary source unavailability without implying unsupported evidence (%s)", async (code) => {
     const sessionId = startAtFamiliarity("nubeqa");
     mocks.source.mockResolvedValueOnce({ ...success("nubeqa"), enabled: false, answer: null, reason: "PRIVATE PROVIDER MESSAGE", sourceOutcome: { version: 1, status: "composition_failure", attempts: [{ stage: "grounding", code, responseId: null, model: null }] } });

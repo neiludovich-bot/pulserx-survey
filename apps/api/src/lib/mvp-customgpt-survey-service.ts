@@ -3784,7 +3784,7 @@ export async function submitMvpCustomGptSurveyTurn(
         references = filtered.references;
         droppedReferences = filtered.droppedReferences;
         if (sourceResponseMode === "answer_only") {
-          completeSourceDiscussion(session.moderatorState, sourceTurn.sourceQuestionPlan?.interpretedQuestion ?? priorSourceContext.pendingQuestion ??
+          completeSourceDiscussion(session.moderatorState, priorSourceContext.pendingQuestion ??
             (isReferentialClarification(sourceRequestContent) && discussionBefore?.query ? discussionBefore.query : sourceRequestContent), sourceTurn.evidencePacket);
           assistantContent = withSourceNavigationHint(session.moderatorState, assistantContent);
         }

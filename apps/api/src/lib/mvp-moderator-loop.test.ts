@@ -385,7 +385,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(activeSourceQuestion).toMatch(/drug interactions/);
   });
 
-  it("retains the validated source question plan and resolved discussion while forwarding structured conversation", async () => {
+  it("audits the search interpretation while retaining the actual discussion request and structured conversation", async () => {
     const first = await presentAgenda(surveySlug);
     const recentTurns: ModeratorInput["recentTurns"] = [
       { role: "participant", content: "Which drug interactions are documented?" },
@@ -418,9 +418,23 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(result?.decision.sourceQuestionPlan).toEqual(sourceQuestionPlan);
     expect(result?.decision.sourceAnswerGrounding).toEqual(sourceAnswerGrounding);
     expect(result?.state.sourceDiscussion).toMatchObject({
-      query: sourceQuestionPlan.interpretedQuestion, evidencePacket: evidenceFor(surveySlug, "DDI"),
+      query: "What should be monitored with those medications?", evidencePacket: evidenceFor(surveySlug, "DDI"),
     });
     expect(result?.state.priorities).toEqual(first.state.priorities);
+  });
+
+  it("does not save an unasked search expansion as the source discussion topic", async () => {
+    const first = await presentAgenda(surveySlug);
+    const request = `What PFS evidence is available for ${surveySlug}?`;
+    const expanded = `Compare PFS and MFS results for ${surveySlug}.`;
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });
+    mocks.source.mockResolvedValueOnce({ enabled: true, answer: "Synthetic PFS answer. [1]", references: [{ citationId: "rag:fixture", title: "Synthetic", url: "https://example.test", description: null, assets: [] }], evidencePacket: evidenceFor(surveySlug, "PFS"), sourceQuestionPlan: { version: 1, interpretedQuestion: expanded, retrievalQueries: [expanded], answerApproach: "direct", usesSourceContext: false, contextBoundary: null, rationale: "Adversarial broader search." } });
+    const detour = await runModeratorTurn(inputFor(surveySlug, { state: first.state, currentQuestion: first.question, participantMessage: request, isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(detour?.state.sourceDiscussion?.query).toBe(request);
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });
+    const followup = await runModeratorTurn(inputFor(surveySlug, { state: JSON.parse(JSON.stringify(detour!.state)), currentQuestion: first.question, participantMessage: "Can you explain that more simply?", isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(mocks.source).toHaveBeenLastCalledWith(expect.objectContaining({ sourceTopicContext: request, evidencePacket: evidenceFor(surveySlug, "PFS") }));
+    expect(followup?.state.sourceDiscussion?.query).toBe(request);
   });
 
   it("clarifies the latest DDI detour after restart while preserving the original PFS reaction", async () => {

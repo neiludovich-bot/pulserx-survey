@@ -1564,10 +1564,10 @@ async function composeSourceAnswer(
   input: ControlledRagSurveyTurnInput,
   chunks: ControlledRagChunk[],
   evidenceCard: ClinicalEvidenceCard | null,
-  retrievalQuery: string,
+  resolvedSourceQuestion: string,
 ) {
   const gateway = getOptionalOpenAIGateway();
-  const fallbackInput = { ...input, participantMessage: retrievalQuery };
+  const fallbackInput = { ...input, participantMessage: resolvedSourceQuestion };
 
   if (process.env.NODE_ENV === "test") {
     return { available: true, answer: cleanClinicalAnswer(fallbackSourceAnswer(fallbackInput, chunks, evidenceCard)), grounding: null, outcome: sourceTurnOutcome("success") };
@@ -1578,7 +1578,7 @@ async function composeSourceAnswer(
     const composition = await gateway.composeControlledRagAnswer({
       surveySlug: input.surveySlug,
       participantMessage: input.participantMessage,
-      resolvedSourceQuestion: retrievalQuery,
+      resolvedSourceQuestion,
       sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null,
       sourceQuestionPlan: input.sourceQuestionPlan ?? null,
       presentationPlan: input.presentationPlan,
@@ -1659,8 +1659,10 @@ export async function askControlledRagForSurveyInterviewerTurn(
     ? await planSourceQuestion({ surveySlug: input.surveySlug, participantMessage: input.participantMessage.slice(0, 12000),
         sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null, recentTurns, presentationPlan: input.presentationPlan })
     : null;
-  const retrievalQuery = sourceQuestionPlan?.interpretedQuestion ?? original.retrievalQuery;
-  const retrievalInput = { ...original.retrievalInput, participantMessage: retrievalQuery };
+  // Search planning can expand retrieval terms, but cannot redefine the
+  // application-selected question used for selection, composition or review.
+  const resolvedSourceQuestion = original.retrievalQuery;
+  const retrievalInput = original.retrievalInput;
   const dependentQuestion = input.responseMode === "answer_only" &&
     (sourceQuestionPlan?.usesSourceContext ?? hasBackwardSourceReference(input.participantMessage));
   const priorSources = dependentQuestion ? retained?.sources ?? [] : [];
@@ -1682,14 +1684,14 @@ export async function askControlledRagForSurveyInterviewerTurn(
       ?? null;
     chunks = narrowRetainedPresentation ? (await selectFocusedSourceEvidence({
       surveySlug: input.surveySlug, query: input.participantMessage, candidates: retained.sources,
-      sourceTopicContext: retrievalQuery, priorSourceIds: retained.sources.map((source) => source.id),
+      sourceTopicContext: resolvedSourceQuestion, priorSourceIds: retained.sources.map((source) => source.id),
       presentationPlan: input.presentationPlan,
       presentationContext: { version: 1, kind: "simplify_previous_answer", participantRequest: input.participantMessage.slice(0, 12000), lastSourceAnswer: lastSourceAnswer?.slice(0, 12000) ?? null },
       fallbackSourceIds: [],
     })).chunks : retained.sources;
     evidenceCard = null;
   } else {
-  const retrievalQueries = sourceQuestionPlan?.retrievalQueries ?? [retrievalQuery];
+  const retrievalQueries = sourceQuestionPlan?.retrievalQueries ?? [resolvedSourceQuestion];
   const retrievalGroups = await Promise.all(retrievalQueries.map((query) => retrieveChunks({ ...retrievalInput, participantMessage: query })));
   // Interleave searches so a complementary query has room beside the original
   // relation. Keep the curated catalog and bound the selector input to 24.
@@ -1721,7 +1723,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
   const preferredFallbackIds = (initialEvidenceCard?.preferredSourceIds ?? []).filter((id) => fallbackMatches.some((chunk) => chunk.id === id));
   const selection = await selectFocusedSourceEvidence({
     surveySlug: input.surveySlug,
-    query: retrievalQuery,
+    query: resolvedSourceQuestion,
     candidates,
     sourceTopicContext,
     sourceQuestionPlan,
@@ -1753,7 +1755,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
 
   const references = referencesForChunks(chunks);
   const responseMode = input.responseMode ?? "answer_then_ask";
-  const composition = await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, retrievalQuery);
+  const composition = await composeSourceAnswer(contextualCompositionInput, chunks, evidenceCard, resolvedSourceQuestion);
   const composedAnswer = stripComposerFollowUpQuestions(
     composition.answer,
     input.selectedNextQuestion,

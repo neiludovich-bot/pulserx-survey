@@ -144,7 +144,7 @@ export async function runModeratorTurn(input: Input) {
     if (retainedPacket && !state.sourceDiscussion!.evidencePacket) state.sourceDiscussion!.evidencePacket = structuredClone(retainedPacket);
     const answer = await source(request, sourceTopic, retainedPacket);
     if (answer) {
-      completeSourceDiscussion(state, sourcePlanning.plan?.interpretedQuestion ?? discussionContext.pendingQuestion ?? (isReferentialClarification(request) && sourceTopic ? sourceTopic : request), sourceEvidencePacket);
+      completeSourceDiscussion(state, discussionContext.pendingQuestion ?? (isReferentialClarification(request) && sourceTopic ? sourceTopic : request), sourceEvidencePacket);
     } else failSourceDiscussion(state, sourceDiscussionFailure(sourcePlanning.outcome, sourceReason ?? "Source answer unavailable."));
     content = withSourceNavigationHint(state, answer ?? sourceFailureParticipantMessage(sourcePlanning.outcome));
   } else {

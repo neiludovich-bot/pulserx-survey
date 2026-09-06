@@ -2,13 +2,47 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("@interview/schemas", async () => import("../../../../packages/schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../../../packages/prompts/src/index"));
 vi.mock("@interview/engine", async () => import("../../../../packages/engine/src/index"));
-const mocks = vi.hoisted(() => ({ gateway: null as unknown }));
+const mocks = vi.hoisted(() => ({ gateway: null as unknown, query: vi.fn(), findMany: vi.fn() }));
 vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => mocks.gateway }));
+vi.mock("./prisma", () => ({ prisma: { $queryRaw: mocks.query, sourceChunk: { findMany: mocks.findMany } } }));
 import { OpenAIResponsesGateway } from "../../../../packages/engine/src/openai-workflows";
 import { askControlledRagForSurveyInterviewerTurn } from "./controlled-rag-service";
 
 describe("reviewed answer scope and rendered references", () => {
   afterEach(() => vi.unstubAllEnvs());
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s selected PFS scope through an adversarial expanded search and actual grounding repair", async (surveySlug) => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("DATABASE_URL", "postgresql://fixture.invalid/unused");
+    mocks.query.mockReset().mockResolvedValue([{ id: "trial-a" }, { id: "trial-b" }]);
+    const sourceTexts = ["Trial A reports radiographic progression-free survival in population A.", "Trial B reports metastasis-free survival in population B."];
+    mocks.findMany.mockReset().mockResolvedValue(sourceTexts.map((text, index) => ({ id: index === 0 ? "trial-a" : "trial-b", content: text, tags: [], sourceDocument: { title: `Synthetic trial ${index}`, description: "Synthetic fixture", url: `https://example.test/trial-${index}`, tags: [], assets: [] } })));
+    const selectedQuestion = `What PFS evidence is available for ${surveySlug}?`;
+    const plan = { version: 1, interpretedQuestion: `Compare PFS and MFS for ${surveySlug}.`, retrievalQueries: [`${surveySlug} progression free survival`, `${surveySlug} metastasis free survival`], answerApproach: "direct", usesSourceContext: false, contextBoundary: null, rationale: "Adversarial fixture expands the request to an unasked endpoint." };
+    const fact = "Trial A reports rPFS in population A. [1]";
+    const contrast = "Trial B reports MFS in population B. [2]";
+    const violation = { excerpt: contrast, reason: "The actual selected request is PFS; the search interpretation cannot authorize an MFS comparison." };
+    const parse = vi.fn()
+      .mockResolvedValueOnce({ output_parsed: plan })
+      .mockResolvedValueOnce({ output_parsed: { selections: sourceTexts.map((text, index) => ({ sourceId: index === 0 ? "db:trial-a" : "db:trial-b", supportExcerpt: text, assetIds: [], evidenceRole: "direct" })), rationale: "Adversarial selection includes an unrelated endpoint." } })
+      .mockResolvedValueOnce({ output_parsed: { answerBody: `${fact} ${contrast}`, usedSourceIndexes: [1, 2], limitations: [] } })
+      .mockResolvedValueOnce({ output_parsed: { version: 1, supported: false, unsupportedClaims: [violation] } })
+      .mockResolvedValueOnce({ output_parsed: { answerBody: fact, usedSourceIndexes: [1], limitations: [] } })
+      .mockResolvedValueOnce({ output_parsed: { version: 1, supported: true, unsupportedClaims: [] } });
+    mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    const result = await askControlledRagForSurveyInterviewerTurn({ surveySlug, participantMessage: selectedQuestion, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, surveyContext: "Synthetic scope regression", responseMode: "answer_only" });
+    expect(result.enabled).toBe(true);
+    expect(result.answer).toBe(fact);
+    expect(result.sourceQuestionPlan).toEqual(plan);
+    expect(mocks.query.mock.calls.some(([query]) => JSON.stringify(query.values).includes("metastasis"))).toBe(true);
+    expect(parse).toHaveBeenCalledTimes(6);
+    const payload = (index: number) => JSON.parse(parse.mock.calls[index][0].input[0].content[0].text);
+    expect(payload(1)).toMatchObject({ query: selectedQuestion, sourceQuestionPlan: plan });
+    expect(payload(2)).toMatchObject({ resolvedSourceQuestion: selectedQuestion, sourceQuestionPlan: plan });
+    expect(payload(3).answerScope).toMatchObject({ resolvedSourceQuestion: selectedQuestion, currentParticipantRequest: selectedQuestion, sourceQuestionPlan: plan });
+    expect(payload(4).groundingViolations).toEqual([violation]);
+    expect(payload(3).sources).toEqual(sourceTexts.map((text, index) => ({ index: index + 1, text })));
+    expect(result.references.map((reference) => reference.citationId)).toEqual(["rag:db:trial-a"]);
+  });
   it("repairs an unsolicited MFS comparison and removes its unused source and chart", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const fact = "Trial A reports rPFS in population A. [1]";

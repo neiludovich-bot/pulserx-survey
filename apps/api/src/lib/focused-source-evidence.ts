@@ -115,8 +115,9 @@ export async function selectFocusedSourceEvidence(input: {
         // The original relation and the useful background are different evidence
         // needs. Always run the focused pass: a contextual label on the first
         // selection alone cannot establish that it contains useful background.
-        const focused = await selectFocusedSourceEvidence({ ...input, evidenceFocus: "contextual",
-          query: input.sourceQuestionPlan.retrievalQueries.slice(1).join("\n") || input.sourceQuestionPlan.interpretedQuestion, fallbackSourceIds: [] });
+        // The plan's complementary search hints remain available, but the
+        // selected request still owns scope in this focused pass.
+        const focused = await selectFocusedSourceEvidence({ ...input, evidenceFocus: "contextual", fallbackSourceIds: [] });
         const context = focused.chunks.filter((chunk) => chunk.evidenceRole === "contextual").slice(0, 2);
         if (context.length) return { mode: "semantic", chunks: [
           ...chunks.filter((chunk) => !context.some((other) => other.id === chunk.id))

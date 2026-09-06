@@ -130,7 +130,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     expect(mocks.select).toHaveBeenCalledTimes(2);
     const first = mocks.select.mock.calls[0][0];
     const recovery = mocks.select.mock.calls[1][0];
-    expect(recovery).toMatchObject({ evidenceFocus: "contextual", query: singleQuery ? plan.interpretedQuestion : plan.retrievalQueries.slice(1).join("\n"), sourceQuestionPlan: plan });
+    expect(recovery).toMatchObject({ evidenceFocus: "contextual", query: input.participantMessage, sourceQuestionPlan: plan });
     expect(recovery.candidates).toEqual(first.candidates);
     expect(recovery.candidates.find((candidate: { id: string }) => candidate.id === safety.id).text).toBe(broadSource.text);
     const composedSources = mocks.compose.mock.calls[0][0].sources;

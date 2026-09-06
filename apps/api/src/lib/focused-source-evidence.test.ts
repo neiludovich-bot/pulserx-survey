@@ -124,7 +124,7 @@ describe("focused evidence selection", () => {
     select.mockResolvedValueOnce({ result: { selections: [{ sourceId: "trial", supportExcerpt: excerpt, assetIds: [], evidenceRole: "contextual" }], rationale: "Initial evidence was labeled contextual." } });
     const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: contextualPlan.interpretedQuestion, sourceQuestionPlan: contextualPlan, candidates: [source("nubeqa", "trial")], fallbackSourceIds: [] });
     expect(select).toHaveBeenCalledTimes(2);
-    expect(select.mock.calls[1][0]).toMatchObject({ evidenceFocus: "contextual", query: "separate safety context" });
+    expect(select.mock.calls[1][0]).toMatchObject({ evidenceFocus: "contextual", query: contextualPlan.interpretedQuestion, sourceQuestionPlan: contextualPlan });
     expect(result.mode).toBe("semantic");
     expect(result.chunks).toEqual([expect.objectContaining({ id: "trial", text: excerpt, evidenceRole: "contextual" })]);
   });
