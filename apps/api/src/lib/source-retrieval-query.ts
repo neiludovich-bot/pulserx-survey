@@ -7,6 +7,7 @@ const SEARCH_STOP_WORDS = new Set("a an and are as at be can could do does for f
 const SEARCH_ALIASES: Record<string, string> = {
   ddi: "drug interactions", ddis: "drug interactions",
   ae: "adverse events reactions", aes: "adverse events reactions",
+  se: "side effects adverse reactions", ses: "side effects adverse reactions",
   pfs: "progression free survival", rpfs: "radiographic progression free survival",
   os: "overall survival", mfs: "metastasis free survival",
 };
@@ -14,8 +15,9 @@ const SEARCH_ALIASES: Record<string, string> = {
 export function sourceContentSearchTerms(query: string, surveySlug: string) {
   // Prefer a supplied expansion over its acronym. No clinical aliases or
   // facts are inferred here; the moderator supplies the resolved question.
-  const expanded = query.replace(/\b[A-Z][A-Z0-9]{1,8}\s*\(([^)]+)\)/g, "$1").replace(/\([A-Z][A-Z0-9]{1,8}\)/g, "");
-  const terms = expanded.toLowerCase().replace(/\b(ae|ddi)['’]s\b/g, "$1s").split(/[^a-z0-9]+/).filter(
+  const expanded = query.replace(/\b[A-Z][A-Z0-9]{1,8}\s*\(([^)]+)\)/g, "$1").replace(/\([A-Z][A-Z0-9]{1,8}\)/g, "")
+    .replace(/\bside[ -]effects?\b/gi, "side effects adverse reactions");
+  const terms = expanded.toLowerCase().replace(/\b(ae|ddi|se)['’]s\b/g, "$1s").split(/[^a-z0-9]+/).filter(
     (term) => term.length >= 2 && term !== surveySlug && !SEARCH_STOP_WORDS.has(term),
   );
   // Preserve a follow-up at the end of a mixed reaction + question message.
@@ -26,7 +28,7 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
 export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null) {
   const terms = sourceContentSearchTerms(query, surveySlug);
   const normalized = query.toLowerCase().replace(/-/g, " ");
-  const phrases = [...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
+  const phrases = [...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
   const phrasePriority = phrases.length ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', ${phrases.map(phrase => `"${phrase}"`).join(" OR ")})) DESC,` : Prisma.empty;
   const contextTerms = sourceContentSearchTerms(context ?? "", surveySlug).slice(0, 12);
   if (!terms.length && !contextTerms.length) return null;

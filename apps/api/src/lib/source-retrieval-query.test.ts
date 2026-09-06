@@ -10,6 +10,18 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"])("finds safety figures after a topic correction for %s", async brand => {
+    const assets = ['Drug interactions', 'CYP3A4 drug interactions', 'Drug interactions dosing', 'Adverse reactions'].map((title, n) => ({ title, description: title, url: `https://example.com/${n}.png`, assetKind: 'IMAGE', tags: [], priority: n === 3 ? 1 : 100 }));
+    mocks.query.mockResolvedValue([{ id: 'safety' }]);
+    mocks.findMany.mockResolvedValue([{ id: 'safety', content: 'Adverse reactions in the trial.', tags: [], sourceDocument: { title: 'Safety', description: '', url: 'https://example.com/safety', tags: [], assets } }]);
+    const candidates = await controlledRagTestInternals.retrieveChunks({ ...input, surveySlug: brand as typeof input.surveySlug, participantMessage: "no, I'm looking for the side effect profile", sourceTopicContext: 'Drug interactions CYP3A4 dosing' });
+    expect(candidates.find(c => c.id === 'db:safety')?.assets?.[0].title).toBe('Adverse reactions');
+    for (const query of ["SEs", "SE's", "side effects", "side-effect profile"]) {
+      expect(sourceContentSearchTerms(query, brand)).toEqual(expect.arrayContaining(['side', 'effects', 'adverse', 'reactions']));
+    }
+    const followup = await controlledRagTestInternals.retrieveChunks({ ...input, surveySlug: brand as typeof input.surveySlug, participantMessage: 'What about those?', sourceTopicContext: 'Drug interactions CYP3A4 dosing' });
+    expect(followup.find(c => c.id === 'db:safety')?.assets?.[0].title).toMatch(/interactions/);
+  });
   it("prioritizes the complete named endpoint instead of any occurrence of free survival", () => {
     const query = sourceContentSearchSql("PFS and DDI", "nubeqa")!;
     expect(query.values.at(-1)).toContain('"progression free survival"');

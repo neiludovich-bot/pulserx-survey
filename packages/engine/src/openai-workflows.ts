@@ -339,7 +339,9 @@ export class OpenAIResponsesGateway {
     let answer: ReturnType<typeof validateWebsiteAnswer> | null = null;
     let repairTrace: typeof call.trace | null = null;
     if (call.result.source) {
-      const answerInput = { ...parsedEvidence, query: observation.request!.text };
+      // request.text is the validated, self-contained current request. A repair
+      // must not reintroduce superseded discussion through historical hints.
+      const answerInput = { ...parsedEvidence, query: observation.request!.text, sourceTopicContext: null, priorSourceIds: [] };
       try {
         answer = validateWebsiteAnswer(answerInput, coalesceConversationSources({ ...call.result.source.answer,
           selections: call.result.source.answer.selections.map(selection => ({ ...selection, evidenceRole: "direct" as const, contribution: "answer" as const })),

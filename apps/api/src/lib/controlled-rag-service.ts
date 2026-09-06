@@ -1217,13 +1217,13 @@ function rankAssetsForDisplay(
     .map(({ asset }) => asset);
 }
 
-function rankAssets(assets: ControlledRagAsset[], queryTokens: string[]) {
+function rankAssets(assets: ControlledRagAsset[], queryTokens: string[], contextTokens: string[] = []) {
   const seen = new Set<string>();
 
   return [...assets]
-    .map((asset) => ({ asset, score: scoreAsset(asset, queryTokens) }))
-    .filter(({ score }) => score > 0)
-    .sort((left, right) => right.score - left.score)
+    .map((asset) => ({ asset, score: scoreAsset(asset, queryTokens) - scoreAsset(asset, []), contextScore: scoreAsset(asset, contextTokens) - scoreAsset(asset, []), base: scoreAsset(asset, []) }))
+    .filter(({ score, contextScore }) => score > 0 || contextScore > 0)
+    .sort((left, right) => right.score - left.score || right.contextScore - left.contextScore || right.base - left.base)
     .filter(({ asset }) => {
       if (seen.has(asset.url)) {
         return false;
@@ -1351,10 +1351,14 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
     const count = pageCounts.get(key) ?? 0; pageCounts.set(key, count + 1);
     if (!count) diverse.push(source); else if (count === 1) additional.push(source);
   }
-  const assetTerms = sourceContentSearchTerms(`${input.participantMessage} ${input.sourceTopicContext ?? ""}`, input.surveySlug);
+  // Current-message relevance takes precedence; history only breaks ties.
+  // Keep contextual candidates for anaphoric follow-ups without letting a
+  // long prior request outweigh a short explicit topic correction.
+  const assetTerms = sourceContentSearchTerms(input.participantMessage, input.surveySlug);
+  const contextAssetTerms = sourceContentSearchTerms(input.sourceTopicContext ?? "", input.surveySlug);
   return [
     ...[...diverse, ...additional].slice(0, Math.min(8, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
-      assets: rankAssets(source.assets ?? [], assetTerms).slice(0, 3),
+      assets: rankAssets(source.assets ?? [], assetTerms, contextAssetTerms).slice(0, 3),
     })),
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
   ].slice(0, 24);

@@ -66,9 +66,10 @@ describe("single-call conversation boundary", () => {
     const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], priorities: [], familiarity: null, outOfScope: false };
     const source = { request: { text: f.request.participantMessage, evidenceRange: { startToken: 0, endToken: 4 } }, answer: { ...f.answer, paragraphs: [{ text: "Study A reported 99 months.", sourceIds: ["study"] }] } };
     f.parse.mockResolvedValueOnce({ id: "initial", output_parsed: { observation, source } }).mockResolvedValueOnce({ id: "repair", output_parsed: f.answer });
-    const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: f.request.participantMessage, question: null, discussionQuery: null, recentTurns: [], topics: [] }, f.evidence);
+    const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: f.request.participantMessage, question: null, discussionQuery: "Earlier dosing question", recentTurns: [], topics: [] }, { ...f.evidence, sourceTopicContext: "Earlier dosing question", priorSourceIds: ["old-dosing"] });
     expect(f.parse).toHaveBeenCalledTimes(2); expect(result.repairTrace?.response.id).toBe("repair");
     expect(JSON.parse(f.parse.mock.calls[1][0].input[0].content[0].text).repairDetail).toMatchObject({ unsupportedNumbers: ["99"] });
+    expect(JSON.parse(f.parse.mock.calls[1][0].input[0].content[0].text)).toMatchObject({ query: f.request.participantMessage, sourceTopicContext: null, priorSourceIds: [] });
     expect(result.observation.answerEvidence).toEqual([]); expect(result.answer?.paragraphs[0].text).toContain("12 months");
   });
   it("represents familiarity without an unsolicited answer in the v2 source envelope", async () => {
