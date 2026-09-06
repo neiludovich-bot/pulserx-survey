@@ -281,9 +281,20 @@ export const sourceAnswerDraftSchema = z.object({
   qualification: z.string().min(1).max(1000).nullable(),
 }).strict();
 
+export const sourceAnswerScopeSchema = z.object({
+  version: z.literal(1),
+  currentParticipantRequest: z.string().min(1).max(12000),
+  resolvedSourceQuestion: z.string().min(1).max(12000).nullable(),
+  sourceTopicContext: z.string().min(1).max(6000).nullable(),
+  sourceQuestionPlan: sourceQuestionPlanSchema.nullable(),
+  presentationPlan: presentationPlanSchema.nullable(),
+}).strict();
+export type SourceAnswerScope = z.infer<typeof sourceAnswerScopeSchema>;
+
 export const sourceGroundingReviewInputSchema = z.object({
   draft: sourceAnswerDraftSchema,
   sources: z.array(z.object({ index: z.number().int().min(1).max(8), text: z.string().min(1).max(1800) }).strict()).min(1).max(8),
+  answerScope: sourceAnswerScopeSchema.optional(),
 }).strict();
 
 export const sourceGroundingReviewResultSchema = z.object({

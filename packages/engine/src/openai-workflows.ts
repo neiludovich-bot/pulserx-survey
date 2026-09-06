@@ -277,7 +277,6 @@ export class OpenAIResponsesGateway {
   }
 
   private async composeGroundedSourceAnswer(input: ControlledRagCompositionInput, contextual: boolean) {
-    const contextualIndexes = contextual ? input.sources.filter((source) => source.evidenceRole === "contextual").map((source) => source.index) : [];
     const prompt = contextual ? contextualSourceCompositionSystemPrompt : directSourceCompositionSystemPrompt;
     const attempts: Array<{ trace?: OpenAIDebugTrace; groundingTrace?: OpenAIDebugTrace; error: string | null; failure?: SourceFailureMetadata }> = [];
     let groundingViolations: SourceGroundingReviewResult["unsupportedClaims"] = [];
@@ -330,9 +329,9 @@ export class OpenAIResponsesGateway {
             citations.some((index) => !result.usedSourceIndexes.includes(index))) {
           throw new Error("Source composition requires individual citations matching its supplied and used source indexes.");
         }
-        if (contextualIndexes.length && !contextualIndexes.some((index) => practicalCitations.includes(index))) {
-          throw new Error("Practical answer must cite at least one supplied contextual source.");
-        }
+        // Evidence roles describe retrieval intent. The existing reviewer checks
+        // whether the answer supplies useful information within its actual scope;
+        // an unrelated contextual source must not force an extra claim/citation.
         if (reviewedText.includes("?")) throw new Error("Source composition cannot append a question.");
         failureStage = "grounding";
         groundingReviews += 1;
@@ -346,6 +345,14 @@ export class OpenAIResponsesGateway {
           input: sourceGroundingReviewInputSchema.parse({
             draft: { practicalAnswer: result.practicalAnswer, qualification: result.qualification },
             sources: input.sources.map(({ index, text }) => ({ index, text })),
+            answerScope: {
+              version: 1,
+              currentParticipantRequest: input.participantMessage.slice(0, 12000),
+              resolvedSourceQuestion: input.resolvedSourceQuestion?.slice(0, 12000) ?? null,
+              sourceTopicContext: input.sourceTopicContext ?? null,
+              sourceQuestionPlan: input.sourceQuestionPlan ?? null,
+              presentationPlan: input.presentationPlan ?? null,
+            },
           }),
           metadata: { composition_attempt: String(attempt) },
         });

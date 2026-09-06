@@ -17,8 +17,10 @@ describe("source-grounding calibration replay contracts", () => {
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: composition }).mockResolvedValueOnce({ output_parsed: expected })
       .mockResolvedValueOnce({ output_parsed: composition }).mockResolvedValueOnce({ output_parsed: expected });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
+    const scope = input.answerScope!;
     const result = gateway.composeControlledRagAnswer(controlledRagCompositionInputSchema.parse({
-      surveySlug: "nubeqa", participantMessage: "Explain the supplied information.", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
+      surveySlug: "nubeqa", participantMessage: scope.currentParticipantRequest, resolvedSourceQuestion: scope.resolvedSourceQuestion, sourceTopicContext: scope.sourceTopicContext, sourceQuestionPlan: scope.sourceQuestionPlan, presentationPlan: scope.presentationPlan ?? undefined,
+      currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
       sources: input.sources.map((source) => ({ ...source, title: "Replay excerpt", url: null, description: null, evidenceRole: "contextual" })),
     }));
     if (expected.supported) {
@@ -43,7 +45,9 @@ describe("source-grounding calibration replay contracts", () => {
     expect(reviewer).toContain("require explicit support, not merely omission");
     expect(reviewer).toContain("does not need an explicit sentence declaring its own omission");
     expect(reviewer).toContain("Missing details never imply clinical reassurance");
-    expect(sourceGroundingReviewSystemPrompt.version).toBe("source-grounding-review-v4");
+    expect(sourceGroundingReviewSystemPrompt.version).toBe("source-grounding-review-v6");
+    expect(reviewer).toContain("independently check relevance as well as factual support");
+    expect(reviewer).toContain("do not require it to cover every case");
     expect(contextualSourceCompositionSystemPrompt.instructions.join("\n")).toContain("Do not call a checklist the label");
     expect(directSourceCompositionSystemPrompt.instructions.join("\n")).not.toContain("Attribute management guidance to the label without");
   });

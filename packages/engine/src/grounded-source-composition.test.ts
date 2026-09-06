@@ -15,6 +15,39 @@ const contextual = (practicalAnswer: string, qualification: string | null = null
 const requestInput = (parse: ReturnType<typeof vi.fn>, index: number) => JSON.parse(parse.mock.calls[index][0].input[0].content[0].text);
 
 describe("shared direct and contextual grounding", () => {
+  const contextInput = controlledRagCompositionInputSchema.parse({ ...base,
+    participantMessage: "What specific safety information helps explain what to monitor?",
+    resolvedSourceQuestion: "What general safety information helps explain the monitoring discussion?",
+    sourceQuestionPlan: { version: 1, interpretedQuestion: "Explain practical monitoring using separately attributed general safety details.", retrievalQueries: ["interaction monitoring", "general safety"], usesSourceContext: true, answerApproach: "contextual_explanation", contextBoundary: "General warnings do not establish interaction-specific causation.", rationale: "The current request seeks practical context." },
+    sources: [...base.sources, { index: 2, title: "General safety", url: null, description: null, text: "General NUBEQA safety guidance includes monitoring ischemic heart disease symptoms.", evidenceRole: "contextual" }],
+  });
+
+  it("accepts one complete direct monitoring point during simplification despite other contextual sources", async () => {
+    const answer = `${base.sources[0].text} [1]`;
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: contextual(answer) }).mockResolvedValueOnce({ output_parsed: supported });
+    const input = controlledRagCompositionInputSchema.parse({ ...contextInput, participantMessage: "Even more simply please.", presentationPlan: { version: 1, purpose: "source_answer", depth: "brief", maxFacts: 1, maxTopics: 1, maxWords: 40, askReadiness: false } });
+    const result = await gatewayFor(parse).composeControlledRagAnswer(input);
+    expect(result.result.answerBody).toBe(answer);
+    expect(result.result.usedSourceIndexes).toEqual([1]);
+    expect(requestInput(parse, 1).answerScope.presentationPlan.maxFacts).toBe(1);
+    expect(parse).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([true, false])("reviews and repairs a DDI-only answer when practical safety detail is requested (repair succeeds=%s)", async (succeeds) => {
+    const initial = contextual(`${base.sources[0].text} [1]`);
+    const corrected = { practicalAnswer: "Separately, general NUBEQA safety guidance includes monitoring ischemic heart disease symptoms. [2]", qualification: null, usedSourceIndexes: [2] };
+    const rejected = { version: 1, supported: false, unsupportedClaims: [{ excerpt: initial.practicalAnswer, reason: "This only repeats the original interaction monitoring instruction instead of the requested available practical safety detail." }] };
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: initial }).mockResolvedValueOnce({ output_parsed: rejected })
+      .mockResolvedValueOnce({ output_parsed: succeeds ? corrected : initial }).mockResolvedValueOnce({ output_parsed: succeeds ? supported : rejected });
+    const result = gatewayFor(parse).composeControlledRagAnswer(contextInput);
+    if (succeeds) expect((await result).result.answerBody).toBe(corrected.practicalAnswer);
+    else await expect(result).rejects.toThrow("unsupported claims");
+    expect(requestInput(parse, 2).previousDraft.practicalAnswer).toBe(initial.practicalAnswer);
+    expect(requestInput(parse, 2).groundingViolations).toEqual(rejected.unsupportedClaims);
+    expect(requestInput(parse, 1).sources).toEqual(contextInput.sources.map(({ index, text }) => ({ index, text })));
+    expect(parse).toHaveBeenCalledTimes(4);
+  });
+
   it("accepts existing grounding audit attempts and the bounded third draft, rejecting a fourth", () => {
     const audit = { version: 1, status: "supported", model: "fixture", responseId: "fixture-review" };
     for (const attempt of [1, 2, 3]) expect(sourceAnswerGroundingAuditSchema.safeParse({ ...audit, attempt }).success).toBe(true);

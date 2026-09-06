@@ -132,10 +132,9 @@ describe("contextual composition contract", () => {
   });
 
   it.each([
-    { practicalAnswer: "Interaction guidance. [1]", qualification: "General safety information. [2]", usedSourceIndexes: [1, 2] },
     { practicalAnswer: "General safety information. [1,2]", qualification: null, usedSourceIndexes: [1, 2] },
     { practicalAnswer: "General safety information. [2]", usedSourceIndexes: [2] },
-  ])("repairs a missing practical contextual citation or malformed typed output once", async (invalid) => {
+  ])("repairs malformed typed output or citations once", async (invalid) => {
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: invalid }).mockResolvedValueOnce({ output_parsed: typedAnswer }).mockResolvedValueOnce({ output_parsed: supportedReview });
     const result = await gatewayFor(parse).composeControlledRagAnswer(compositionInput);
     expect(result.result.answerBody.startsWith(typedAnswer.practicalAnswer)).toBe(true);
@@ -144,10 +143,21 @@ describe("contextual composition contract", () => {
     expect("contextualCompositionAttempts" in result && result.contextualCompositionAttempts).toMatchObject([{ error: expect.any(String) }, { error: null }]);
   });
 
-  it("fails after one unsuccessful repair without returning a direct-only answer", async () => {
-    const parse = vi.fn().mockResolvedValue({ output_parsed: { practicalAnswer: "Interaction guidance. [1]", qualification: null, usedSourceIndexes: [1] } });
-    await expect(gatewayFor(parse).composeControlledRagAnswer(compositionInput)).rejects.toThrow("at least one supplied contextual source");
+  it("lets the reviewer assess useful context across both answer fields", async () => {
+    const draft = { practicalAnswer: "Interaction guidance. [1]", qualification: "General safety information. [2]", usedSourceIndexes: [1, 2] };
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: draft }).mockResolvedValueOnce({ output_parsed: supportedReview });
+    const result = await gatewayFor(parse).composeControlledRagAnswer(compositionInput);
+    expect(result.result.answerBody).toContain(draft.qualification);
     expect(parse).toHaveBeenCalledTimes(2);
+  });
+
+  it("fails after two reviews reject an answer that omits requested available practical context", async () => {
+    const draft = { practicalAnswer: "Interaction guidance. [1]", qualification: null, usedSourceIndexes: [1] };
+    const review = { version: 1, supported: false, unsupportedClaims: [{ excerpt: "Interaction guidance. [1]", reason: "This repeats the original relationship instead of addressing the requested available practical safety information." }] };
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: draft }).mockResolvedValueOnce({ output_parsed: review }).mockResolvedValueOnce({ output_parsed: draft }).mockResolvedValueOnce({ output_parsed: review });
+    await expect(gatewayFor(parse).composeControlledRagAnswer(compositionInput)).rejects.toThrow("unsupported claims");
+    expect(parse).toHaveBeenCalledTimes(4);
+    expect(JSON.parse(parse.mock.calls[2][0].input[0].content[0].text).groundingViolations).toEqual(review.unsupportedClaims);
   });
 
   it("uses the contextual contract for a contextual plan even without contextual source roles", async () => {
@@ -176,7 +186,7 @@ describe("contextual composition contract", () => {
     expect(result.result.answerBody).not.toContain("more frequent monitoring");
     expect(result.result.answerBody.startsWith(typedAnswer.practicalAnswer)).toBe(true);
     const reviewInput = JSON.parse(parse.mock.calls[1][0].input[0].content[0].text);
-    expect(reviewInput).toEqual({ draft: { practicalAnswer: draft.practicalAnswer, qualification: null }, sources: compositionInput.sources.map(({ index, text }) => ({ index, text })) });
+    expect(reviewInput).toEqual({ draft: { practicalAnswer: draft.practicalAnswer, qualification: null }, sources: compositionInput.sources.map(({ index, text }) => ({ index, text })), answerScope: expect.objectContaining({ currentParticipantRequest: "The label says monitor more frequently, so what should I monitor?" }) });
     expect(JSON.stringify(reviewInput)).not.toContain("Assume");
     const repairInput = JSON.parse(parse.mock.calls[2][0].input[0].content[0].text);
     expect(repairInput.groundingViolations).toEqual([violation]);
@@ -211,7 +221,7 @@ describe("contextual composition contract", () => {
     expect(secondInput.previousDraft).toEqual({ practicalAnswer: first.practicalAnswer, qualification: first.qualification });
     expect(secondInput.groundingViolations).toEqual([violation]);
     const secondReview = JSON.parse(parse.mock.calls[3][0].input[0].content[0].text);
-    expect(secondReview).toEqual({ draft: { practicalAnswer: repaired.practicalAnswer, qualification: null }, sources: compositionInput.sources.map(({ index, text }) => ({ index, text })) });
+    expect(secondReview).toEqual({ draft: { practicalAnswer: repaired.practicalAnswer, qualification: null }, sources: compositionInput.sources.map(({ index, text }) => ({ index, text })), answerScope: JSON.parse(parse.mock.calls[1][0].input[0].content[0].text).answerScope });
     expect(secondReview).not.toHaveProperty("previousDraft");
     expect(parse).toHaveBeenCalledTimes(4);
   });
