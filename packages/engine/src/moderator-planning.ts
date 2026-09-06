@@ -4,13 +4,46 @@ import {
   moderatorPlanInputSchema,
   moderatorPlanResultSchema,
   moderatorPlanModelResultSchema,
+  moderatorPlanRepairContextSchema,
   moderatorPhrasingInputSchema,
   moderatorPhrasingResultSchema,
   type ModeratorEvidenceSelectionInput,
   type ModeratorPlanInput,
   type ModeratorPhrasingInput,
   type SourceRequest,
+  type ModeratorPlanRepairContext,
 } from "@interview/schemas";
+
+const repairCategories: Record<string, ModeratorPlanRepairContext["feedback"]> = {
+  "Source requests require an exact excerpt of the current participant message.": "invalid_request_excerpt",
+  "Moderator evidence must be exact excerpts of the current participant message.": "invalid_reaction_excerpt",
+  "Evidence excerpts cannot be empty.": "empty_evidence",
+  "A source-answer action must preserve the identified participant request.": "request_action_mismatch",
+  "A navigation cue cannot supply priorities or reaction evidence.": "navigation_credit",
+  "Reaction credit requires an active presented priority.": "missing_active_priority",
+  "The moderator selected an unknown priority ID.": "unknown_priority",
+  "A participant source question must retain its source-answer action.": "lost_source_action",
+  "Presentation must select a pending or newly extracted priority.": "invalid_presentation_target",
+  "A reaction probe requires an unanswered active presented priority within its probe budget.": "invalid_probe_target",
+  "Resuming the guide cannot select a priority.": "invalid_resume_target",
+};
+
+export class ModeratorPlanValidationError extends Error {
+  readonly repairContext: ModeratorPlanRepairContext;
+  constructor(candidate: unknown, error: Error) {
+    super(error.message);
+    this.repairContext = moderatorPlanRepairContextSchema.parse({ version: 1, candidate, feedback: repairCategories[error.message] });
+  }
+}
+
+export function normalizeModeratorPlanWithRepair(input: ModeratorPlanInput, output: unknown) {
+  const candidate = moderatorPlanModelResultSchema.parse(output);
+  try { return normalizeModeratorPlanModelResult(input, candidate); }
+  catch (error) {
+    if (error instanceof Error && Object.prototype.hasOwnProperty.call(repairCategories, error.message)) throw new ModeratorPlanValidationError(candidate, error);
+    throw error;
+  }
+}
 
 /** Model-assigned reaction evidence must be separate from its quoted request. */
 export function moderatorReactionEvidenceOutsideRequest(message: string, evidence: string[], request?: SourceRequest | null) {

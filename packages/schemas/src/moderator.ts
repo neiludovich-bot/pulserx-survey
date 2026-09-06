@@ -74,7 +74,7 @@ export const moderatorStateSchema = z.object({
   }
 });
 
-export const moderatorPlanInputSchema = z.object({
+const moderatorPlanBaseInputSchema = z.object({
   brand: z.string().min(1).max(100),
   currentQuestion: z.string().min(1).nullable(),
   participantMessage: z.string().min(1).max(12000),
@@ -124,6 +124,17 @@ export const moderatorPlanModelResultSchema = moderatorPlanResultSchema.innerTyp
       additionEvidence: evidenceExcerptSchema.nullable(),
     }).strict()).max(32),
   }).strict();
+
+export const moderatorPlanRepairContextSchema = z.object({
+  version: z.literal(1),
+  candidate: moderatorPlanModelResultSchema,
+  feedback: z.enum(["invalid_request_excerpt", "invalid_reaction_excerpt", "empty_evidence", "request_action_mismatch", "navigation_credit", "missing_active_priority", "unknown_priority", "lost_source_action", "invalid_presentation_target", "invalid_probe_target", "invalid_resume_target"]),
+}).strict();
+
+export const moderatorPlanInputSchema = moderatorPlanBaseInputSchema.extend({
+  repairContext: moderatorPlanRepairContextSchema.optional(),
+}).strict();
+export type ModeratorPlanRepairContext = z.infer<typeof moderatorPlanRepairContextSchema>;
 
 const moderatorPhrasingContextSchema = z.object({
   brand: z.string().min(1).max(100),

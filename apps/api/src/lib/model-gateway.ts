@@ -27,7 +27,8 @@ export function getOptionalOpenAIGateway() {
       analysisModel: env.OPENAI_MODEL_ANALYSIS,
       decisionModel: env.OPENAI_MODEL_DECISION,
       phrasingModel: env.OPENAI_MODEL_PHRASING,
-      sourceModel: env.OPENAI_MODEL_SOURCE
+      sourceModel: env.OPENAI_MODEL_SOURCE,
+      reasoningEffort: env.OPENAI_REASONING_EFFORT
     },
     new FileDebugTraceStore(resolve(process.cwd(), env.OPENAI_DEBUG_DIR))
   );

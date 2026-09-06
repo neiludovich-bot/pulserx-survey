@@ -67,7 +67,7 @@ import {
   type PhrasingResult
 } from "@interview/schemas";
 import type { CompiledStudy } from "./study-compiler";
-import { normalizeModeratorPlanModelResult, validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
+import { normalizeModeratorPlanWithRepair, validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
 import { sanitizeSourceFailure, type SourceFailureMetadata } from "./source-failure";
 import {
   buildDecisionCandidates,
@@ -93,6 +93,7 @@ type ModelConfig = {
   decisionModel: string;
   phrasingModel: string;
   sourceModel?: string;
+  reasoningEffort?: "none" | "low" | "medium" | "high";
 };
 
 type DebugTraceStore = {
@@ -398,7 +399,7 @@ export class OpenAIResponsesGateway {
       input: planningContext,
       metadata: { brand: parsed.brand },
     });
-    return { ...call, result: normalizeModeratorPlanModelResult(parsed, call.result) };
+    return { ...call, result: normalizeModeratorPlanWithRepair(parsed, call.result) };
   }
 
   async phraseModeratorTurn(input: ModeratorPhrasingInput) {
@@ -444,14 +445,20 @@ export class OpenAIResponsesGateway {
     metadata
   }: StructuredCallParams<TOutput>) {
     const requestedAt = new Date().toISOString();
+    // Explicit reasoning for interpretation and evidence checks; phrasing keeps
+    // its fast path. Only send the parameter to documented supported families.
+    const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
+      ? this.config.reasoningEffort ?? "medium" : undefined;
+    const effectiveMetadata = { ...metadata, ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const requestPayload = {
       model,
+      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
       instructions: instructions.join("\n"),
       input: buildMessages(input),
       text: {
         format: zodTextFormat(schema as never, schemaName)
       },
-      metadata,
+      metadata: effectiveMetadata,
       store: true
     };
 
@@ -479,7 +486,7 @@ export class OpenAIResponsesGateway {
         model,
         schemaName,
         input,
-        metadata: metadata ?? {}
+        metadata: effectiveMetadata
       },
       response: {
         id: response.id ?? null,

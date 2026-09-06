@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { moderatorPlanRepairContextSchema, type ModeratorPlanRepairContext } from "@interview/schemas";
 import { moderatorReactionEvidenceOutsideRequest } from "@interview/engine";
 import { moderatorPlanInputSchema, moderatorPlanResultSchema, moderatorStateSchema, type ModeratorState, type ModeratorPlanInput, type ModeratorPlanResult, type ModeratorEvidencePacket, type GroundedReference, type SourceQuestionPlan, type SourceAnswerGroundingAudit } from "@interview/schemas";
 import { getOptionalOpenAIGateway } from "./model-gateway";
@@ -24,16 +25,19 @@ export async function runModeratorTurn(input: Input) {
   let plannerAttempts = 0;
   const plannerErrors: string[] = [];
   const plannerFailures: ReturnType<typeof sanitizeModeratorPlanningFailure>[] = [];
+  let repairContext: ModeratorPlanRepairContext | undefined;
   // Retry the typed planning boundary once before mutating state or calling
   // the source/phrasing providers. Invalid output must not consume a probe.
   while (gateway && plannerAttempts < 2 && plan === null) {
     plannerAttempts += 1;
     try {
-      const candidate = moderatorPlanResultSchema.parse((await gateway.planModeratorTurn(planningInput)).result);
+      const candidate = moderatorPlanResultSchema.parse((await gateway.planModeratorTurn({ ...planningInput, ...(repairContext ? { repairContext } : {}) })).result);
       if (candidate.sourceRequest && !input.participantMessage.includes(candidate.sourceRequest.participantEvidence)) throw new Error("Source request evidence must be an exact participant excerpt.");
       if (candidate.newPriorities.some((p) => !input.participantMessage.includes(p.participantEvidence)) || candidate.reactionEvidence.some((e) => !input.participantMessage.includes(e))) throw new Error("Moderator evidence must be an exact participant excerpt.");
       plan = candidate;
     } catch (error) {
+      const repair = moderatorPlanRepairContextSchema.safeParse(error && typeof error === "object" && "repairContext" in error ? error.repairContext : undefined);
+      repairContext = repair.success ? repair.data : undefined;
       plannerFailures.push(sanitizeModeratorPlanningFailure(error));
       plannerErrors.push(error instanceof Error ? error.message : "Moderator planning failed.");
     }
