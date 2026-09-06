@@ -1241,7 +1241,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   }
 
   try {
-    const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug);
+    const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext);
     if (!searchQuery) return [];
     const matches = await prisma.$queryRaw<Array<{ id: string }>>(searchQuery);
     if (!matches.length) return [];

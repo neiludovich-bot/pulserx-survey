@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../prompts/src/index"));
-import { conversationInterpretationInputSchema, conversationInterpretationResultSchema, type ModeratorEvidenceSelectionInput } from "@interview/schemas";
+import { conversationInterpretationInputSchema, conversationInterpretationResultSchema, conversationObservationModelSchema, type ModeratorEvidenceSelectionInput } from "@interview/schemas";
 import { OpenAIResponsesGateway } from "./openai-workflows";
 import { participantTokensForModel } from "./evidence-ranges";
 
@@ -29,6 +29,30 @@ function fixture(surveySlug: "nubeqa" | "brukinsa" | "padcev") {
 }
 
 describe("single-call conversation boundary", () => {
+  it("requires an atomic familiarity fact instead of independently nullable fields", () => {
+    const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], request: null, priorities: [], familiarity: null, outOfScope: false };
+    expect(conversationObservationModelSchema.safeParse(observation).success).toBe(true);
+    expect(conversationObservationModelSchema.safeParse({ ...observation, familiarity: { level: "high" } }).success).toBe(false);
+    expect(conversationObservationModelSchema.safeParse({ ...observation, familiarity: { evidenceRange: { startToken: 0, endToken: 1 } } }).success).toBe(false);
+    expect(conversationObservationModelSchema.safeParse({ ...observation, familiarity: "high", familiarityEvidenceRange: null }).success).toBe(false);
+  });
+
+  it("retains both reactions and answers the exact mixed DDI follow-up in one call", async () => {
+    const f = fixture("nubeqa");
+    const message = "The PFS is great, the DDI is something I'll need to keep an eye on but it doesnt sound too complex. What are the AE's to watch out for with DDI";
+    const tokens = participantTokensForModel(message);
+    const requestStart = tokens.find(t => t.text === "What")!.index;
+    f.parse.mockResolvedValue({ id: "mixed-ddi", output_parsed: {
+      observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: requestStart - 1 }], reactionEvidenceRanges: [{ startToken: 0, endToken: 3 }, { startToken: 4, endToken: requestStart - 1 }], priorities: [], familiarity: null, outOfScope: false },
+      source: { request: { text: "What adverse reactions should be monitored in the context of drug interactions?", evidenceRange: { startToken: requestStart, endToken: tokens.length - 1 } }, answer: f.answer },
+    } });
+    const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: message, question: { id: "reaction", text: "What is your reaction?", kind: "reaction" }, discussionQuery: "PFS and DDI", recentTurns: [], topics: [] }, f.evidence);
+    expect(f.parse).toHaveBeenCalledOnce();
+    expect(result.observation.reactionEvidence).toEqual(["The PFS is great,", "the DDI is something I'll need to keep an eye on but it doesnt sound too complex."]);
+    expect(result.observation.familiarity).toBeNull();
+    expect(result.observation.request?.evidence).toBe("What are the AE's to watch out for with DDI");
+    expect(result.answer).not.toBeNull();
+  });
   it("presents application-selected evidence without requiring a participant request", async () => {
     const f = fixture("nubeqa");
     f.parse.mockResolvedValue({ id: "presentation", output_parsed: f.answer });
@@ -39,7 +63,7 @@ describe("single-call conversation boundary", () => {
   });
   it("repairs an unsupported number once without reinterpreting the respondent", async () => {
     const f = fixture("nubeqa");
-    const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], priorities: [], familiarity: null, familiarityEvidenceRange: null, outOfScope: false };
+    const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], priorities: [], familiarity: null, outOfScope: false };
     const source = { request: { text: f.request.participantMessage, evidenceRange: { startToken: 0, endToken: 4 } }, answer: { ...f.answer, paragraphs: [{ text: "Study A reported 99 months.", sourceIds: ["study"] }] } };
     f.parse.mockResolvedValueOnce({ id: "initial", output_parsed: { observation, source } }).mockResolvedValueOnce({ id: "repair", output_parsed: f.answer });
     const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: f.request.participantMessage, question: null, discussionQuery: null, recentTurns: [], topics: [] }, f.evidence);
@@ -49,7 +73,7 @@ describe("single-call conversation boundary", () => {
   });
   it("represents familiarity without an unsolicited answer in the v2 source envelope", async () => {
     const f = fixture("nubeqa");
-    f.parse.mockResolvedValue({ id: "v2", output_parsed: { observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 4 }], reactionEvidenceRanges: [], priorities: [], familiarity: "low", familiarityEvidenceRange: { startToken: 0, endToken: 4 }, outOfScope: false }, source: null } });
+    f.parse.mockResolvedValue({ id: "v2", output_parsed: { observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 4 }], reactionEvidenceRanges: [], priorities: [], familiarity: { level: "low", evidenceRange: { startToken: 0, endToken: 4 } }, outOfScope: false }, source: null } });
     const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: "Not very familiar with it.", question: { id: "familiarity", text: "How familiar are you?", kind: "guide" }, discussionQuery: null, recentTurns: [], topics: [] }, f.evidence);
     expect(result.answer).toBeNull(); expect(result.observation.request).toBeNull(); expect(result.observation.familiarityEvidence).toBe("Not very familiar with it.");
   });
@@ -57,7 +81,7 @@ describe("single-call conversation boundary", () => {
     const f = fixture(brand);
     const message = "That sounds useful. What did Study A report?";
     f.parse.mockResolvedValue({ id: "v2", model: "gpt-5.4-mini", output_parsed: {
-      observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], reactionEvidenceRanges: [{ startToken: 0, endToken: 2 }], priorities: [], familiarity: null, familiarityEvidenceRange: null, outOfScope: false },
+      observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], reactionEvidenceRanges: [{ startToken: 0, endToken: 2 }], priorities: [], familiarity: null, outOfScope: false },
       source: { request: { text: "What did Study A report?", evidenceRange: { startToken: 3, endToken: 7 } }, answer: f.answer },
     } });
     const result = await f.gateway.conversationTurn({ version: 2, brand, participantMessage: message,

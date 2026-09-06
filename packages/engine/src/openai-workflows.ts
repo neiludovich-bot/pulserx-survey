@@ -319,19 +319,20 @@ export class OpenAIResponsesGateway {
     const call = await this.runStructuredCall<import("zod").infer<typeof conversationTurnResultSchema>>({
       callType: "single_call_conversation", model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: conversationTurnSystemPrompt.version,
-      schemaName: "conversation_turn_v2", schema: conversationTurnResultSchema,
+      schemaName: "conversation_turn_v3", schema: conversationTurnResultSchema,
       instructions: conversationTurnSystemPrompt.instructions,
       input: conversationTurnInputSchema.parse({ context: { ...parsedContext, participantTokens: participantTokensForModel(parsedContext.participantMessage) }, evidence: { ...parsedEvidence,
         candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
       metadata: { survey_slug: parsedEvidence.surveySlug },
     });
-    const { answerEvidenceRanges, reactionEvidenceRanges, priorities, familiarityEvidenceRange, ...fields } = call.result.observation;
+    const { answerEvidenceRanges, reactionEvidenceRanges, priorities, familiarity, ...fields } = call.result.observation;
     const request = call.result.source?.request;
     const excerpt = (range: import("@interview/schemas").EvidenceTokenRange) => evidenceFromTokenRange(parsedContext.participantMessage, range);
     const observation = validateConversationObservation(parsedContext, { ...fields,
       answerEvidence: answerEvidenceRanges.map(excerpt), reactionEvidence: reactionEvidenceRanges.map(excerpt), request: request ? { text: request.text, evidence: excerpt(request.evidenceRange) } : null,
       priorities: priorities.map(({ evidenceRange, ...priority }) => ({ ...priority, evidence: excerpt(evidenceRange) })),
-      familiarityEvidence: familiarityEvidenceRange ? excerpt(familiarityEvidenceRange) : null,
+      familiarity: familiarity?.level ?? null,
+      familiarityEvidence: familiarity ? excerpt(familiarity.evidenceRange) : null,
     });
     // Adapt supported passages to the shared provenance validator. These tags
     // identify answer support, not independent clinical classification/review.

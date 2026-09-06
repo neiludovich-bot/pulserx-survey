@@ -19,12 +19,14 @@ export const conversationObservationSchema = z.object({
   familiarityEvidence: z.string().nullable(),
   outOfScope: z.boolean(),
 }).strict();
-export const conversationObservationModelSchema = conversationObservationSchema.omit({ answerEvidence: true, reactionEvidence: true, request: true, priorities: true, familiarityEvidence: true }).extend({
+export const conversationObservationModelSchema = conversationObservationSchema.omit({ answerEvidence: true, reactionEvidence: true, request: true, priorities: true, familiarity: true, familiarityEvidence: true }).extend({
   answerEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
   reactionEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
   request: z.object({ text: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
   priorities: z.array(z.object({ label: z.string().min(1).max(200), query: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict()).max(16),
-  familiarityEvidenceRange: evidenceTokenRangeSchema.nullable(),
+  // One nullable fact prevents a familiarity value without its evidence (or
+  // evidence without a value). Persisted observation fields remain unchanged.
+  familiarity: z.object({ level: z.enum(["low", "moderate", "high"]), evidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
 }).strict();
 export const conversationTurnInputSchema = z.object({ context: conversationTurnContextSchema.extend({ participantTokens: participantTokensSchema }).strict(), evidence: sourceEvidenceSpansInputSchema }).strict();
 // A cited passage supports the answer. Legacy source-role classifications are

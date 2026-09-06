@@ -10,6 +10,26 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("finds spelled-out website language from mixed reactions and shorthand across bots", () => {
+    const message = "The PFS is great, the DDI is something I'll need to keep an eye on but it doesnt sound too complex. What are the AE's to watch out for with DDI";
+    for (const brand of ["nubeqa", "brukinsa", "padcev"]) {
+      expect(sourceContentSearchTerms(message, brand)).toEqual(expect.arrayContaining(["adverse", "events", "reactions", "drug", "interactions"]));
+      expect(sourceContentSearchTerms("PFS and DDI", brand)).toEqual(["progression", "free", "survival", "drug", "interactions"]);
+    }
+  });
+
+  it("uses discussion context without allowing it to outrank an explicit new question", () => {
+    const query = sourceContentSearchSql("What are the adverse reactions?", "nubeqa", "DDI")!;
+    expect(query.values).toEqual(["adverse OR reactions OR drug OR interactions", "adverse OR reactions", "drug OR interactions", "nubeqa", "nubeqa"]);
+    expect(query.sql.indexOf("search.current_terms) DESC")).toBeLessThan(query.sql.indexOf("search.context_terms) DESC"));
+    expect(sourceContentSearchSql("What about that?", "nubeqa", "DDI")!.values).toContain("drug OR interactions");
+  });
+
+  it("passes the active discussion into the database search", async () => {
+    mocks.query.mockResolvedValue([]);
+    await controlledRagTestInternals.databaseChunks({ ...input, participantMessage: "What are the AEs?", sourceTopicContext: "DDI" });
+    expect(mocks.query.mock.calls[0][0].values).toContain("drug OR interactions");
+  });
   beforeEach(() => { vi.stubEnv("DATABASE_URL", "postgresql://fixture.invalid/unused"); mocks.query.mockReset(); mocks.findMany.mockReset(); vi.mocked(modelGateway.getOptionalOpenAIGateway).mockReturnValue(null); });
   afterEach(() => vi.unstubAllEnvs());
 
