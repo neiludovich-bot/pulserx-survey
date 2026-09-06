@@ -134,3 +134,4 @@ export class InterviewEngine {
   }
 }
 export * from "./conversation-runtime";
+export * from "./research-objectives";

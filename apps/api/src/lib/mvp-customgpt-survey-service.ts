@@ -18,6 +18,7 @@ import {
 } from "@interview/schemas";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
 import { runConversationRuntime } from "./conversation-runtime-service";
+import { objectiveOrientedGuide, researchPlanForGuide } from "./mvp-research-objectives";
 import { conversationRuntimeForNewSession } from "./conversation-runtime-policy";
 import { sourceDiscussionFastPath } from "./mvp-source-fast-path";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
@@ -3097,9 +3098,11 @@ export function resetMvpCustomGptSurveySessions() {
 export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
   const definition = surveyDefinitionForSlug(input.surveySlug);
   const surveyIntent = surveyIntentForSlug(definition, input.surveyIntentSlug);
-  const guide = input.guide?.length
+  const selectedGuide = input.guide?.length
     ? guideFromQuestionStrings(input.guide)
     : guideForIntent(definition, surveyIntent);
+  const objectiveRuntime = !input.guide?.length && definition.slug !== "data" && conversationRuntimeForNewSession(definition.slug, input.conversationRuntime, env) === "conversation_v2";
+  const guide = objectiveRuntime ? objectiveOrientedGuide(selectedGuide, definition.sourceBrand) : selectedGuide;
   const firstQuestion = guide[0] ?? definition.guide[0];
   const projectId = configuredProjectId(definition, input.projectId);
   const missingReason = sourceProviderMissingReason(
@@ -3135,7 +3138,8 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     answerEvidenceByQuestionId: {},
     currentQuestionId: firstQuestion.id,
     pendingReturnQuestionId: null,
-    moderatorState: { ...emptyModeratorState(), runtime: conversationRuntimeForNewSession(definition.slug, input.conversationRuntime, env) },
+    moderatorState: { ...emptyModeratorState(), runtime: conversationRuntimeForNewSession(definition.slug, input.conversationRuntime, env),
+      ...(objectiveRuntime ? { conversation: { version: 2 as const, parkedGuideId: null, skippedGuideIds: [], topics: [], activeTopicId: null, discussion: null, reactionPending: false, research: researchPlanForGuide(guide) } } : {}) },
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
@@ -3210,11 +3214,24 @@ export async function submitMvpCustomGptSurveyTurn(
       selectGuide: (state, observation) => {
         const credited = new Set(session.answeredQuestionIds);
         if (currentQuestionBefore && observation?.answerStatus === "answered") credited.add(currentQuestionBefore.id);
-        const eligible = session.guide.filter(q => !credited.has(q.id) && !state.skippedGuideIds.includes(q.id) && intentAllowsQuestion(session.surveyIntent, q) && questionAllowedByDiseaseLane(session, q));
-        return eligible.find(q => q.id === state.parkedGuideId) ?? eligible[0] ?? null;
+        const eligible = session.guide.filter(q => {
+          const objective = state.research?.objectives.find(item => item.questionIds.includes(q.id));
+          const complete = objective ? ["covered", "deferred"].includes(objective.status) : credited.has(q.id);
+          return !complete && !state.skippedGuideIds.includes(q.id) && intentAllowsQuestion(session.surveyIntent, q) && questionAllowedByDiseaseLane(session, q);
+        });
+        const parkedProbe = session.adaptiveProbeQuestions.find(q => q.id === state.parkedGuideId && q.id.startsWith("objective-probe:"));
+        const parkedObjective = state.research?.objectives.find(item => `objective-probe:${item.id}` === parkedProbe?.id);
+        return parkedProbe && parkedObjective && !["covered", "deferred"].includes(parkedObjective.status) ? parkedProbe : eligible.find(q => q.id === state.parkedGuideId) ?? eligible[0] ?? null;
       },
     });
     session.moderatorState.conversation = result.state;
+    for (const objective of result.state.research?.objectives ?? []) {
+      if (objective.status !== "covered") continue;
+      for (const id of objective.questionIds) {
+        if (!session.answeredQuestionIds.includes(id)) session.answeredQuestionIds.push(id);
+        session.answerEvidenceByQuestionId[id] = [...new Set([...(session.answerEvidenceByQuestionId[id] ?? []), ...objective.evidence.map(item => item.evidence)])];
+      }
+    }
     if (result.observation?.answerEvidence.length && currentQuestionBefore) {
       session.answerEvidenceByQuestionId[currentQuestionBefore.id] = [...new Set([...(session.answerEvidenceByQuestionId[currentQuestionBefore.id] ?? []), ...result.observation.answerEvidence])];
       if (result.observation.answerStatus === "answered" && !session.answeredQuestionIds.includes(currentQuestionBefore.id)) session.answeredQuestionIds.push(currentQuestionBefore.id);

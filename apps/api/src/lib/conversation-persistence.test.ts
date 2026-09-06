@@ -10,6 +10,29 @@ const provider = env.MVP_SOURCE_PROVIDER;
 beforeEach(() => { vi.resetAllMocks(); env.MVP_SOURCE_PROVIDER = "controlled_rag"; });
 afterEach(() => { env.MVP_SOURCE_PROVIDER = provider; resetMvpCustomGptSurveySessions(); });
 describe("replacement persistence boundary", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("persists %s objectives before consent and skips volunteered completed objectives after reload", async brand => {
+    const started = startMvpCustomGptSurvey({ surveySlug: brand, conversationRuntime: "conversation_v2", targetDurationSeconds: 3600 });
+    const snapshot = structuredClone(mocks.start.mock.calls[0][0].session);
+    expect(snapshot.moderatorState.conversation.research.version).toBe(1);
+    expect(started.messages[0].content).toContain("with room to explore what interests you");
+    // Resume a persisted session immediately after consent at its familiarity question.
+    snapshot.currentQuestionId = "familiarity"; snapshot.answeredQuestionIds = ["intro_consent"];
+    snapshot.guide = snapshot.guide.filter((q: { id: string }) => ["intro_consent", "familiarity", "patient_fit"].includes(q.id));
+    mocks.load.mockResolvedValue({ session: snapshot, messages: started.messages, turnCount: 1 });
+    resetMvpCustomGptSurveySessions(); mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation: { answerStatus: "answered", answerEvidence: ["I'm familiar"], researchSignals: [
+      { objectiveId: "familiarity", criterionId: "perspective", evidence: "I'm familiar" },
+      { objectiveId: "patient_fit", criterionId: "perspective", evidence: "I see a role in selected patients" },
+      { objectiveId: "patient_fit", criterionId: "reason", evidence: "because our clinic can support monitoring" },
+    ], request: null, priorities: [], familiarity: "high", familiarityEvidence: "I'm familiar", outOfScope: false }, trace: {}, answer: null });
+    const response = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "I'm familiar. I see a role in selected patients because our clinic can support monitoring." });
+    const saved = mocks.persist.mock.calls.at(-1)![0].session;
+    expect(response.status).toBe("completed");
+    expect(saved.answeredQuestionIds).toContain("patient_fit");
+    expect(saved.moderatorState.conversation.research.objectives.find((item: { id: string }) => item.id === "patient_fit").status).toBe("covered");
+    expect(saved.answerEvidenceByQuestionId.patient_fit).toContain("because our clinic can support monitoring");
+    expect(mocks.turn).toHaveBeenCalledOnce();
+  });
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("rehydrates %s discussion and resumes without re-answering it", async brand => {
     const started = startMvpCustomGptSurvey({ surveySlug: brand, conversationRuntime: "conversation_v2", guide: ["Which factors matter?", "How does access affect your view?"], targetDurationSeconds: 3600 });
     const snapshot = mocks.start.mock.calls[0][0].session;

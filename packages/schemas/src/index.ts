@@ -1907,6 +1907,8 @@ const mvpSurveyIdSchema = z
   .toLowerCase()
   .regex(/^[a-z0-9_-]+$/);
 
+export * from "./research-objectives";
+
 export const mvpGuideQuestionDefinitionSchema = z.object({
   id: mvpSurveyIdSchema,
   module: z.string().trim().min(1),

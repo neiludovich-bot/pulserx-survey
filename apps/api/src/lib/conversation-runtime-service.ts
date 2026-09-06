@@ -1,4 +1,4 @@
-import { emptyConversationState, selectConversationAction } from "@interview/engine";
+import { emptyConversationState, selectConversationAction, updateResearchCoverage, objectiveForQuestion, selectObjectiveFollowUp } from "@interview/engine";
 import { conversationStateSchema, type ConversationState, type ConversationTurnContext, type ConversationObservation, type GroundedReference } from "@interview/schemas";
 import type { MvpGuideQuestion } from "./mvp-brukinsa-guide";
 import { getOptionalOpenAIGateway } from "./model-gateway";
@@ -38,6 +38,8 @@ export async function runConversationRuntime(input: Input) {
       sourceTopicContext: state.discussion?.query ?? null, responseMode: "answer_only" });
     if (candidates.some(source => source.surveySlug !== input.surveySlug)) throw new Error("Evidence crossed bot boundaries.");
     const context: ConversationTurnContext = { version: 2, brand: input.brand, participantMessage: message,
+      researchObjectives: state.research?.objectives.filter(objective => objective.status !== "covered").map(objective => ({ id: objective.id, objective: objective.objective,
+        missingCriteria: objective.criteria.filter(criterion => !objective.evidence.some(item => item.criterionId === criterion.id)).map(({ id, description }) => ({ id, description })) })),
       question: question ? { id: question.id, text: question.canonicalQuestion, kind: questionKind(question) } : null,
       discussionQuery: state.discussion?.query ?? null, recentTurns: input.history.slice(-8),
       topics: state.topics.map(({ id, label, status }) => ({ id, label, status })) };
@@ -72,6 +74,7 @@ export async function runConversationRuntime(input: Input) {
       const understood = await understand(input.message, input.question);
       prepared = understood;
       observation = understood.observation;
+      if (state.research) state.research = updateResearchCoverage(state.research, observation, input.message);
     }
     const selection = selectConversationAction(state, observation, input.resume, Boolean(observation?.reactionEvidence?.length));
     state = selection.state; action = selection.action;
@@ -100,15 +103,49 @@ export async function runConversationRuntime(input: Input) {
       const question = syntheticQuestion("conversation-information-need", `What would you most like to understand about ${input.brand}?`);
       return done(question.canonicalQuestion, question);
     }
+    const activeObjective = objectiveForQuestion(state.research, input.question?.id);
+    if (!input.resume && !observation?.outOfScope && state.research && activeObjective && ["advance_guide", "clarify"].includes(action)) {
+      const followUp = selectObjectiveFollowUp(state.research, input.question?.id);
+      if (followUp) {
+        followUp.objective.followUpsAsked++;
+        action = "objective_follow_up";
+        const question = syntheticQuestion(`objective-probe:${activeObjective.id}`, followUp.criterion.followUp);
+        question.objective = activeObjective.objective;
+        return done(question.canonicalQuestion, question);
+      }
+      if (input.question?.id.startsWith("objective-probe:") && activeObjective.status !== "covered") {
+        activeObjective.status = "deferred";
+        action = "advance_guide";
+      }
+      if (activeObjective.status === "covered") action = "advance_guide";
+    }
     if (action === "clarify") {
       const text = observation?.outOfScope ? `Let's keep this focused on ${input.brand}.` : "Could you say a little more about your perspective?";
       return done(text, input.question);
     }
-    if (input.resume && !state.parkedGuideId && input.question && questionKind(input.question) === "guide") state.skippedGuideIds.push(input.question.id);
+    if (input.resume && !state.parkedGuideId && input.question && questionKind(input.question) === "guide") {
+      state.skippedGuideIds.push(input.question.id);
+      if (activeObjective && activeObjective.status !== "covered") activeObjective.status = "deferred";
+    }
     const question = input.selectGuide(state, observation);
     state.parkedGuideId = null; state.discussion = null; state.reactionPending = false; state.activeTopicId = null;
     if (!question) return done("Thank you for sharing your perspective. That completes the interview.", null, [], true);
-    const transition = initialState.discussion ? "Let's return to your perspective. " : observation?.answerStatus === "answered" ? "Thank you. " : "";
+    const nextObjective = objectiveForQuestion(state.research, question.id);
+    const transition = nextObjective && nextObjective.module !== activeObjective?.module ? `${nextObjective.transition} ` : initialState.discussion ? "Let's return to your perspective. " : observation?.answerStatus === "answered" ? "Thank you. " : "";
+    // A detour or earlier volunteered answer may already supply half this
+    // objective. Ask the missing part instead of presenting the whole question again.
+    if (state.research && nextObjective?.status === "partial") {
+      const followUp = selectObjectiveFollowUp(state.research, question.id);
+      if (followUp) {
+        followUp.objective.followUpsAsked++;
+        action = "objective_follow_up";
+        const probe = syntheticQuestion(`objective-probe:${nextObjective.id}`, followUp.criterion.followUp);
+        probe.objective = nextObjective.objective;
+        const priorView = nextObjective.evidence.find(item => item.criterionId === "perspective")?.evidence;
+        const anchor = priorView ? `You mentioned: “${priorView.slice(0, 240)}${priorView.length > 240 ? "…" : ""}” ` : "";
+        return done(`${transition}${anchor}${probe.canonicalQuestion}`, probe);
+      }
+    }
     if (question.sourceContextRequirement && !question.captureBeforeSourceContext) {
       const result = await present(`Briefly explain the clinical information needed to consider this question: ${question.canonicalQuestion}. ${question.sourceContextRequirement}`);
       if (result.text) {

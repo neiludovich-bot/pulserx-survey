@@ -1,7 +1,9 @@
 import { z } from "zod";
+import { researchPlanStateSchema } from "./research-objectives";
 
 export const conversationStateSchema = z.object({
   version: z.literal(2),
+  research: researchPlanStateSchema.optional(),
   parkedGuideId: z.string().nullable(),
   skippedGuideIds: z.array(z.string()).default([]),
   topics: z.array(z.object({

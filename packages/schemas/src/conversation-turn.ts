@@ -1,15 +1,18 @@
 import { z } from "zod";
 import { sourceEvidenceSpansInputSchema, websiteAnswerModelResultSchema } from "./source-evidence-spans";
 import { evidenceTokenRangeSchema, participantTokensSchema } from "./evidence-ranges";
+import { researchSignalSchema } from "./research-objectives";
 
 export const conversationTurnContextSchema = z.object({
   version: z.literal(2), brand: z.string(), participantMessage: z.string().min(1).max(12000),
+  researchObjectives: z.array(z.object({ id: z.string(), objective: z.string(), missingCriteria: z.array(z.object({ id: z.string(), description: z.string() }).strict()) }).strict()).max(40).optional(),
   question: z.object({ id: z.string(), text: z.string(), kind: z.enum(["guide", "priorities", "reaction", "clarification", "information_need"]) }).strict().nullable(),
   discussionQuery: z.string().nullable(),
   recentTurns: z.array(z.object({ role: z.enum(["participant", "interviewer"]), content: z.string() }).strict()).max(12),
   topics: z.array(z.object({ id: z.string(), label: z.string(), status: z.string() }).strict()).max(64),
 }).strict();
 export const conversationObservationSchema = z.object({
+  researchSignals: z.array(researchSignalSchema).max(16).optional(),
   answerStatus: z.enum(["answered", "partial", "not_answered"]),
   answerEvidence: z.array(z.string().min(1).max(12000)).max(8),
   reactionEvidence: z.array(z.string().min(1).max(12000)).max(8).default([]),
@@ -20,6 +23,7 @@ export const conversationObservationSchema = z.object({
   outOfScope: z.boolean(),
 }).strict();
 export const conversationObservationModelSchema = conversationObservationSchema.omit({ answerEvidence: true, reactionEvidence: true, request: true, priorities: true, familiarity: true, familiarityEvidence: true }).extend({
+  researchSignals: z.array(researchSignalSchema.omit({ evidence: true }).extend({ evidenceRange: evidenceTokenRangeSchema }).strict()).max(16).default([]),
   answerEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
   reactionEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
   request: z.object({ text: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
@@ -43,11 +47,18 @@ export type ConversationObservation = z.infer<typeof conversationObservationSche
 
 /** The application determines which research fields the current question permits.
  * Enforce that constraint at generation time, not only after a model response. */
-export function conversationTurnResultSchemaForQuestion(kind: NonNullable<ConversationTurnContext["question"]>["kind"] | null) {
-  if (kind === "priorities") return conversationTurnResultSchema;
+export function conversationTurnResultSchemaForQuestion(kind: NonNullable<ConversationTurnContext["question"]>["kind"] | null, objectives?: ConversationTurnContext["researchObjectives"]) {
+  const objectiveIds = objectives?.map(objective => objective.id) ?? [];
+  const criterionIds = [...new Set(objectives?.flatMap(objective => objective.missingCriteria.map(criterion => criterion.id)) ?? [])];
+  const signals = objectiveIds.length && criterionIds.length
+    ? z.array(conversationObservationModelSchema.shape.researchSignals.removeDefault().element.extend({
+      objectiveId: z.enum(objectiveIds as [string, ...string[]]), criterionId: z.enum(criterionIds as [string, ...string[]]),
+    }).strict()).max(16).default([])
+    : conversationObservationModelSchema.shape.researchSignals.removeDefault().max(0).default([]);
   return conversationTurnResultSchema.extend({
     observation: conversationTurnResultSchema.shape.observation.extend({
-      priorities: conversationObservationModelSchema.shape.priorities.max(0),
+      researchSignals: signals,
+      priorities: kind === "priorities" ? conversationObservationModelSchema.shape.priorities : conversationObservationModelSchema.shape.priorities.max(0),
     }).strict(),
   }).strict();
 }
