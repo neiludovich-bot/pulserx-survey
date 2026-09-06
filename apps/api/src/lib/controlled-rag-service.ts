@@ -11,7 +11,7 @@ import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
 import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 import { recoverSelectedSourceExcerpt } from "./source-extractive-recovery";
-import { sourceContentSearchSql } from "./source-retrieval-query";
+import { sourceContentSearchSql, sourceContentSearchTerms } from "./source-retrieval-query";
 import { planSourceQuestion } from "./source-question-planner";
 import { answerFromWebsite, renderWebsiteAnswer } from "./website-answer-service";
 import { sourceTurnOutcome } from "./source-turn-outcome";
@@ -1341,8 +1341,21 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
   // Preserve the content-ranked library order, not just its membership.
   // Inherited tags and broad evidence cards must not promote an introductory
   // document fragment ahead of the passage that actually matches the query.
+  // A site index contains many passages from the same page and repeats that
+  // page's asset catalog. Prefer diverse pages, with a bounded second passage
+  // only when fewer pages match. Keep the best content-search order intact.
+  const pageCounts = new Map<string, number>();
+  const diverse: ControlledRagChunk[] = []; const additional: ControlledRagChunk[] = [];
+  for (const source of activeDatabaseChunks) {
+    const key = source.url || source.id;
+    const count = pageCounts.get(key) ?? 0; pageCounts.set(key, count + 1);
+    if (!count) diverse.push(source); else if (count === 1) additional.push(source);
+  }
+  const assetTerms = sourceContentSearchTerms(`${input.participantMessage} ${input.sourceTopicContext ?? ""}`, input.surveySlug);
   return [
-    ...activeDatabaseChunks.slice(0, Math.max(0, 24 - curatedIds.size)),
+    ...[...diverse, ...additional].slice(0, Math.min(8, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
+      assets: rankAssets(source.assets ?? [], assetTerms).slice(0, 3),
+    })),
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
   ].slice(0, 24);
 }

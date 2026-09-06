@@ -25,6 +25,9 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
 /** Rank the approved content before applying the bounded candidate limit. */
 export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null) {
   const terms = sourceContentSearchTerms(query, surveySlug);
+  const normalized = query.toLowerCase().replace(/-/g, " ");
+  const phrases = [...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
+  const phrasePriority = phrases.length ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', ${phrases.map(phrase => `"${phrase}"`).join(" OR ")})) DESC,` : Prisma.empty;
   const contextTerms = sourceContentSearchTerms(context ?? "", surveySlug).slice(0, 12);
   if (!terms.length && !contextTerms.length) return null;
   if (contextTerms.length) {
@@ -43,6 +46,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
         AND document.status = 'ACTIVE'
         AND to_tsvector('english', chunk.content) @@ search.any_terms
       ORDER BY (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
+               ${phrasePriority}
                ts_rank_cd(to_tsvector('english', chunk.content), search.current_terms) DESC,
                ts_rank_cd(to_tsvector('english', chunk.content), search.context_terms) DESC,
                document.priority DESC, chunk.position ASC, chunk.id ASC
@@ -62,7 +66,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       AND document.survey_slug = ${surveySlug}
       AND document.status = 'ACTIVE'
       AND to_tsvector('english', chunk.content) @@ search.any_terms
-    ORDER BY (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
+    ORDER BY ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,
              document.priority DESC, chunk.position ASC, chunk.id ASC
     LIMIT 80

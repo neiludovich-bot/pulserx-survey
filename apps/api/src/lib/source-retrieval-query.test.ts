@@ -10,6 +10,18 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("prioritizes the complete named endpoint instead of any occurrence of free survival", () => {
+    const query = sourceContentSearchSql("PFS and DDI", "nubeqa")!;
+    expect(query.values.at(-1)).toContain('"progression free survival"');
+    expect(query.values.at(-1)).toContain('"drug drug interactions"');
+  });
+  it("keeps a long page from crowding out other evidence and bounds repeated figure metadata", async () => {
+    const rows = Array.from({ length: 12 }, (_, index) => ({ id: `chunk-${index}`, content: 'Drug interactions and dosing.', tags: [], sourceDocument: { title: 'Evidence', description: '', url: index < 10 ? 'https://example.com/long-page' : `https://example.com/page-${index}`, tags: [], assets: Array.from({ length: 12 }, (_, n) => ({ title: `Drug interactions figure ${n}`, description: 'Drug interaction guidance', url: `https://example.com/${n}.png`, assetKind: 'IMAGE', tags: [], priority: 1 })) } }));
+    mocks.query.mockResolvedValue(rows.map(row => ({ id: row.id }))); mocks.findMany.mockResolvedValue(rows);
+    const library = (await controlledRagTestInternals.retrieveChunks(input)).filter(source => source.id.startsWith('db:'));
+    expect(library.map(source => source.id)).toEqual(['db:chunk-0', 'db:chunk-10', 'db:chunk-11', 'db:chunk-1']);
+    expect(library.every(source => (source.assets ?? []).length <= 3)).toBe(true);
+  });
   it("finds spelled-out website language from mixed reactions and shorthand across bots", () => {
     const message = "The PFS is great, the DDI is something I'll need to keep an eye on but it doesnt sound too complex. What are the AE's to watch out for with DDI";
     for (const brand of ["nubeqa", "brukinsa", "padcev"]) {
@@ -42,12 +54,12 @@ describe("source library content retrieval", () => {
     const direct = sourceContentSearchSql(`Which drug interactions are ${verb}?`, "padcev")!;
     const planned = sourceContentSearchSql("What drug-drug interactions (DDI) are described for PADCEV?", "padcev")!;
     expect(direct.values).toEqual(planned.values);
-    expect(direct.values).toEqual(["drug OR interactions", "drug interactions", "padcev", "padcev"]);
+    expect(direct.values).toEqual(['drug OR interactions', 'drug interactions', 'padcev', 'padcev', '"drug interactions" OR "drug drug interactions"']);
   });
 
   it("parameterizes content search and ranks matches before the 80-row bound", () => {
     const query = sourceContentSearchSql(input.participantMessage, "brukinsa")!;
-    expect(query.values).toEqual(["drug OR interactions", "drug interactions", "brukinsa", "brukinsa"]);
+    expect(query.values).toEqual(['drug OR interactions', 'drug interactions', 'brukinsa', 'brukinsa', '"drug interactions" OR "drug drug interactions"']);
     expect(query.sql).toContain("to_tsvector('english', chunk.content) @@ search.any_terms");
     expect(query.sql.indexOf("ts_rank_cd")).toBeLessThan(query.sql.indexOf("LIMIT 80"));
     expect(query.sql).not.toContain("document.tags");
@@ -67,10 +79,10 @@ describe("source library content retrieval", () => {
   it("preserves content-ranked library IDs when narrowing the combined candidate list", async () => {
     const ids = Array.from({ length: 30 }, (_value, index) => `section-${index}`);
     mocks.query.mockResolvedValue(ids.map((id) => ({ id })));
-    mocks.findMany.mockResolvedValue([...ids].reverse().map((id) => ({ id, content: "Content-ranked source passage.", tags: id === "section-0" ? [] : ["drug", "interactions"], sourceDocument: { title: "Document", description: null, url: "https://example.com/document", tags: [], assets: [] } })));
+    mocks.findMany.mockResolvedValue([...ids].reverse().map((id) => ({ id, content: "Content-ranked source passage.", tags: id === "section-0" ? [] : ["drug", "interactions"], sourceDocument: { title: "Document", description: null, url: `https://example.com/document/${id}`, tags: [], assets: [] } })));
     const chunks = await controlledRagTestInternals.retrieveChunks(input);
     expect(chunks[0].id).toBe("db:section-0");
-    expect(chunks.filter((chunk) => chunk.id.startsWith("db:")).map((chunk) => chunk.id).sort()).toEqual(ids.slice(0, 17).map((id) => `db:${id}`).sort());
+    expect(chunks.filter((chunk) => chunk.id.startsWith("db:")).map((chunk) => chunk.id).sort()).toEqual(ids.slice(0, 8).map((id) => `db:${id}`).sort());
   });
 
   it("does not load unrelated first pages when the content query has no matches", async () => {

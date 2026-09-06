@@ -2,6 +2,8 @@
 
 The website index is prepared outside the conversation request. Crawling and PDF parsing make no model calls. GPT continues to receive bounded retrieved excerpts and source-owned assets from Postgres through the existing conversation path.
 
+Retrieval prioritizes complete named phrases, samples at most eight library passages with page diversity, and passes up to three matching image candidates per library passage. The existing curated catalog remains available within the overall 24-source bound. This keeps a larger corpus from flooding the model with repeated page assets or incidental endpoint mentions.
+
 ## Refresh a bot
 
 Use Node 22.19+ or Node 24 and install the repository dependencies. On Windows, enable the system certificate store if a manufacturer uses a certificate chain absent from Node's bundled CA store; do not disable TLS verification.
