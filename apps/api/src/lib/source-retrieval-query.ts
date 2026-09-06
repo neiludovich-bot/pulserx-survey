@@ -25,7 +25,8 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
 }
 
 /** Rank the approved content before applying the bounded candidate limit. */
-export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null) {
+export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null, websiteOnly = false) {
+  const documentFilter = websiteOnly ? Prisma.sql`AND document.url NOT ILIKE '%.pdf%'` : Prisma.empty;
   const terms = sourceContentSearchTerms(query, surveySlug);
   const normalized = query.toLowerCase().replace(/-/g, " ");
   const phrases = [...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
@@ -46,6 +47,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       WHERE chunk.survey_slug = ${surveySlug}
         AND document.survey_slug = ${surveySlug}
         AND document.status = 'ACTIVE'
+        ${documentFilter}
         AND to_tsvector('english', chunk.content) @@ search.any_terms
       ORDER BY (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
                ${phrasePriority}
@@ -67,6 +69,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
     WHERE chunk.survey_slug = ${surveySlug}
       AND document.survey_slug = ${surveySlug}
       AND document.status = 'ACTIVE'
+      ${documentFilter}
       AND to_tsvector('english', chunk.content) @@ search.any_terms
     ORDER BY ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,

@@ -174,7 +174,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     mocks.select.mockResolvedValue({ result: { selections: [{ sourceId: ddi.id, supportExcerpt: ddi.text, assetIds: [] }], rationale: "Only the original interaction source addresses the causal boundary." } });
     mocks.compose.mockResolvedValue({ result: { answerBody: "The interaction source does not establish specific causal adverse reactions. [1]", usedSourceIndexes: [1] } });
     await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: question });
-    expect(sqlValues()).toHaveLength(1);
+    expect(sqlValues()).toHaveLength(2); expect(sqlValues()[1]).toEqual(sqlValues()[0]);
     expect(mocks.select).toHaveBeenCalledOnce();
     expect(sqlValues()[0]).not.toContain("general");
     expect(mocks.compose.mock.calls[0][0].sourceQuestionPlan).toEqual(direct);
@@ -207,7 +207,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     mocks.query.mockResolvedValue([]);
     mocks.select.mockResolvedValue({ result: { selections: [], rationale: "No synthetic source." } });
     await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: question, evidencePacket: null });
-    expect(sqlValues()).toHaveLength(1);
+    expect(sqlValues()).toHaveLength(2); expect(sqlValues()[1]).toEqual(sqlValues()[0]);
     expect(sqlValues()[0]).toContain("original");
     expect(sqlValues()[0]).not.toContain("untrusted");
     expect(mocks.select.mock.calls[0][0].query).toBe(question);

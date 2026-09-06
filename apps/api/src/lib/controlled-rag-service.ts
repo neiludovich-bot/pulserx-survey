@@ -1243,7 +1243,19 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   try {
     const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext);
     if (!searchQuery) return [];
-    const matches = await prisma.$queryRaw<Array<{ id: string }>>(searchQuery);
+    // Reserve website passages before the corpus-wide limit: a long label can
+    // otherwise exclude the page that owns a relevant figure altogether.
+    const [allMatches, websiteMatches] = await Promise.all([
+      prisma.$queryRaw<Array<{ id: string }>>(searchQuery),
+      prisma.$queryRaw<Array<{ id: string }>>(sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, true)!),
+    ]);
+    const matches: Array<{ id: string }> = [];
+    const seenMatches = new Set<string>();
+    for (let index = 0; index < Math.max(allMatches.length, websiteMatches.length); index++) {
+      for (const match of [allMatches[index], websiteMatches[index]]) {
+        if (match && !seenMatches.has(match.id) && matches.length < 80) { matches.push(match); seenMatches.add(match.id); }
+      }
+    }
     if (!matches.length) return [];
     const chunks = await prisma.sourceChunk.findMany({
       where: {

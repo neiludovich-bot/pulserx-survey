@@ -10,6 +10,16 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("reserves website evidence even when a label fills the corpus-wide match limit", async () => {
+    const ids = Array.from({ length: 80 }, (_, n) => ({ id: `pdf-${n}` }));
+    mocks.query.mockResolvedValueOnce(ids).mockResolvedValueOnce([{ id: 'website-chart' }]);
+    mocks.findMany.mockResolvedValue([{ id: 'pdf-0', content: 'Adverse reactions.', tags: [], sourceDocument: { title: 'Label', url: 'https://example.com/label.pdf#page=1', description: '', tags: [], assets: [] } }, { id: 'website-chart', content: 'Adverse reactions in the trial.', tags: [], sourceDocument: { title: 'Safety', url: 'https://example.com/safety', description: '', tags: [], assets: [] } }]);
+    const candidates = await controlledRagTestInternals.databaseChunks({ ...input, participantMessage: 'Side effect profile' });
+    expect(candidates.map(c => c.id)).toEqual(['db:pdf-0', 'db:website-chart']);
+    expect(mocks.findMany.mock.calls[0][0].where.id.in).toContain('website-chart');
+    expect(mocks.findMany.mock.calls[0][0].where.id.in).toHaveLength(80);
+    expect(mocks.query.mock.calls[1][0].sql).toContain("document.url NOT ILIKE '%.pdf%'");
+  });
   it("retains a website chart when multiple pages of one label rank ahead of it", async () => {
     const rows = Array.from({ length: 10 }, (_, n) => ({ id: `page-${n}`, content: 'Adverse reactions.', tags: [], sourceDocument: { title: 'Safety', description: '', url: n < 9 ? `https://example.com/label.pdf#page=${n + 1}` : 'https://example.com/safety', tags: [], assets: n < 9 ? [] : [{ title: 'Adverse reactions chart', description: 'Adverse reactions', url: 'https://example.com/chart.png', assetKind: 'IMAGE', tags: [], priority: 1 }] } }));
     mocks.query.mockResolvedValue(rows.map(row => ({ id: row.id }))); mocks.findMany.mockResolvedValue(rows);

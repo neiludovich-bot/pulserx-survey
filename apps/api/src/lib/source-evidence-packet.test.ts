@@ -52,7 +52,7 @@ describe("retained source evidence for clarification", () => {
 
   it("ignores the retained interaction packet for an explicit new efficacy question", async () => {
     const result = await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: "What does EV-302 show for progression-free survival?" });
-    expect(mocks.query).toHaveBeenCalledOnce();
+    expect(mocks.query).toHaveBeenCalledTimes(2);
     expect(mocks.select).toHaveBeenCalledOnce();
     expect(mocks.compose).not.toHaveBeenCalled();
     expect(result.enabled).toBe(false);
@@ -88,7 +88,7 @@ describe("retained source evidence for clarification", () => {
     mocks.select.mockResolvedValue({ result: { selections: [{ sourceId: prior.id, supportExcerpt: prior.text, assetIds: [`${prior.id}:asset:0`] }], rationale: "The question refers to the previously described interaction classes." } });
     mocks.compose.mockResolvedValue({ result: { answerBody: "The source distinguishes interaction classes but does not quantify adverse reactions for an unspecified concomitant medication. [1]", usedSourceIndexes: [1] } });
     const result = await askControlledRagForSurveyInterviewerTurn({ ...input, surveySlug: "nubeqa", participantMessage: message, sourceTopicContext: "What drug-drug interactions are described for NUBEQA?", evidencePacket: { sources: [prior] } });
-    expect(mocks.query).toHaveBeenCalledOnce();
+    expect(mocks.query).toHaveBeenCalledTimes(2);
     expect(mocks.select).toHaveBeenCalledWith(expect.objectContaining({ query: message, sourceTopicContext: "What drug-drug interactions are described for NUBEQA?", priorSourceIds: [prior.id] }));
     expect(mocks.select.mock.calls[0][0].candidates[0]).toEqual(expect.objectContaining({ id: prior.id, text: prior.text }));
     expect(mocks.compose.mock.calls[0][0]).toEqual(expect.objectContaining({ participantMessage: message, sourceTopicContext: "What drug-drug interactions are described for NUBEQA?", clinicalEvidenceCard: null, sources: [expect.objectContaining({ text: prior.text })] }));
