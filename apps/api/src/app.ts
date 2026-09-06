@@ -1,5 +1,6 @@
 import cors from "@fastify/cors";
-import { InterviewEngine } from "@interview/engine";
+import { InterviewEngine, withModelCallTimingContext } from "@interview/engine";
+import { randomUUID } from "node:crypto";
 import {
   abandonStudyOpenSessionsSchema,
   addStudyCustomGptAssetSourceSchema,
@@ -125,6 +126,7 @@ export function buildApp() {
 
   app.register(cors, {
     origin: corsOrigins,
+    exposedHeaders: ["X-Model-Call-Group-Id"],
     methods: ["GET", "HEAD", "POST", "PATCH", "OPTIONS"],
   });
 
@@ -202,17 +204,31 @@ export function buildApp() {
       });
     }
 
-    try {
-      return await submitMvpCustomGptSurveyTurn(body.data);
-    } catch (error) {
-      request.log.error(error);
-      return reply.status(404).send({
-        message:
-          error instanceof Error
-            ? error.message
-            : "Unable to submit MVP CustomGPT survey turn.",
-      });
-    }
+    const callGroupId = randomUUID();
+    reply.header("X-Model-Call-Group-Id", callGroupId);
+    return withModelCallTimingContext({ callGroupId }, async () => {
+      const startedAt = performance.now();
+      let result: Awaited<ReturnType<typeof submitMvpCustomGptSurveyTurn>> | undefined;
+      try {
+        result = await submitMvpCustomGptSurveyTurn(body.data);
+        return result;
+      } catch (error) {
+        request.log.error(error);
+        return reply.status(404).send({
+          message: error instanceof Error ? error.message : "Unable to submit MVP CustomGPT survey turn.",
+        });
+      } finally {
+        try {
+          const slug = result?.surveySlug ?? body.data.surveySlug;
+          console.info(JSON.stringify({ event: "survey_turn_timing", callGroupId,
+            status: result ? "success" : "failure", elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
+            survey_slug: slug && ["nubeqa", "brukinsa", "padcev"].includes(slug) ? slug : null,
+            synthetic: result ? /\bsynthetic\b/i.test(result.studyName) : null,
+            turnSequence: result && Number.isSafeInteger(result.turnCount) && result.turnCount > 0 ? result.turnCount * 2 - 1 : null,
+          }));
+        } catch { /* Timing diagnostics must not affect delivery. */ }
+      }
+    });
   });
 
   app.post<{

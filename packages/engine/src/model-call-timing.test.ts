@@ -19,7 +19,7 @@ describe("safe model-call timing", () => {
     const gateway = new OpenAIResponsesGateway("PRIVATE key", config, undefined, { parse });
     const result = await gateway.planSourceQuestion(input);
     expect(log).toHaveBeenCalledOnce();
-    expect(JSON.parse(log.mock.calls[0][0] as string)).toEqual({ event: "model_call_timing", callType: "source_question_plan", model: "gpt-5.4", schemaName: "source_question_plan_v1", survey_slug: "nubeqa", status: "success", elapsedMs: 37, reasoningEffort: "low", inputTokens: 1000, outputTokens: 80, reasoningTokens: 45, cachedInputTokens: 700 });
+    expect(JSON.parse(log.mock.calls[0][0] as string)).toEqual({ event: "model_call_timing", callGroupId: null, callType: "source_question_plan", model: "gpt-5.4", schemaName: "source_question_plan_v1", survey_slug: "nubeqa", status: "success", elapsedMs: 37, reasoningEffort: "low", inputTokens: 1000, outputTokens: 80, reasoningTokens: 45, cachedInputTokens: 700 });
     expect(JSON.stringify(log.mock.calls)).not.toContain("PRIVATE");
     expect(result.result).toEqual(plan);
     expect(result.trace.elapsedMs).toBe(37);

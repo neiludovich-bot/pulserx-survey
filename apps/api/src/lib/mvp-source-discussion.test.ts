@@ -171,23 +171,18 @@ describe("shared persisted source detours", () => {
     expect(mocks.phrase).not.toHaveBeenCalled();
     const selected = snapshot.guide.find((item: { id: string }) => item.id === returnId);
     const resumedWording = answered ? "What factors matter most in your treatment decisions?" : "What is your clinical role?";
-    const sourceReply = response.messages.at(-1)?.content;
     if (phrasingFails) mocks.phrase.mockRejectedValueOnce(new Error("Invalid guide-resume wording"));
     else mocks.phrase.mockResolvedValueOnce({ result: { text: resumedWording }, trace: { responseId: "guide-source-resume-fixture" } });
     rehydrate(response);
     const resumed = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Thanks, continue." });
     expect(mocks.persist.mock.calls.at(-1)![0].session.currentQuestionId).toBe(returnId);
     expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.sourceDiscussion).toBeUndefined();
-    expect(mocks.phrase).toHaveBeenCalledOnce();
-    expect(mocks.phrase.mock.calls[0][0]).toMatchObject({ action: "guide_resume", selectedQuestion: { id: returnId, question: selected.canonicalQuestion, objective: selected.objective }, discussedPriorities: [], recentTurns: expect.arrayContaining([expect.objectContaining({ role: "interviewer", content: sourceReply })]) });
+    expect(mocks.phrase).not.toHaveBeenCalled();
     const phrasingAudit = mocks.persist.mock.calls.at(-1)![0].turn.moderatorDecision.guideResumePhrasing;
-    expect(phrasingAudit.status).toBe(phrasingFails ? "fallback" : "success");
+    expect(phrasingAudit).toMatchObject({ status: "deterministic", selectedQuestionId: returnId, result: { text: selected.canonicalQuestion } });
     expect(resumed.currentQuestion).toBe(selected.canonicalQuestion);
-    if (phrasingFails) expect(resumed.messages.at(-1)?.content).toBe(selected.canonicalQuestion);
-    else {
-      expect(resumed.messages.at(-1)?.content).toBe(resumedWording);
-      expect(phrasingAudit.trace).toEqual({ responseId: "guide-source-resume-fixture" });
-    }
+    expect(resumed.messages.at(-1)?.content).toBe(selected.canonicalQuestion);
+    expect(phrasingAudit.trace).toBeUndefined();
   });
 
   it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((brand) => [false, true].map((phrasingFails) => ({ brand, phrasingFails }))))("reconciles volunteered familiarity and resumes the unanswered $brand default-guide step (phrasing failure=$phrasingFails)", async ({ brand, phrasingFails }) => {
@@ -252,16 +247,12 @@ describe("shared persisted source detours", () => {
     expect(resumed.currentQuestion).toBe(brand === "nubeqa" ? baseline.guide.find((question: { id: string }) => question.id === "decision_framework").canonicalQuestion : intake.currentQuestion);
     const final = mocks.persist.mock.calls.at(-1)![0].session;
     const selected = baseline.guide.find((question: { id: string }) => question.id === (brand === "nubeqa" ? "decision_framework" : "role"));
-    expect(mocks.phrase.mock.calls.at(-1)![0]).toMatchObject({ action: "guide_resume", selectedQuestion: { id: selected.id, question: selected.canonicalQuestion, objective: selected.objective }, discussedPriorities: [{ label: "PFS", reactionEvidence: [reaction] }, { label: "DDI", reactionEvidence: [mixedReaction] }] });
+    expect(mocks.phrase.mock.calls.filter(([request]) => request.action === "guide_resume")).toEqual([]);
     expect(final.currentQuestionId).toBe(selected.id);
     const phrasingAudit = mocks.persist.mock.calls.at(-1)![0].turn.moderatorDecision.guideResumePhrasing;
-    expect(phrasingAudit.status).toBe(phrasingFails ? "fallback" : "success");
-    if (phrasingFails) expect(resumed.messages.at(-1)?.content).toContain(selected.canonicalQuestion);
-    else {
-      expect(resumed.messages.at(-1)?.content).toBe(resumedWording);
-      expect(resumed.messages.at(-1)?.content).not.toContain("Before we get into");
-      expect(phrasingAudit.trace).toEqual({ responseId: "phrasing-fixture" });
-    }
+    expect(phrasingAudit).toMatchObject({ status: "deterministic", selectedQuestionId: selected.id, result: { text: selected.canonicalQuestion } });
+    expect(resumed.messages.at(-1)?.content).toBe(selected.canonicalQuestion);
+    expect(phrasingAudit.trace).toBeUndefined();
     expect(final.answerEvidenceByQuestionId.familiarity).toEqual([low]);
     expect(final.moderatorState.priorities.map((p: { status: string }) => p.status)).toEqual(["reacted", "reacted"]);
     expect(final.pendingReturnQuestionId).toBeNull();

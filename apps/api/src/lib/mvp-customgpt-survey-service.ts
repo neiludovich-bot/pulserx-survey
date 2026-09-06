@@ -3829,9 +3829,18 @@ export async function submitMvpCustomGptSurveyTurn(
   const resumesSourceDiscussionGuide = Boolean(resumeQuestion && discussionBefore?.returnTarget?.kind === "guide");
   if ((moderatorCompleted || resumesSourceDiscussionGuide) && !session.completedReason) {
     let guideResumePhrased = false;
-    // Selection stays canonical. Rephrase only a source-free resumed question;
-    // source-required questions retain their authored evidence presentation.
-    if (actualAskedQuestion && !needsCustomGpt) {
+    // Explicit navigation renders the authored objective verbatim, avoiding an
+    // extra interpretation of a question the application has already selected.
+    if (actualAskedQuestion && !needsCustomGpt && contentLooksLikeReturnToSurveyCue(input.content)) {
+      assistantContent = actualAskedQuestion.canonicalQuestion;
+      guideResumePhrased = true;
+      moderatorDecision = { ...moderatorDecision, guideResumePhrasing: {
+        status: "deterministic", reason: "Explicit navigation uses the canonical selected guide question.",
+        selectedQuestionId: actualAskedQuestion.id, result: { text: assistantContent }
+      } };
+    // Non-navigation transitions retain phrasing; source-required questions
+    // retain their authored evidence presentation.
+    } else if (actualAskedQuestion && !needsCustomGpt) {
       const gateway = getOptionalOpenAIGateway();
       let guideResumePhrasing: Record<string, unknown> = { status: "fallback", reason: "Phrasing model unavailable." };
       if (gateway) {

@@ -73,6 +73,7 @@ import { participantTokensForModel, evidenceFromTokenRange } from "./evidence-ra
 import { validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
 import { normalizeModeratorPlanTokenResult } from "./moderator-evidence-ranges";
 import { sanitizeSourceFailure, type SourceFailureMetadata } from "./source-failure";
+import { getModelCallTimingContext } from "./model-call-timing-context";
 import {
   buildDecisionCandidates,
   commitSelection,
@@ -100,6 +101,7 @@ type ModelConfig = {
   reasoningEffort?: "none" | "low" | "medium" | "high";
   groundingReasoningEffort?: "none" | "low" | "medium" | "high";
   interpretationReasoningEffort?: "none" | "low" | "medium" | "high";
+  moderatorReasoningEffort?: "none" | "low" | "medium" | "high";
   compositionReasoningEffort?: "none" | "low" | "medium" | "high";
 };
 
@@ -148,6 +150,7 @@ function logModelCallTiming(input: {
   const usage = input.response?.usage;
   try {
     console.info(JSON.stringify({ event: "model_call_timing", callType: input.callType, model: input.model,
+      callGroupId: getModelCallTimingContext()?.callGroupId ?? null,
       schemaName: input.schemaName, survey_slug: candidateSlug && ["nubeqa", "brukinsa", "padcev"].includes(candidateSlug) ? candidateSlug : null,
       status: input.response?.output_parsed === undefined ? "failure" : "success", elapsedMs: input.elapsedMs,
       reasoningEffort: input.reasoningEffort ?? null, inputTokens: counter(usage?.input_tokens),
@@ -494,7 +497,7 @@ export class OpenAIResponsesGateway {
     // Explicit reasoning for interpretation and evidence checks; phrasing keeps
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
-      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : ["turn_route", "moderator_plan"].includes(callType) ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
+      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : callType === "moderator_plan" ? this.config.moderatorReasoningEffort ?? this.config.interpretationReasoningEffort : callType === "turn_route" ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
     const effectiveMetadata = { ...metadata, ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const requestPayload = {
       model,
