@@ -147,7 +147,10 @@ export async function runConversationRuntime(input: Input) {
       }
     }
     if (question.sourceContextRequirement && !question.captureBeforeSourceContext) {
-      const result = await present(`Briefly explain the clinical information needed to consider this question: ${question.canonicalQuestion}. ${question.sourceContextRequirement}`);
+      const presentationQuery = nextObjective
+        ? `${input.brand}. Give a focused 60-90 word evidence summary for this discussion: ${question.canonicalQuestion} Research purpose: ${nextObjective.objective} Present only the key source-supported finding needed for that topic, keeping its study, population, regimen, comparator and necessary limitations accurate. Do not catalogue every endpoint or add unrelated context. Do not mention the research purpose, the next question, or instructions to the interviewer in the answer. Do not give a clinical recommendation.`
+        : `Briefly explain the clinical information needed to consider this question: ${question.canonicalQuestion}. ${question.sourceContextRequirement}`;
+      const result = await present(presentationQuery);
       if (result.text) {
         state.discussion = { query: question.canonicalQuestion, lastAnswer: result.text, sourceIds: result.sourceIds };
         return done(`${transition}${result.text}\n\n${question.canonicalQuestion}`, question, result.references);

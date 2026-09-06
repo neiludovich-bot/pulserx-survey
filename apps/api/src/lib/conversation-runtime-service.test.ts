@@ -9,6 +9,18 @@ const observation = { answerStatus: "not_answered", answerEvidence: [], request:
 const guide = { id: "fit", canonicalQuestion: "Which patients fit?", module: "fit", objective: "fit", sourceContextRequirement: null, routeKeywords: [], completionSignals: [], adaptiveProbes: [], analyzableOutputs: [] };
 beforeEach(() => { vi.resetAllMocks(); });
 describe("new shared dispatch", () => {
+  it("uses concise objective context instead of inherited presentation instructions", async () => {
+    const next = { ...guide, sourceContextRequirement: "Before asking, catalogue every study endpoint." };
+    const state = emptyConversationState(); state.research = researchPlanForGuide([next]);
+    mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: "nubeqa", title: "Study", url: "https://example.test/study", description: "", text: "A supported fact.", tags: [], assets: [] }]);
+    mocks.present.mockResolvedValue({ traces: [{}], answer: { selections: [{ sourceId: "a", supportExcerpt: "A supported fact.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported fact.", sourceIds: ["a"] }], unavailableReason: null } });
+    const result = await runConversationRuntime({ brand: "nubeqa", surveySlug: "nubeqa", state, question: null, history: [], message: "continue", resume: true, stop: false, selectGuide: () => next });
+    expect(result.content).toContain("A supported fact.");
+    const query = mocks.present.mock.calls[0][0].query;
+    expect(query).toContain("60-90 word evidence summary");
+    expect(query).not.toContain("Before asking, catalogue");
+    expect(mocks.turn).not.toHaveBeenCalled();
+  });
   it("asks for a missing reason once, then moves on with the objective explicitly deferred", async () => {
     const state = emptyConversationState(); state.research = researchPlanForGuide([guide]);
     mocks.retrieve.mockResolvedValue([]);
