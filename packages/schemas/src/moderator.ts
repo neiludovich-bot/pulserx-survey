@@ -101,6 +101,7 @@ export const moderatorPlanResultSchema = z.object({
     sourceQuestion: z.string().min(1).max(2000),
   }).strict()).max(32),
   reactionStatus: answerStatusSchema,
+  reactionTargetPriorityId: z.string().min(1).nullable().optional(),
   reactionEvidence: z.array(evidenceExcerptSchema).max(16),
   action: z.enum(["present_priority", "probe_reaction", "answer_source", "resume_guide"]),
   selectedPriorityId: z.string().min(1).nullable(),
@@ -118,6 +119,7 @@ export const moderatorPlanModelResultSchema = moderatorPlanResultSchema.innerTyp
   .omit({ newPriorities: true })
   .extend({
     sourceRequest: sourceRequestSchema.nullable(),
+    reactionTargetPriorityId: z.string().min(1).nullable(),
     priorityMentions: z.array(z.object({
       label: z.string().min(1).max(200),
       participantEvidence: evidenceExcerptSchema,
@@ -132,7 +134,7 @@ export const moderatorPlanModelResultSchema = moderatorPlanResultSchema.innerTyp
 export const moderatorPlanTokenModelResultSchema = moderatorPlanModelResultSchema
   .omit({ sourceRequest: true, reactionEvidence: true, priorityMentions: true })
   .extend({
-    schemaVersion: z.literal(4),
+    schemaVersion: z.literal(5),
     sourceRequest: sourceRequestSchema.omit({ participantEvidence: true }).extend({ participantEvidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
     reactionEvidenceRanges: z.array(evidenceTokenRangeSchema).max(16),
     priorityMentions: z.array(moderatorPlanModelResultSchema.shape.priorityMentions.element
@@ -150,7 +152,7 @@ export const moderatorPlanInputSchema = moderatorPlanBaseInputSchema.extend({
   repairContext: moderatorPlanRepairContextSchema.optional(),
 }).strict();
 export const moderatorPlanTokenInputSchema = moderatorPlanInputSchema.extend({
-  schemaVersion: z.literal(4),
+  schemaVersion: z.literal(5),
   participantTokens: participantTokensSchema,
 }).strict();
 export type ModeratorPlanTokenModelResult = z.infer<typeof moderatorPlanTokenModelResultSchema>;

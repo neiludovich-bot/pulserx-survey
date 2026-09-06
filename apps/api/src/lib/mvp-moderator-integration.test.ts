@@ -37,12 +37,14 @@ const mixedMessage = `${mixedReaction}  So someone on those medications are at r
 
 function planResult(input: ModeratorPlanInput): ModeratorPlanResult {
   const reaction = [firstReaction, secondReaction, mixedMessage].includes(input.participantMessage);
+  const reactionTopic = input.participantMessage === firstReaction ? "PFS" : "DDI";
   return {
     newPriorities: input.participantMessage === "PFS and DDI" ? [
       { label: "PFS", participantEvidence: "PFS", sourceQuestion: `What PFS evidence is available for ${input.brand}?` },
       { label: "DDI", participantEvidence: "DDI", sourceQuestion: `What drug interactions are documented for ${input.brand}?` },
     ] : [],
     reactionStatus: reaction ? "answered" : "not_answered",
+    reactionTargetPriorityId: reaction ? input.state.priorities.find((priority) => priority.label === reactionTopic)?.id ?? null : null,
     reactionEvidence: reaction ? [input.participantMessage === mixedMessage ? mixedReaction : input.participantMessage] : [],
     action: input.asksSourceQuestion ? "answer_source" : reaction ? "present_priority" : "probe_reaction",
     selectedPriorityId: null,

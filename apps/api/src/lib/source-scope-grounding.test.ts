@@ -23,7 +23,7 @@ describe("reviewed answer scope and rendered references", () => {
     const violation = { excerpt: contrast, reason: "The actual selected request is PFS; the search interpretation cannot authorize an MFS comparison." };
     const parse = vi.fn()
       .mockResolvedValueOnce({ output_parsed: plan })
-      .mockResolvedValueOnce({ output_parsed: { selections: sourceTexts.map((text, index) => ({ sourceId: index === 0 ? "db:trial-a" : "db:trial-b", supportExcerpt: text, assetIds: [], evidenceRole: "direct" })), rationale: "Adversarial selection includes an unrelated endpoint." } })
+      .mockResolvedValueOnce({ output_parsed: { selections: sourceTexts.map((_text, index) => ({ sourceId: index === 0 ? "db:trial-a" : "db:trial-b", supportSpanRange: { startSpan: 0, endSpan: 0 }, assetIds: [], evidenceRole: "direct", contribution: "answer" })), rationale: "Adversarial selection includes an unrelated endpoint." } })
       .mockResolvedValueOnce({ output_parsed: { answerBody: `${fact} ${contrast}`, usedSourceIndexes: [1, 2], limitations: [] } })
       .mockResolvedValueOnce({ output_parsed: { version: 1, supported: false, unsupportedClaims: [violation] } })
       .mockResolvedValueOnce({ output_parsed: { answerBody: fact, usedSourceIndexes: [1], limitations: [] } })
@@ -37,6 +37,7 @@ describe("reviewed answer scope and rendered references", () => {
     expect(parse).toHaveBeenCalledTimes(6);
     const payload = (index: number) => JSON.parse(parse.mock.calls[index][0].input[0].content[0].text);
     expect(payload(1)).toMatchObject({ query: selectedQuestion, sourceQuestionPlan: plan });
+    expect(payload(1).candidates.filter((candidate: { id: string }) => ["db:trial-a", "db:trial-b"].includes(candidate.id)).map((candidate: { spans: unknown }) => candidate.spans)).toEqual(sourceTexts.map((text) => [{ index: 0, text }]));
     expect(payload(2)).toMatchObject({ resolvedSourceQuestion: selectedQuestion, sourceQuestionPlan: plan });
     expect(payload(3).answerScope).toMatchObject({ resolvedSourceQuestion: selectedQuestion, currentParticipantRequest: selectedQuestion, sourceQuestionPlan: plan });
     expect(payload(4).groundingViolations).toEqual([violation]);

@@ -219,7 +219,7 @@ describe("shared persisted source detours", () => {
     const priorityState = mocks.persist.mock.calls.at(-1)![0].session.moderatorState;
     const reaction = "The efficacy results would be one part of my assessment.";
     mocks.route.mockResolvedValueOnce(researchAnswer(reaction));
-    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: priorityState.priorities[1].id, rationale: "Move to DDI." } });
+    mocks.plan.mockResolvedValueOnce({ result: { newPriorities: [], reactionTargetPriorityId: priorityState.priorities[0].id, reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: priorityState.priorities[1].id, rationale: "Move to DDI." } });
     await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: reaction });
     const openingQuestion = "What drug-drug interactions are noted?";
     const openingRequest = { kind: "question", participantEvidence: openingQuestion, resolvedQuestion: openingQuestion };
@@ -232,7 +232,7 @@ describe("shared persisted source detours", () => {
     const mixedQuestion = "So someone on those medications is at risk for what adverse reactions";
     const mixedSourceRequest = { kind: "question", participantEvidence: mixedQuestion, resolvedQuestion: "What adverse reactions are described?" };
     mocks.route.mockResolvedValueOnce({ ...researchAnswer(mixedReaction, true), sourceRequest: mixedSourceRequest, answerStatus: "not_answered", answerEvidence: [] });
-    mocks.plan.mockResolvedValueOnce({ result: { sourceRequest: mixedSourceRequest, newPriorities: [], reactionStatus: "answered", reactionEvidence: [mixedReaction], action: "answer_source", selectedPriorityId: priorityState.priorities[1].id, rationale: "Credit the reaction and answer the followup independently of the missed upstream reaction." } });
+    mocks.plan.mockResolvedValueOnce({ result: { sourceRequest: mixedSourceRequest, newPriorities: [], reactionTargetPriorityId: priorityState.priorities[1].id, reactionStatus: "answered", reactionEvidence: [mixedReaction], action: "answer_source", selectedPriorityId: priorityState.priorities[1].id, rationale: "Credit the reaction and answer the followup independently of the missed upstream reaction." } });
     const detour = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: `${mixedReaction} ${mixedQuestion}` });
     expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.priorities[1]).toMatchObject({ status: "reacted", reactionEvidence: [mixedReaction] });
     rehydrate(detour);

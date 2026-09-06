@@ -31,7 +31,7 @@ describe("typed source-question planning", () => {
   ])("routes all source calls through the optional source model while keeping moderator phrasing separate: $sourceModel", async ({ sourceModel, expected }) => {
     const parse = vi.fn()
       .mockResolvedValueOnce({ output_parsed: plan })
-      .mockResolvedValueOnce({ output_parsed: { selections: [{ sourceId: "label", supportExcerpt: "Source evidence.", assetIds: [], evidenceRole: "contextual" }], rationale: "Contextual safety information." } })
+      .mockResolvedValueOnce({ output_parsed: { selections: [{ sourceId: "label", supportSpanRange: { startSpan: 0, endSpan: 0 }, assetIds: [], evidenceRole: "contextual", contribution: "requested_context" }], rationale: "Contextual safety information." } })
       .mockResolvedValueOnce({ output_parsed: { practicalAnswer: "Source evidence. [1]", qualification: null, usedSourceIndexes: [1] } })
       .mockResolvedValueOnce({ output_parsed: supportedReview })
       .mockResolvedValueOnce({ output_parsed: { text: "How does the DDI information fit into your assessment?" } });

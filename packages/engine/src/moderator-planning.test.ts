@@ -33,6 +33,7 @@ const input: ModeratorPlanInput = {
 };
 const plan: ModeratorPlanResult = {
   sourceRequest: null,
+  reactionTargetPriorityId: "pfs",
   newPriorities: [
     { label: "PFS", participantEvidence: "PFS", sourceQuestion: "What PFS results are reported for NUBEQA?" },
     { label: "Drug interactions", participantEvidence: "DDI", sourceQuestion: "What drug interactions are reported for NUBEQA?" },
@@ -56,7 +57,7 @@ const modelPlan = {
 };
 const { reactionEvidence: _legacyReactionEvidence, ...indexedPlanBase } = modelPlanBase;
 const indexedModelPlan = {
-  ...indexedPlanBase, schemaVersion: 4, reactionEvidenceRanges: [],
+  ...indexedPlanBase, schemaVersion: 5, reactionEvidenceRanges: [],
   priorityMentions: modelPlan.priorityMentions.map(({ participantEvidence: _evidence, additionEvidence: _addition, ...mention }, index) => ({
     ...mention, participantEvidenceRange: { startToken: index * 2, endToken: index * 2 }, additionEvidenceRange: null,
   })),
@@ -426,7 +427,7 @@ describe("moderator evidence ID validation", () => {
     expect(moderatorEvidenceSelectionInputSchema.parse(evidenceInput)).toMatchObject({ sourceTopicContext: null, priorSourceIds: [] });
     const contextualInput = { ...evidenceInput, query: "Someone on those medications is at risk for what adverse reactions", sourceTopicContext: "The preceding discussion concerned drug interactions.", priorSourceIds: ["ddi"] };
     expect(moderatorEvidenceSelectionInputSchema.safeParse({ ...contextualInput, sourceTopicContext: { loose: "context" } }).success).toBe(false);
-    const parse = vi.fn().mockResolvedValue({ output_parsed: { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [] }], rationale: "Retain the referenced interaction context without inferring general adverse-event causality." } });
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { selections: [{ sourceId: "ddi", supportSpanRange: { startSpan: 0, endSpan: 0 }, assetIds: [], evidenceRole: "direct", contribution: "answer" }], rationale: "Retain the referenced interaction context without inferring general adverse-event causality." } });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     await gateway.selectModeratorEvidence(contextualInput);
     const requestInput = JSON.parse(parse.mock.calls[0][0].input[0].content[0].text);
@@ -449,12 +450,12 @@ describe("moderator evidence ID validation", () => {
   });
 
   it("requires model evidence roles without serializing a default into strict output", async () => {
-    const output = { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [], evidenceRole: "direct" }], rationale: "Direct support" };
-    const parse = vi.fn().mockResolvedValue({ output_parsed: output });
+    const output = { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [], evidenceRole: "direct", contribution: "answer" }], rationale: "Direct support" };
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { ...output, selections: output.selections.map(({ supportExcerpt: _text, ...selection }) => ({ ...selection, supportSpanRange: { startSpan: 0, endSpan: 0 } })) } });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     expect((await gateway.selectModeratorEvidence(evidenceInput)).result).toEqual(output);
     const format = parse.mock.calls[0][0].text.format;
-    expect(format.name).toBe("moderator_evidence_selection_result_v4");
+    expect(format.name).toBe("moderator_evidence_span_selection_v1");
     const selectionSchema = format.schema.properties.selections.items;
     expect(selectionSchema.required).toContain("evidenceRole");
     expect(selectionSchema.required).toContain("contribution");
@@ -466,12 +467,12 @@ describe("moderator evidence ID validation", () => {
   });
 
   it("constrains contextual generation to the contextual role without relabeling direct output", async () => {
-    const output = { selections: [{ sourceId: "ddi", supportExcerpt: "Interaction information", assetIds: [], evidenceRole: "contextual" }], rationale: "Selected supporting excerpt" };
+    const output = { selections: [{ sourceId: "ddi", supportSpanRange: { startSpan: 0, endSpan: 0 }, assetIds: [], evidenceRole: "contextual", contribution: "answer" }], rationale: "Selected supporting excerpt" };
     const parse = vi.fn().mockResolvedValue({ output_parsed: output });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     await gateway.selectModeratorEvidence({ ...evidenceInput, evidenceFocus: "contextual" });
     const format = parse.mock.calls[0][0].text.format;
-    expect(format.name).toBe("moderator_contextual_evidence_selection_result_v2");
+    expect(format.name).toBe("moderator_contextual_evidence_span_selection_v1");
     expect(format.schema.properties.selections.items.properties.evidenceRole.enum).toEqual(["contextual"]);
     expect(moderatorContextualEvidenceSelectionModelResultSchema.parse({ selections: [], rationale: "No relevant contextual facts" }).selections).toEqual([]);
     expect(moderatorContextualEvidenceSelectionModelResultSchema.safeParse({ ...output, selections: [{ ...output.selections[0], evidenceRole: "direct" }] }).success).toBe(false);
@@ -515,7 +516,7 @@ describe("moderator structured gateway", () => {
     const phrased = await gateway.phraseModeratorTurn({ brand: "NUBEQA", action: "reaction", priorityLabel: "PFS", participantMessage: "PFS and DDI", previousPriorityLabel: null });
     expect(planned.trace.callType).toBe("moderator_plan");
     expect(phrased.trace.callType).toBe("moderator_phrasing");
-    expect(parse.mock.calls[0][0]).toMatchObject({ model: "decision-model", text: { format: { type: "json_schema", name: "moderator_plan_result_v4", strict: true } } });
+    expect(parse.mock.calls[0][0]).toMatchObject({ model: "decision-model", text: { format: { type: "json_schema", name: "moderator_plan_result_v5", strict: true } } });
     expect(parse.mock.calls[1][0]).toMatchObject({ model: "phrase-model", text: { format: { name: "moderator_phrasing_result_v1", strict: true } } });
   });
 

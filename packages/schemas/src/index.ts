@@ -9,6 +9,7 @@ import { participantUnderstandingSchema, participantUnderstandingUpdateSchema, p
 export * from "./presentation";
 export * from "./moderator";
 export * from "./source-question";
+export * from "./source-evidence-spans";
 
 export const interviewTurnSchema = z.object({
   role: z.enum(["system", "interviewer", "participant"]),

@@ -107,6 +107,44 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it.each(["PFS", "DDI"])("keeps a DDI detour opinion separate from the active %s research question across restart and resume", async (activeTopic) => {
+    const first = await presentAgenda(surveySlug);
+    const state = structuredClone(first.state);
+    const [pfs, ddi] = state.priorities;
+    if (activeTopic === "DDI") { pfs.status = "reacted"; ddi.status = "presented"; state.activePriorityId = ddi.id; }
+    state.sourceDiscussion = { query: "What drug-drug interactions are noted?", evidencePacket: evidenceFor(surveySlug, "DDI"), status: "open", returnTarget: { kind: "priority", id: state.activePriorityId! } };
+    const reaction = "It's something I need to track but not terribly concerning.";
+    const question = "So someone on those medications is at risk for what adverse reactions";
+    const sourceRequest = { kind: "question" as const, participantEvidence: question, resolvedQuestion: question };
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, reactionTargetPriorityId: ddi.id, reactionStatus: "answered", reactionEvidence: [reaction], action: "answer_source" }) });
+    const detour = await runModeratorTurn(inputFor(surveySlug, { state, participantMessage: `${reaction} ${question}`, currentQuestion: `Your reaction to ${activeTopic}?`, isPriorityQuestion: false, sourceRequest, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(detour?.decision.action).toBe("answer_source");
+    expect(detour?.state.priorities[0].reactionEvidence).toEqual([]);
+    if (activeTopic === "PFS") {
+      expect(detour?.state.priorities.map((priority) => priority.status)).toEqual(["presented", "pending"]);
+      expect(detour?.decision.plan).toMatchObject({ reactionStatus: "not_answered", reactionTargetPriorityId: null });
+    } else {
+      expect(detour?.state.priorities[1]).toMatchObject({ status: "reacted", reactionEvidence: [reaction] });
+    }
+    mocks.source.mockClear();
+    const resumed = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(detour!.state), participantMessage: "Thanks, continue.", isPriorityQuestion: false, sourceRequest: null, asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
+    expect(mocks.source).not.toHaveBeenCalled();
+    if (activeTopic === "PFS") {
+      expect(resumed?.state.activePriorityId).toBe(pfs.id);
+      expect(resumed?.question).toContain("PFS");
+      expect(resumed?.state.priorities[1].status).toBe("pending");
+    } else expect(resumed?.decision.action).toBe("resume_guide");
+  });
+
+  it("does not infer an active target from a legacy plan without target provenance", async () => {
+    const first = await presentAgenda(surveySlug);
+    const reaction = "That would affect my decision.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({ reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: first.state.priorities[1].id }) });
+    const result = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: reaction, isPriorityQuestion: false }));
+    expect(result?.state.priorities[0]).toMatchObject({ status: "presented", reactionEvidence: [] });
+    expect(result?.decision.action).toBe("probe_reaction");
+  });
+
   it("handles clarification, retry and resume without planning an already parked source discussion", async () => {
     const first = await presentAgenda(surveySlug);
     const state = structuredClone(first.state);
@@ -136,7 +174,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
   it("starts transition and reaction phrasing together after the next priority evidence is ready", async () => {
     const first = await presentAgenda(surveySlug);
     const reaction = "This would be part of my assessment.";
-    mocks.plan.mockResolvedValueOnce({ result: planned({ reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: first.state.priorities[1].id }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: first.state.priorities[1].id }) });
     let releaseTransition!: () => void;
     let markReactionStarted!: () => void;
     const reactionStarted = new Promise<void>((resolve) => { markReactionStarted = resolve; });
@@ -197,7 +235,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     const first = await presentAgenda(surveySlug);
     expect(first.state.priorities[0].evidencePacket).toBeDefined();
     const reaction = "The efficacy results would be one part of my assessment.";
-    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [reaction] }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [reaction] }) });
     mocks.source.mockResolvedValueOnce({ enabled: true, provider: "controlled_rag", answer: "A cited DDI source answer without an evidence packet.", references: [{ citationId: "ddi-source", title: "DDI source", url: "https://example.test/ddi", description: null, assets: [] }], evidencePacket: null });
     mocks.phrase.mockClear();
     const next = await runModeratorTurn(inputFor(surveySlug, { state: first.state, currentQuestion: first.question, participantMessage: reaction, isPriorityQuestion: false, sourceRequest: null }));
@@ -218,10 +256,11 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     if (phrasingFails) mocks.phrase.mockRejectedValue(new Error("Phrasing unavailable"));
     else mocks.phrase.mockImplementation(async (input: ModeratorPhrasingInput) => ({ result: { text: input.action === "reaction" ? `What is your initial reaction to this information about ${input.priorityLabel}?` : "Let's consider the next priority." } }));
     const first = await runModeratorTurn(inputFor(surveySlug, { state }));
+    if (!first) throw new Error("The two stated priorities must create an agenda.");
     expect(first?.question).toBe("What is your initial reaction to this information about PFS?");
     expect(mocks.phrase.mock.calls.at(-1)![0]).toMatchObject({ probeIntent: "first_impression", selectedObjective: expect.stringContaining("initial reaction"), presentationPlan: { depth: "brief" }, reactionEvidence: [] });
     const reaction = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
-    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first!.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [reaction] }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first!.state.priorities[1].id, reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [reaction] }) });
     const next = await runModeratorTurn(inputFor(surveySlug, { state: first!.state, currentQuestion: first!.question, participantMessage: reaction, isPriorityQuestion: false, sourceRequest: null }));
     expect(next?.state.priorities[0]).toMatchObject({ status: "reacted", reactionEvidence: [reaction] });
     expect(next?.question).toBe("What is your initial reaction to this information about DDI?");
@@ -254,7 +293,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     const reaction = "It's something I need to track but not terribly concerning.";
     const question = "So someone on those medications is at risk for what adverse reactions";
     const sourceRequest = { kind: "question" as const, participantEvidence: question, resolvedQuestion: question };
-    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, action: "answer_source", reactionStatus: "answered", reactionEvidence: [reaction] }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, action: "answer_source", reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [reaction] }) });
     const detour = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: `${reaction} ${question}`, isPriorityQuestion: false, sourceRequest, asksSourceQuestion: true, answerStatus: "not_answered" }));
     expect(detour?.state.priorities[0]).toMatchObject({ status: "reacted", reactionEvidence: [reaction] });
     expect(detour?.question).toBeNull();
@@ -269,7 +308,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     const first = await presentAgenda(surveySlug);
     const question = "Can you explain that more simply?";
     const sourceRequest = { kind: "clarification_request" as const, participantEvidence: question, resolvedQuestion: question };
-    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, action: "answer_source", reactionStatus: "answered", reactionEvidence: ["explain that more simply"] }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, action: "answer_source", reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: ["explain that more simply"] }) });
     const detour = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: question, isPriorityQuestion: false, sourceRequest, asksSourceQuestion: true, answerStatus: "answered" }));
     expect(detour?.state.priorities[0]).toMatchObject({ status: "presented", reactionEvidence: [] });
     expect(detour?.decision.plan).toMatchObject({ reactionStatus: "not_answered", reactionEvidence: [] });
@@ -279,7 +318,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
   it("does not let a stale source boolean override explicit null request provenance", async () => {
     const first = await presentAgenda(surveySlug);
     const participantMessage = "The efficacy results would be one part of my assessment; I would also weigh interaction concerns.";
-    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", reactionStatus: "answered", reactionEvidence: [participantMessage], selectedPriorityId: first.state.priorities[1].id }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [participantMessage], selectedPriorityId: first.state.priorities[1].id }) });
     const next = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage, isPriorityQuestion: false, sourceRequest: null, asksSourceQuestion: true }));
     expect(mocks.plan.mock.calls.at(-1)![0]).toMatchObject({ asksSourceQuestion: false, sourceRequest: null });
     expect(next?.decision.action).toBe("present_priority");
@@ -311,10 +350,10 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     mocks.plan.mockClear();
     mocks.source.mockClear();
     mocks.plan.mockResolvedValueOnce({ result: planned({
-      reactionStatus: "answered", reactionEvidence: failure === "schema" ? [] : ["A fabricated reaction"],
+      reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: failure === "schema" ? [] : ["A fabricated reaction"],
     }) });
     mocks.plan.mockResolvedValueOnce({ result: planned({
-      reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: first.state.priorities[1].id,
+      reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: first.state.priorities[1].id,
     }) });
     const recovered = await runModeratorTurn(inputFor(surveySlug, {
       state: first.state, currentQuestion: first.question, participantMessage: reaction, isPriorityQuestion: false,
@@ -376,7 +415,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
   it("captures a partial reaction, then advances to the other priority after a substantive reaction", async () => {
     const first = await presentAgenda(surveySlug);
     const partialText = "I am uncertain about the follow-up.";
-    mocks.plan.mockResolvedValueOnce({ result: planned({ reactionStatus: "partial", reactionEvidence: [partialText], selectedPriorityId: first.state.activePriorityId }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "partial", reactionEvidence: [partialText], selectedPriorityId: first.state.activePriorityId }) });
     const partial = await runModeratorTurn(inputFor(surveySlug, {
       state: first.state, currentQuestion: first.question, participantMessage: partialText,
       isPriorityQuestion: false, answerStatus: "partial",
@@ -386,7 +425,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(partial?.sourceUsed).toBe(false);
 
     const reaction = "The follow-up is too short to change my approach.";
-    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [reaction] }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [reaction] }) });
     const next = await runModeratorTurn(inputFor(surveySlug, {
       state: partial!.state, currentQuestion: partial!.question, participantMessage: reaction,
       isPriorityQuestion: false, answerStatus: "answered",
@@ -433,7 +472,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     const reaction = "That evidence would increase my confidence in choosing it for appropriate patients.";
     mocks.plan.mockResolvedValueOnce({ result: planned({
       action: "present_priority", selectedPriorityId: first.state.priorities[1].id,
-      reactionStatus: "answered", reactionEvidence: [reaction],
+      reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [reaction],
     }) });
     const second = await runModeratorTurn(inputFor(surveySlug, {
       state: first.state, currentQuestion: first.question, participantMessage: reaction,
@@ -448,7 +487,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     mocks.source.mockClear();
     mocks.plan.mockResolvedValueOnce({ result: planned({
       action: "answer_source", selectedPriorityId: second!.state.activePriorityId,
-      reactionStatus: "answered", reactionEvidence: ["Can you explain that more simply?"],
+      reactionTargetPriorityId: second!.state.activePriorityId, reactionStatus: "answered", reactionEvidence: ["Can you explain that more simply?"],
     }) });
     const followup = await runModeratorTurn(inputFor(surveySlug, {
       state: restoredState, currentQuestion: second!.question,
@@ -561,13 +600,13 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
   it.each([true, false])("finishes the exact mixed adverse-reaction question before handing back to the guide (upstream source flag=%s)", async (asksSourceQuestion) => {
     const first = await presentAgenda(surveySlug);
     const firstReaction = "This evidence would affect my decision.";
-    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionStatus: "answered", reactionEvidence: [firstReaction] }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "present_priority", selectedPriorityId: first.state.priorities[1].id, reactionTargetPriorityId: first.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [firstReaction] }) });
     const second = await runModeratorTurn(inputFor(surveySlug, {
       state: first.state, currentQuestion: first.question, participantMessage: firstReaction, isPriorityQuestion: false,
     }));
     const finalReaction = "It's something that I need to track but not terribly concerning.";
     const mixedMessage = `${finalReaction}  So someone on those medications are at risk for what adverse reactions`;
-    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", reactionStatus: "answered", reactionEvidence: [finalReaction] }) });
+    mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", reactionTargetPriorityId: second!.state.activePriorityId, reactionStatus: "answered", reactionEvidence: [finalReaction] }) });
     const mixed = await runModeratorTurn(inputFor(surveySlug, {
       state: second!.state, currentQuestion: second!.question,
       participantMessage: mixedMessage,

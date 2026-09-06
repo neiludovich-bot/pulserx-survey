@@ -60,9 +60,9 @@ export async function runModeratorTurn(input: Input) {
   const sourceRequested = plan.sourceRequest !== undefined ? Boolean(plan.sourceRequest) : input.asksSourceQuestion || plan.action === "answer_source";
   const requestForReaction = plan.sourceRequest ?? input.sourceRequest;
   const legacySourceOnlyTurn = sourceRequested && !requestForReaction && input.answerStatus === "not_answered";
-  const reactionEvidence = previousActive?.status === "presented" && !retryRequested && !input.isResumeCue && !legacySourceOnlyTurn
+  const reactionEvidence = previousActive?.status === "presented" && plan.reactionTargetPriorityId === previousActive.id && !retryRequested && !input.isResumeCue && !legacySourceOnlyTurn
     ? moderatorReactionEvidenceOutsideRequest(input.participantMessage, plan.reactionEvidence, requestForReaction) : [];
-  plan = { ...plan, reactionEvidence, reactionStatus: reactionEvidence.length ? plan.reactionStatus : "not_answered" };
+  plan = { ...plan, reactionEvidence, reactionTargetPriorityId: reactionEvidence.length ? previousActive!.id : null, reactionStatus: reactionEvidence.length ? plan.reactionStatus : "not_answered" };
   if (plan.newPriorities.length === 0 && ((!hadOpenPriorities && !state.sourceDiscussion) || state.priorities.length === 0)) {
     if (!plan.sourceRequest) return null;
     // The legacy guide orchestrator owns the exact return target outside a

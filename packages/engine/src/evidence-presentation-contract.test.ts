@@ -10,13 +10,13 @@ const input = { surveySlug: "nubeqa" as const, query: "Explain the current monit
 
 describe("evidence presentation contract", () => {
   it.each(["all", "contextual"] as const)("structurally bounds %s selection to one exact source while preserving presentation context", async (evidenceFocus) => {
-    const output = { selections: [{ sourceId: "first", supportExcerpt: input.candidates[0].text, assetIds: [], evidenceRole: evidenceFocus === "contextual" ? "contextual" : "direct" }], rationale: "One complete conditional instruction." };
-    const parse = vi.fn().mockResolvedValue({ output_parsed: output });
+    const output = { selections: [{ sourceId: "first", supportExcerpt: input.candidates[0].text, assetIds: [], evidenceRole: evidenceFocus === "contextual" ? "contextual" : "direct", contribution: "answer" }], rationale: "One complete conditional instruction." };
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { ...output, selections: output.selections.map(({ supportExcerpt: _text, ...selection }) => ({ ...selection, supportSpanRange: { startSpan: 0, endSpan: 0 } })) } });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     expect((await gateway.selectModeratorEvidence({ ...input, evidenceFocus })).result).toEqual(output);
     const request = parse.mock.calls[0][0];
     expect(request.text.format.schema.properties.selections.maxItems).toBe(1);
-    expect(request.text.format.name).toBe(`moderator_${evidenceFocus}_single_fact_selection_result_v2`);
+    expect(request.text.format.name).toBe(`moderator_${evidenceFocus}_single_fact_span_selection_v1`);
     expect(JSON.parse(request.input[0].content[0].text).presentationPlan).toEqual(presentationPlan);
     expect(() => validateModeratorEvidenceSelection(input, { ...output, selections: [...output.selections, { ...output.selections[0], sourceId: "second" }] })).toThrow("at most one");
     expect(() => validateModeratorEvidenceSelection(input, { ...output, selections: [{ ...output.selections[0], supportExcerpt: "Invented condition." }] })).toThrow("exact supporting excerpt");

@@ -89,7 +89,7 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
   const effectiveInput = { ...parsed, asksSourceQuestion: asksSource };
   const active = parsed.state.priorities.find((priority) => priority.id === parsed.state.activePriorityId && priority.status === "presented");
   const legacySourceOnly = asksSource && !sourceRequest && parsed.answerStatus === "not_answered";
-  const canCreditReaction = active && !parsed.isResumeCue && !legacySourceOnly;
+  const canCreditReaction = active && model.reactionTargetPriorityId === active.id && !parsed.isResumeCue && !legacySourceOnly;
   const reactionEvidence = canCreditReaction ? moderatorReactionEvidenceOutsideRequest(parsed.participantMessage, model.reactionEvidence, sourceRequest) : [];
   const reactionStatus = reactionEvidence.length ? model.reactionStatus : "not_answered";
   // Validate research evidence independently. A bad action/ID must not erase
@@ -97,6 +97,7 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
   validateModeratorPlan(effectiveInput, {
     newPriorities: [],
     reactionStatus,
+    reactionTargetPriorityId: reactionEvidence.length ? active!.id : null,
     reactionEvidence,
     action: asksSource ? "answer_source" : "resume_guide",
     sourceRequest: sourceRequest ?? undefined,
@@ -148,6 +149,7 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
     sourceRequest: sourceRequest ?? (asksSource ? undefined : null),
     newPriorities,
     reactionStatus,
+    reactionTargetPriorityId: reactionEvidence.length ? active!.id : null,
     reactionEvidence,
     action,
     selectedPriorityId,
@@ -176,6 +178,9 @@ export function validateModeratorPlan(input: ModeratorPlanInput, output: unknown
   }
   if (result.reactionStatus !== "not_answered" && active?.status !== "presented") {
     throw new Error("Reaction credit requires an active presented priority.");
+  }
+  if (result.reactionStatus !== "not_answered" && result.reactionTargetPriorityId !== active?.id) {
+    throw new Error("Reaction credit requires its identified active priority.");
   }
   if (result.selectedPriorityId !== null && !selected) {
     throw new Error("The moderator selected an unknown priority ID.");

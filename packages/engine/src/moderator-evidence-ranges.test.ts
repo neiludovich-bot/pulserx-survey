@@ -16,9 +16,37 @@ const base: ModeratorPlanInput = {
   asksSourceQuestion: false, sourceRequest: null, answerStatus: "not_answered", isResumeCue: false,
   state: { version: 1, activePriorityId: "ddi", priorities: [{ id: "ddi", label: "DDI", participantEvidence: "DDI", sourceQuestion: "What interactions are described?", status: "presented", reactionEvidence: [], referenceIds: ["source"], probeCount: 0 }] },
 };
-const wireBase = { schemaVersion: 4, sourceRequest: null, reactionStatus: "not_answered", reactionEvidenceRanges: [], priorityMentions: [], action: "answer_source", selectedPriorityId: "ddi", rationale: "Handle the participant's request and preserve separate reaction evidence." };
+const wireBase = { schemaVersion: 5, reactionTargetPriorityId: "ddi", sourceRequest: null, reactionStatus: "not_answered", reactionEvidenceRanges: [], priorityMentions: [], action: "answer_source", selectedPriorityId: "ddi", rationale: "Handle the participant's request and preserve separate reaction evidence." };
 
 describe("moderator indexed participant evidence", () => {
+  it.each(["pfs", "ddi"])("attributes a mixed DDI detour reaction independently of the parked %s priority", (activePriorityId) => {
+    const reaction = "It's something I need to track but not terribly concerning.";
+    const question = "So someone on those medications is at risk for what adverse reactions";
+    const message = `${reaction} ${question}`;
+    const state = { ...base.state, activePriorityId, priorities: [
+      { ...base.state.priorities[0], id: "pfs", label: "PFS", participantEvidence: "PFS", sourceQuestion: "What PFS results are reported?", status: activePriorityId === "pfs" ? "presented" as const : "reacted" as const },
+      { ...base.state.priorities[0], status: activePriorityId === "ddi" ? "presented" as const : "pending" as const },
+    ], sourceDiscussion: { query: "What drug interactions are described?", returnTarget: { kind: "priority" as const, id: activePriorityId } } };
+    const result = normalizeModeratorPlanTokenResult({ ...base, state, participantMessage: message }, {
+      ...wireBase, reactionTargetPriorityId: "ddi", reactionStatus: "answered", reactionEvidenceRanges: [range(message, reaction)],
+      sourceRequest: { kind: "question", participantEvidenceRange: range(message, question), resolvedQuestion: question },
+    });
+    expect(result).toMatchObject({ action: "answer_source", sourceRequest: { participantEvidence: question },
+      reactionStatus: activePriorityId === "ddi" ? "answered" : "not_answered",
+      reactionTargetPriorityId: activePriorityId === "ddi" ? "ddi" : null,
+      reactionEvidence: activePriorityId === "ddi" ? [reaction] : [] });
+  });
+
+  it("requires target attribution on new wire output while unknown or null targets cannot earn reaction credit", () => {
+    const message = "That would affect my decision.";
+    const candidate = { ...wireBase, sourceRequest: null, reactionStatus: "answered", reactionEvidenceRanges: [range(message, message)] };
+    expect(moderatorPlanTokenModelResultSchema.safeParse({ ...candidate, reactionTargetPriorityId: undefined }).success).toBe(false);
+    for (const reactionTargetPriorityId of [null, "unknown"]) {
+      expect(normalizeModeratorPlanTokenResult({ ...base, participantMessage: message }, { ...candidate, reactionTargetPriorityId }))
+        .toMatchObject({ reactionStatus: "not_answered", reactionEvidence: [], reactionTargetPriorityId: null, action: "probe_reaction" });
+    }
+  });
+
   it.each(["NUBEQA", "BRUKINSA", "PADCEV"])("reconstructs the exact mixed %s reaction and request, preserving typography and spacing", (brand) => {
     const reaction = "It's something that I need to track but not terribly concerning.";
     const request = "So someone on those medications are at risk for what adverse reactions";
@@ -80,7 +108,7 @@ describe("moderator indexed participant evidence", () => {
     const planningInput = JSON.parse(request.input[0].content[0].text);
     expect(planningInput.participantTokens).toEqual(participantTokensForModel(message));
     expect(planningInput.repairContext.candidate).toEqual(bad);
-    expect(request.text.format.name).toBe("moderator_plan_result_v4");
+    expect(request.text.format.name).toBe("moderator_plan_result_v5");
     expect(request.text.format.schema.properties).toHaveProperty("reactionEvidenceRanges");
     expect(request.text.format.schema.properties).not.toHaveProperty("reactionEvidence");
     expect(moderatorPlanTokenModelResultSchema.safeParse({ ...good, reactionEvidence: [message] }).success).toBe(false);

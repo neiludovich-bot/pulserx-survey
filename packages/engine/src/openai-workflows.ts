@@ -42,9 +42,10 @@ import {
   moderatorPhrasingInputSchema,
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionInputSchema,
-  moderatorEvidenceSelectionResultSchema,
-  moderatorEvidenceSelectionModelResultSchema,
-  moderatorContextualEvidenceSelectionModelResultSchema,
+  sourceEvidenceSpansInputSchema,
+  sourceEvidenceSpanSelectionModelResultSchema,
+  contextualSourceEvidenceSpanSelectionModelResultSchema,
+  type SourceEvidenceSpanSelectionModelResult,
   sourceQuestionPlanInputSchema,
   sourceQuestionPlanSchema,
   type SourceQuestionPlanInput,
@@ -53,7 +54,6 @@ import {
   type ModeratorPhrasingInput,
   type ModeratorPhrasingResult,
   type ModeratorEvidenceSelectionInput,
-  type ModeratorEvidenceSelectionResult,
   openAIDebugTraceSchema,
   phrasingInputSchema,
   phrasingResultSchema,
@@ -70,10 +70,11 @@ import {
 } from "@interview/schemas";
 import type { CompiledStudy } from "./study-compiler";
 import { participantTokensForModel, evidenceFromTokenRange } from "./evidence-ranges";
-import { validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
+import { validateModeratorPhrasing } from "./moderator-planning";
 import { normalizeModeratorPlanTokenResult } from "./moderator-evidence-ranges";
 import { sanitizeSourceFailure, type SourceFailureMetadata } from "./source-failure";
 import { getModelCallTimingContext } from "./model-call-timing-context";
+import { indexedSourceSpans, normalizeSourceEvidenceSpanSelection } from "./source-evidence-spans";
 import {
   buildDecisionCandidates,
   commitSelection,
@@ -440,10 +441,10 @@ export class OpenAIResponsesGateway {
       callType: "moderator_plan",
       model: this.config.decisionModel,
       promptVersion: moderatorPlannerSystemPrompt.version,
-      schemaName: "moderator_plan_result_v4",
+      schemaName: "moderator_plan_result_v5",
       schema: moderatorPlanTokenModelResultSchema,
       instructions: moderatorPlannerSystemPrompt.instructions,
-      input: moderatorPlanTokenInputSchema.parse({ ...planningContext, schemaVersion: 4, participantTokens: participantTokensForModel(parsed.participantMessage) }),
+      input: moderatorPlanTokenInputSchema.parse({ ...planningContext, schemaVersion: 5, participantTokens: participantTokensForModel(parsed.participantMessage) }),
       metadata: { brand: parsed.brand },
     });
     return { ...call, result: normalizeModeratorPlanTokenResult(parsed, call.result) };
@@ -468,19 +469,19 @@ export class OpenAIResponsesGateway {
 
   async selectModeratorEvidence(input: ModeratorEvidenceSelectionInput) {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
-    const baseSchema = parsed.evidenceFocus === "contextual" ? moderatorContextualEvidenceSelectionModelResultSchema : moderatorEvidenceSelectionModelResultSchema;
+    const baseSchema = parsed.evidenceFocus === "contextual" ? contextualSourceEvidenceSpanSelectionModelResultSchema : sourceEvidenceSpanSelectionModelResultSchema;
     const singleFact = parsed.presentationPlan?.maxFacts === 1;
-    const call = await this.runStructuredCall<ModeratorEvidenceSelectionResult>({
+    const call = await this.runStructuredCall<SourceEvidenceSpanSelectionModelResult>({
       callType: "moderator_evidence",
       model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: moderatorEvidenceSelectorSystemPrompt.version,
-      schemaName: singleFact ? `moderator_${parsed.evidenceFocus}_single_fact_selection_result_v2` : parsed.evidenceFocus === "contextual" ? "moderator_contextual_evidence_selection_result_v2" : "moderator_evidence_selection_result_v4",
+      schemaName: singleFact ? `moderator_${parsed.evidenceFocus}_single_fact_span_selection_v1` : parsed.evidenceFocus === "contextual" ? "moderator_contextual_evidence_span_selection_v1" : "moderator_evidence_span_selection_v1",
       schema: singleFact ? baseSchema.extend({ selections: baseSchema.shape.selections.max(1) }) : baseSchema,
       instructions: moderatorEvidenceSelectorSystemPrompt.instructions,
-      input: parsed,
+      input: sourceEvidenceSpansInputSchema.parse({ ...parsed, candidates: parsed.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) }),
       metadata: { survey_slug: parsed.surveySlug },
     });
-    return { ...call, result: validateModeratorEvidenceSelection(parsed, call.result) };
+    return { ...call, result: normalizeSourceEvidenceSpanSelection(parsed, call.result) };
   }
 
   private async runStructuredCall<TOutput>({
