@@ -90,7 +90,7 @@ import { participantTokensForModel, evidenceFromTokenRange } from "./evidence-ra
 import { validateModeratorPhrasing } from "./moderator-planning";
 import { normalizeModeratorPlanTokenResult } from "./moderator-evidence-ranges";
 import { conversationRouteResult, validateConversationInterpretation } from "./conversation-interpretation";
-import { validateWebsiteAnswer } from "./website-answer";
+import { validateWebsiteAnswer, websiteAnswerRepairDetail } from "./website-answer";
 import { sanitizeSourceFailure, type SourceFailureMetadata } from "./source-failure";
 import { getModelCallTimingContext } from "./model-call-timing-context";
 import { indexedSourceSpans, normalizeSourceEvidenceSpanSelection } from "./source-evidence-spans";
@@ -348,7 +348,7 @@ export class OpenAIResponsesGateway {
         // retrieval, or enter the legacy routing/planning fallback cascade.
         const feedback = error && typeof error === "object" && "websiteAnswerFeedback" in error ? error.websiteAnswerFeedback : "invalid_output";
         console.warn(JSON.stringify({ event: "conversation_answer_repair", callGroupId: getModelCallTimingContext()?.callGroupId ?? null, feedback }));
-        const repairInput = websiteAnswerInputSchema.parse({ ...answerInput, repairFeedback: feedback,
+        const repairInput = websiteAnswerInputSchema.parse({ ...answerInput, repairFeedback: feedback, repairDetail: websiteAnswerRepairDetail(error),
           candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })),
         });
         const repair = await this.runStructuredCall<WebsiteAnswerModelResult>({ callType: "website_answer", model: this.config.sourceModel ?? this.config.analysisModel,
@@ -367,13 +367,14 @@ export class OpenAIResponsesGateway {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
     const traces: unknown[] = [];
     let repairFeedback: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint" | null = null;
+    let repairDetail: ReturnType<typeof websiteAnswerRepairDetail> = null;
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const call = await this.runStructuredCall<import("zod").infer<typeof conversationWebsiteAnswerSchema>>({
         callType: "website_answer", model: this.config.sourceModel ?? this.config.analysisModel,
         promptVersion: `${websiteAnswerSystemPrompt.version}-selected-topic-2`, schemaName: "conversation_presentation_v2", schema: conversationWebsiteAnswerSchema,
         instructions: [...websiteAnswerSystemPrompt.instructions,
           "This topic was selected by the interview application for an initial evidence presentation. For a broad topic such as efficacy or dosing, start with one or two supported findings in 50–90 words total, clearly naming their treatment settings or regimens. This is a conversational starting point, not an exhaustive catalog: do not list every indication, enumerate dose-reduction levels, or discuss absent results for other settings unless requested. A broad topic alone is not an ambiguous request. Do not require a study name before offering a useful supported overview. Still honor narrower named endpoints and preserve population/regimen differences; never invent missing results."],
-        input: websiteAnswerInputSchema.parse({ ...parsed, repairFeedback,
+        input: websiteAnswerInputSchema.parse({ ...parsed, repairFeedback, repairDetail,
           candidates: parsed.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })),
         }), metadata: { survey_slug: parsed.surveySlug },
       });
@@ -387,6 +388,7 @@ export class OpenAIResponsesGateway {
         if (attempt === 1) throw error;
         const feedback = error && typeof error === "object" && "websiteAnswerFeedback" in error ? error.websiteAnswerFeedback : null;
         repairFeedback = feedback === "unsupported_number" || feedback === "too_verbose" || feedback === "unrequested_endpoint" ? feedback : "invalid_output";
+        repairDetail = websiteAnswerRepairDetail(error);
       }
     }
     throw new Error("Conversation presentation exceeded its attempt bound.");
@@ -619,12 +621,13 @@ export class OpenAIResponsesGateway {
   async answerFromWebsite(input: ModeratorEvidenceSelectionInput) {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
     let repairFeedback: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint" | null = null;
+    let repairDetail: ReturnType<typeof websiteAnswerRepairDetail> = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const call = await this.runStructuredCall<WebsiteAnswerModelResult>({
         callType: "website_answer", model: this.config.sourceModel ?? this.config.analysisModel,
         promptVersion: websiteAnswerSystemPrompt.version, schemaName: "website_answer_v1",
         schema: websiteAnswerModelResultSchema, instructions: websiteAnswerSystemPrompt.instructions,
-        input: websiteAnswerInputSchema.parse({ ...parsed, repairFeedback,
+        input: websiteAnswerInputSchema.parse({ ...parsed, repairFeedback, repairDetail,
           candidates: parsed.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })),
         }), metadata: { survey_slug: parsed.surveySlug },
       });
@@ -632,6 +635,7 @@ export class OpenAIResponsesGateway {
       catch (error) {
         const feedback = error && typeof error === "object" && "websiteAnswerFeedback" in error ? error.websiteAnswerFeedback : null;
         repairFeedback = feedback === "unsupported_number" || feedback === "too_verbose" || feedback === "unrequested_endpoint" ? feedback : "invalid_output";
+        repairDetail = websiteAnswerRepairDetail(error);
         const selectionErrors = ["Evidence span selection must use a submitted source ID.", "Evidence span range is outside its source or reversed.", "Evidence span range exceeds the 1500-character excerpt bound.", "A single-fact presentation requires at most one selected source.", "Selected assets must be unique and belong to their selected source.", "Evidence selection must use distinct submitted source IDs."];
         console.warn(JSON.stringify({ event: "website_answer_validation", callGroupId: getModelCallTimingContext()?.callGroupId ?? null,
           survey_slug: parsed.surveySlug, attempt, feedback: repairFeedback,

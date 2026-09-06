@@ -28,6 +28,13 @@ export const websiteAnswerModelResultSchema = sourceEvidenceSpanSelectionModelRe
   unavailableReason: z.enum(["not_in_sources", "ambiguous_request"]).nullable(),
 }).strict();
 export type WebsiteAnswerModelResult = z.infer<typeof websiteAnswerModelResultSchema>;
+export const websiteAnswerRepairDetailSchema = z.object({
+  paragraph: z.string().max(1400),
+  unsupportedNumbers: z.array(z.string()).max(200),
+  sourceIds: z.array(z.string()).max(3),
+}).strict();
+export type WebsiteAnswerRepairDetail = z.infer<typeof websiteAnswerRepairDetailSchema>;
 export const websiteAnswerInputSchema = sourceEvidenceSpansInputSchema.extend({
   repairFeedback: z.enum(["invalid_output", "unsupported_number", "too_verbose", "unrequested_endpoint"]).nullable(),
+  repairDetail: websiteAnswerRepairDetailSchema.nullable().default(null),
 }).strict();

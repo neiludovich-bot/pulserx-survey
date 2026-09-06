@@ -1,9 +1,13 @@
-import { websiteAnswerModelResultSchema, type ModeratorEvidenceSelectionInput } from "@interview/schemas";
+import { websiteAnswerModelResultSchema, websiteAnswerRepairDetailSchema, type WebsiteAnswerRepairDetail, type ModeratorEvidenceSelectionInput } from "@interview/schemas";
 import { normalizeSourceEvidenceSpanSelection } from "./source-evidence-spans";
 
 const numbers = (text: string) => [...text.matchAll(/(?<![\p{L}\p{N}])\d+(?:[.,]\d+)*(?![\p{L}\p{N}])/gu)].map(match => String(Number(match[0].replace(/,/g, ""))));
-function reject(code: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint") {
-  throw Object.assign(new Error(`Website answer validation: ${code}`), { websiteAnswerFeedback: code });
+function reject(code: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint", detail?: WebsiteAnswerRepairDetail) {
+  throw Object.assign(new Error(`Website answer validation: ${code}`), { websiteAnswerFeedback: code, websiteAnswerRepairDetail: detail ?? null });
+}
+export function websiteAnswerRepairDetail(error: unknown) {
+  const value = error && typeof error === "object" && "websiteAnswerRepairDetail" in error ? error.websiteAnswerRepairDetail : null;
+  return websiteAnswerRepairDetailSchema.nullable().parse(value);
 }
 
 /** Provenance and output-contract checks, not an independent medical review. */
@@ -32,7 +36,8 @@ export function validateWebsiteAnswer(input: ModeratorEvidenceSelectionInput, ou
     if (sources.some(source => !source)) reject("invalid_output");
     paragraph.sourceIds.forEach(id => cited.add(id));
     const supportedNumbers = new Set(numbers(sources.map(source => source!.supportExcerpt).join(" ")));
-    if (numbers(paragraph.text).some(value => !supportedNumbers.has(value))) reject("unsupported_number");
+    const unsupportedNumbers = [...new Set(numbers(paragraph.text).filter(value => !supportedNumbers.has(value)))];
+    if (unsupportedNumbers.length) reject("unsupported_number", { paragraph: paragraph.text, unsupportedNumbers, sourceIds: paragraph.sourceIds });
   }
   if (evidence.selections.some(source => !cited.has(source.sourceId) || source.contribution === "contrast_or_limit_only" || source.contribution === "essential_qualification" && source.assetIds.length)) reject("invalid_output");
   const wordCount = result.paragraphs.map(p => p.text).join(" ").split(/\s+/).length;

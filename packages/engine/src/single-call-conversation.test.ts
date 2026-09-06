@@ -44,6 +44,7 @@ describe("single-call conversation boundary", () => {
     f.parse.mockResolvedValueOnce({ id: "initial", output_parsed: { observation, source } }).mockResolvedValueOnce({ id: "repair", output_parsed: f.answer });
     const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: f.request.participantMessage, question: null, discussionQuery: null, recentTurns: [], topics: [] }, f.evidence);
     expect(f.parse).toHaveBeenCalledTimes(2); expect(result.repairTrace?.response.id).toBe("repair");
+    expect(JSON.parse(f.parse.mock.calls[1][0].input[0].content[0].text).repairDetail).toMatchObject({ unsupportedNumbers: ["99"] });
     expect(result.observation.answerEvidence).toEqual([]); expect(result.answer?.paragraphs[0].text).toContain("12 months");
   });
   it("represents familiarity without an unsolicited answer in the v2 source envelope", async () => {

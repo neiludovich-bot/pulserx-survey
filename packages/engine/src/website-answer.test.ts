@@ -76,6 +76,7 @@ describe("one-pass website answers", () => {
     expect((await gateway.answerFromWebsite(input)).attempts).toBe(2);
     const repairInput = JSON.parse(parse.mock.calls[1][0].input[0].content[0].text);
     expect(repairInput.repairFeedback).toBe("unsupported_number");
+    expect(repairInput.repairDetail).toEqual({ paragraph: "Study A reported 24 months.", unsupportedNumbers: ["24"], sourceIds: ["study-a"] });
   });
   it("does not make an extra application retry for provider failures", async () => {
     const parse = vi.fn().mockRejectedValue({ status: 429, message: "Synthetic provider failure" });
