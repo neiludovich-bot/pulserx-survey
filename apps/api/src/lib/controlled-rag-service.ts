@@ -1613,6 +1613,7 @@ async function composeSourceAnswer(
         tags: [],
         text: compact(chunk.text, 1500),
         evidenceRole: chunk.evidenceRole ?? "direct",
+        contribution: chunk.contribution,
       })),
     });
 
@@ -1683,13 +1684,20 @@ export async function askControlledRagForSurveyInterviewerTurn(
       ?? [...(input.recentInterviewerContext ?? "").matchAll(/(?:^|\n)interviewer:\s*([\s\S]*?)(?=\n(?:participant|interviewer):|$)/gi)]
         .reverse().find((match) => /\[\d+\]/.test(match[1]))?.[1]?.trim()
       ?? null;
+    const requestedContextIds = new Set(retained.sources.filter((source) => source.contribution === "requested_context").map((source) => source.id));
+    // A style-only request retains the practical information angle already
+    // selected. The original relationship remains in the durable packet, but
+    // must not displace the requested detail during this shorter presentation.
+    const presentationCandidates = requestedContextIds.size
+      ? retained.sources.filter((source) => requestedContextIds.has(source.id) || source.contribution === "essential_qualification")
+      : retained.sources;
     chunks = narrowRetainedPresentation ? (await selectFocusedSourceEvidence({
-      surveySlug: input.surveySlug, query: input.participantMessage, candidates: retained.sources,
-      sourceTopicContext: resolvedSourceQuestion, priorSourceIds: retained.sources.map((source) => source.id),
+      surveySlug: input.surveySlug, query: input.participantMessage, candidates: presentationCandidates,
+      sourceTopicContext: resolvedSourceQuestion, priorSourceIds: presentationCandidates.map((source) => source.id),
       presentationPlan: input.presentationPlan,
       presentationContext: { version: 1, kind: "simplify_previous_answer", participantRequest: input.participantMessage.slice(0, 12000), lastSourceAnswer: lastSourceAnswer?.slice(0, 12000) ?? null },
       fallbackSourceIds: [],
-    })).chunks : retained.sources;
+    })).chunks.map((source) => requestedContextIds.has(source.id) ? { ...source, contribution: "requested_context" as const } : source) : retained.sources;
     evidenceCard = null;
   } else {
   const retrievalQueries = sourceQuestionPlan?.retrievalQueries ?? [resolvedSourceQuestion];

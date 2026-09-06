@@ -329,9 +329,14 @@ export class OpenAIResponsesGateway {
             citations.some((index) => !result.usedSourceIndexes.includes(index))) {
           throw new Error("Source composition requires individual citations matching its supplied and used source indexes.");
         }
-        // Evidence roles describe retrieval intent. The existing reviewer checks
-        // whether the answer supplies useful information within its actual scope;
-        // an unrelated contextual source must not force an extra claim/citation.
+        // Requested context is an explicit selected information need, unlike an
+        // optional contextual source or essential qualification. Keep it in the
+        // substantive answer, not only in a limitations/caveat field.
+        const requestedContext = input.sources.filter((source) => source.contribution === "requested_context");
+        if (requestedContext.length && !requestedContext.some((source) => practicalCitations.includes(source.index))) {
+          groundingViolations = [{ excerpt: result.practicalAnswer.slice(0, 2500), reason: "The answer omits the selected requested context. Include a supported practical detail from at least one source marked requested_context, with its citation and applicability conditions, instead of repeating only the prior relationship." }];
+          throw Object.assign(new Error("Source composition omitted requested contextual source evidence."), { code: "missing_contextual_citation" });
+        }
         if (reviewedText.includes("?")) throw new Error("Source composition cannot append a question.");
         failureStage = "grounding";
         groundingReviews += 1;

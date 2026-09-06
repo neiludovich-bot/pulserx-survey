@@ -4,7 +4,7 @@ export * from "./evidence-ranges";
 import { sourceRequestSchema } from "./source-request";
 export * from "./source-request";
 import { sourceQuestionPlanSchema, sourceQuestionRecentTurnsSchema } from "./source-question";
-import { moderatorEvidenceRoleSchema } from "./moderator";
+import { moderatorEvidenceRoleSchema, moderatorEvidenceContributionSchema } from "./moderator";
 import { participantUnderstandingSchema, participantUnderstandingUpdateSchema, presentationPlanSchema } from "./presentation";
 export * from "./presentation";
 export * from "./moderator";
@@ -109,6 +109,7 @@ export const phrasingResultSchema = z.object({
 
 export const controlledRagCompositionSourceSchema = z.object({
   evidenceRole: moderatorEvidenceRoleSchema.optional(),
+  contribution: moderatorEvidenceContributionSchema.optional(),
   index: z.number().int().min(1).max(8),
   title: z.string().min(1),
   url: z.string().min(1).nullable(),
