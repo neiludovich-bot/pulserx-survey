@@ -44,7 +44,7 @@ export const NUBEQA_HCP_MVP_GUIDE = [
     objective:
       "Capture decision drivers before the interviewer provides NUBEQA-specific source context.",
     canonicalQuestion:
-      "Before we get into NUBEQA-specific information, what are the top factors that matter most when you evaluate androgen receptor pathway therapy or systemic intensification for an appropriate prostate cancer patient?",
+      "What are the top factors that matter most when you evaluate androgen receptor pathway therapy or systemic intensification for an appropriate prostate cancer patient?",
     sourceContextRequirement: null,
     routeKeywords: [
       "efficacy",

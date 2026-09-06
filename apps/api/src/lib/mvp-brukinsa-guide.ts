@@ -126,7 +126,7 @@ export const BRUKINSA_HCP_MVP_GUIDE = [
     module: "Baseline BTKi Decision Framework",
     objective: "Understand how the respondent evaluates BTK inhibitors before BRUKINSA-specific material.",
     canonicalQuestion:
-      "Before we get into BRUKINSA-specific information, when you evaluate or support use of a BTK inhibitor for an appropriate patient, what are the top two or three factors that matter most?",
+      "When you evaluate or support use of a BTK inhibitor for an appropriate patient, what are the top two or three factors that matter most?",
     sourceContextRequirement: null,
     routeKeywords: ["efficacy", "safety", "patient fit", "dosing", "guidelines", "access", "pfs", "orr"],
     completionSignals: ["two or three decision factors are stated"],

@@ -90,7 +90,7 @@ export const PADCEV_HCP_MVP_GUIDE = [
     module: "Baseline perception",
     objective: "Capture decision drivers before PADCEV-specific source context.",
     canonicalQuestion:
-      "Before we get into PADCEV-specific information, when you evaluate systemic therapy options for an appropriate locally advanced or metastatic urothelial cancer patient, what are the top two or three factors that matter most?",
+      "When you evaluate systemic therapy options for an appropriate locally advanced or metastatic urothelial cancer patient, what are the top two or three factors that matter most?",
     sourceContextRequirement: null,
     routeKeywords: [
       "efficacy",
