@@ -77,6 +77,8 @@ import {
 import { previewSourceImages } from "./lib/source-preview-service";
 import { applyWebsiteIndex, websiteIndexReports } from "./lib/website-index-service";
 import { prisma } from "./lib/prisma";
+import { websiteTableSchema } from "@interview/schemas";
+import { renderWebsiteTable } from "./lib/website-table-renderer";
 import {
   createSourceLibraryDocument,
   importSourceLibraryDocuments,
@@ -133,6 +135,15 @@ export function buildApp() {
   });
 
   app.addHook("preHandler", requireAdminSession);
+
+  app.get<{ Params: { hash: string } }>("/website-tables/:hash.svg", async (request, reply) => {
+    if (!/^[a-f0-9]{64}$/.test(request.params.hash)) return reply.code(404).send();
+    const asset = await prisma.sourceAsset.findFirst({ where: { url: `https://api.pulserx.ai/website-tables/${request.params.hash}.svg`, tags: { has: "website-table:v1" } }, select: { metadata: true } });
+    const metadata = asset?.metadata as { table?: unknown; sourceUrl?: string } | undefined;
+    const table = websiteTableSchema.safeParse(metadata?.table);
+    if (!table.success || !metadata?.sourceUrl) return reply.code(404).send();
+    return reply.type("image/svg+xml").header("Cache-Control", "public, max-age=31536000, immutable").header("X-Content-Type-Options", "nosniff").header("Content-Security-Policy", "default-src 'none'; sandbox").send(renderWebsiteTable(table.data, metadata.sourceUrl));
+  });
 
   app.get("/health", async () =>
     healthResponseSchema.parse({

@@ -1,10 +1,18 @@
 import { z } from "zod";
 
+export const websiteTableSchema = z.object({
+  title: z.string().min(1).max(500),
+  rows: z.array(z.array(z.object({ text: z.string().max(2000), header: z.boolean(), rowSpan: z.number().int().min(1).max(100), colSpan: z.number().int().min(1).max(20) }).strict()).min(1).max(20)).min(2).max(100),
+  notes: z.array(z.string().max(10000)).max(30),
+}).strict();
+export type WebsiteTable = z.infer<typeof websiteTableSchema>;
+
 export const websiteIndexPageSchema = z.object({
   url: z.string().url(), discoveredFrom: z.string().url(), title: z.string().min(1).max(240),
   content: z.string().min(1).max(300000), sourceType: z.enum(["URL", "PDF"]),
   hash: z.string().regex(/^[a-f0-9]{64}$/),
   assets: z.array(z.object({ title: z.string().min(1).max(240), description: z.string().max(1000), url: z.string().url(), assetKind: z.literal("IMAGE") }).strict()).max(24),
+  tables: z.array(websiteTableSchema).max(24).default([]),
 }).strict();
 export const websiteIndexSnapshotSchema = z.object({
   version: z.literal(1), surveySlug: z.enum(["nubeqa", "brukinsa", "padcev"]),

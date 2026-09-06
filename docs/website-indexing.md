@@ -30,3 +30,7 @@ Authenticated endpoints:
 The PowerShell importer saves a pre-import backup and verifies the active index afterward. Its repeat run should return zero newly created pages for the same snapshot. Do not use the legacy replaceExisting bulk import to refresh these indexes.
 
 Refreshes are explicit operator actions; no recurring schedule was enabled. New bot onboarding still needs an approved root/document-host profile, an authored interview guide and acceptance checks. Search currently uses Postgres full-text retrieval, not an external vector store.
+
+HTML data tables are also indexed as typed cells, row/column spans and nearby notes. Their immutable source-owned SVG views are served from `/website-tables/:hash.svg` using persisted metadata, with no live website fetch or model call. They participate in the same answer selection and carousel as image assets. The renderer escapes all text and retains captions, column groupings and footnotes. It redraws the website table in the application style rather than claiming to be a screenshot.
+
+For an existing index, `npx tsx scripts/refresh-website-tables.ts <snapshot.json> <table-refresh.json>` extracts tables from those approved HTML URLs and verifies their cell text still occurs in the indexed evidence. Import the resulting partial snapshot through the normal backed-up importer. A page whose evidence changed requires a full refresh. The import retains older versions for citation replay.

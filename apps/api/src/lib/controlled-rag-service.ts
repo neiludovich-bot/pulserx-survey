@@ -1283,7 +1283,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
                 },
               },
               orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
-              take: 12,
+              take: 48,
               select: {
                 title: true,
                 description: true,

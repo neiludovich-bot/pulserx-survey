@@ -4,6 +4,7 @@ import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { websiteIndexSnapshotSchema, WEBSITE_PROFILES, allowedWebsiteIndexUrl, type WebsiteIndexSnapshot } from "../packages/schemas/src/website-index";
 import { CONTROLLED_RAG_CHUNKS } from "../apps/api/src/lib/controlled-rag-source-packs";
+import { extractWebsiteTables } from "./extract-website-tables";
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const clean = (text: string) => text.replace(/[\t \u00a0]+/g, " ").replace(/\n\s*\n/g, "\n\n").trim();
@@ -31,10 +32,10 @@ export function extractWebsiteHtml(html: string, url: string) {
     const text = node.is("tr") ? node.find("th,td").toArray().map(cell => clean($(cell).text())).join(" | ") : clean(node.text());
     if (text) blocks.push(text);
   });
-  return { title, links, assets, content: blocks.length ? blocks.join("\n\n") : clean(root.text()) };
+  return { title, links, assets, tables: extractWebsiteTables(html), content: blocks.length ? blocks.join("\n\n") : clean(root.text()) };
 }
 
-async function download(slug: WebsiteIndexSnapshot["surveySlug"], value: string) {
+export async function download(slug: WebsiteIndexSnapshot["surveySlug"], value: string) {
   let url = value;
   for (let redirects = 0; redirects < 6; redirects++) {
     if (!allowedWebsiteIndexUrl(slug, url, true)) throw new Error("Redirect or URL outside approved website/document hosts");
@@ -101,12 +102,12 @@ export async function indexMedicalWebsite(slug: WebsiteIndexSnapshot["surveySlug
           for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
             const page = await pdf.getPage(pageNumber); const data = await page.getTextContent();
             const content = clean(data.items.map(item => "str" in item ? item.str + (item.hasEOL ? "\n" : " ") : "").join(""));
-            addPage({ url: `${resource.url}#page=${pageNumber}`, discoveredFrom: item.from, title: `${slug.toUpperCase()} — ${decodeURIComponent(new URL(resource.url).pathname.split("/").at(-1)!)} — page ${pageNumber}`.slice(0, 240), content, sourceType: "PDF", hash: hash(content), assets: [] });
+            addPage({ url: `${resource.url}#page=${pageNumber}`, discoveredFrom: item.from, title: `${slug.toUpperCase()} — ${decodeURIComponent(new URL(resource.url).pathname.split("/").at(-1)!)} — page ${pageNumber}`.slice(0, 240), content, sourceType: "PDF", hash: hash(content), assets: [], tables: [] });
           }
         } finally { await pdf.destroy(); }
       } else if (/html/i.test(resource.type)) {
         const extracted = extractWebsiteHtml(resource.bytes.toString("utf8"), resource.url);
-        addPage({ url: resource.url, discoveredFrom: item.from, title: extracted.title, content: extracted.content, sourceType: "URL", hash: hash(extracted.content), assets: extracted.assets });
+        addPage({ url: resource.url, discoveredFrom: item.from, title: extracted.title, content: extracted.content, sourceType: "URL", hash: hash(extracted.content), assets: extracted.assets, tables: extracted.tables });
         for (const link of extracted.links) enqueue(link, resource.url);
       } else snapshot.issues.push({ url: resource.url, reason: `Unsupported content type: ${resource.type}` });
     } catch (error) { snapshot.issues.push({ url: item.url, reason: error instanceof Error ? error.message.slice(0, 1000) : "Download/extraction failed" }); }

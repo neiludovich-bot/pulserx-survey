@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { websiteIndexSnapshotSchema, WEBSITE_PROFILES, allowedWebsiteIndexUrl } from "@interview/schemas";
 import { prisma } from "./prisma";
 import { chunkSourceText } from "./source-text-chunks";
+import { renderWebsiteTable } from "./website-table-renderer";
 
 const INDEX_TAG = "website-index:v1";
 export function prepareWebsiteIndex(input: unknown) {
@@ -13,8 +14,14 @@ export function prepareWebsiteIndex(input: unknown) {
     const digest = createHash("sha256").update(page.content).digest("hex");
     if (digest !== page.hash) throw new Error("Indexed page hash does not match its content.");
     // Asset changes also require a version, without mutating earlier citations.
-    const versionHash = createHash("sha256").update(JSON.stringify([page.hash, page.title, page.assets])).digest("hex");
-    return { ...page, versionHash, chunks: chunkSourceText(page.content).map(text => `${page.title}\n\n${text}`) };
+    const versionHash = createHash("sha256").update(JSON.stringify([page.hash, page.title, page.assets, page.tables])).digest("hex");
+    const tableAssets = page.tables.map(table => {
+      renderWebsiteTable(table, page.url); // Validate layout before committing a new version.
+      const tableHash = createHash("sha256").update(JSON.stringify([page.url, page.hash, table])).digest("hex");
+      return { title: table.title.slice(0,240), description: `Website table: ${table.title}. ${table.rows.slice(0,3).flatMap(row=>row.map(cell=>cell.text)).join(" | ")}`.slice(0,1000),
+        url: `https://api.pulserx.ai/website-tables/${tableHash}.svg`, assetKind: "TABLE" as const, table };
+    });
+    return { ...page, tableAssets, versionHash, chunks: chunkSourceText(page.content).map(text => `${page.title}\n\n${text}`) };
   });
   return { snapshot, pages };
 }
@@ -40,12 +47,13 @@ export async function applyWebsiteIndex(input: unknown) {
       createdIds.push(doc.id);
       await tx.sourceChunk.createMany({ data: page.chunks.map((content, position) => ({ sourceDocumentId: doc.id, surveySlug: snapshot.surveySlug, content, position, tags: [INDEX_TAG], tokenEstimate: Math.ceil(content.length / 4), metadata: { version: 1, sourceUrl: page.url, sourceHash: page.hash, fetchedAt: snapshot.fetchedAt, discoveredFrom: page.discoveredFrom } })) });
       if (page.assets.length) await tx.sourceAsset.createMany({ data: page.assets.map(asset => ({ ...asset, sourceDocumentId: doc.id, surveySlug: snapshot.surveySlug, tags: [INDEX_TAG], priority: 10, metadata: { sourceUrl: page.url, sourceHash: page.hash } })) });
+      if (page.tableAssets.length) await tx.sourceAsset.createMany({ data: page.tableAssets.map(({table,...asset}) => ({ ...asset, sourceDocumentId: doc.id, surveySlug: snapshot.surveySlug, tags: [INDEX_TAG,"website-table:v1"], priority: 10, metadata: { sourceUrl: page.url, sourceHash: page.hash, table } })) });
       if (current.length) { const result = await tx.sourceDocument.updateMany({ where: { id: { in: current.map(doc => doc.id) }, surveySlug: snapshot.surveySlug, tags: { has: INDEX_TAG } }, data: { status: "ARCHIVED" } }); archived += result.count; archivedIds.push(...current.map(doc => doc.id)); }
       created++;
     }
     const report = { version: 1, rootUrl: snapshot.rootUrl, fetchedAt: snapshot.fetchedAt, created, unchanged, archived,
       indexedPages: pages.length, createdIds, archivedIds, discoveredUrls: snapshot.discoveredUrls, issues: snapshot.issues, truncated: snapshot.truncated,
-      pageVersions: pages.map(page => ({ url: page.url, hash: page.hash, chunks: page.chunks.length, assets: page.assets.length })) };
+      pageVersions: pages.map(page => ({ url: page.url, hash: page.hash, chunks: page.chunks.length, assets: page.assets.length + page.tableAssets.length })) };
     const manifest = await tx.sourceDocument.create({ data: { surveySlug: snapshot.surveySlug, sourceBrand: snapshot.surveySlug.toUpperCase(), title: `Website index report ${snapshot.fetchedAt}`, sourceType: "MANUAL_NOTE", content: JSON.stringify(report), tags: ["website-index-report:v1"], status: "DRAFT" } });
     return { reportId: manifest.id, created, unchanged, archived, indexedPages: pages.length, issues: snapshot.issues, truncated: snapshot.truncated };
   }, { timeout: 120000, maxWait: 15000, isolationLevel: Prisma.TransactionIsolationLevel.Serializable });

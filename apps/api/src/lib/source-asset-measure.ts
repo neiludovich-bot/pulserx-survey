@@ -13,7 +13,8 @@ export function sourceAssetAnswerEligible(asset: { title: string; description?: 
   if (!sourceAssetMeasureEligible(asset, answer)) return false;
   const studies = asset.title.match(/\bstudy\s+\d+\b/gi) ?? [];
   const normalized = answer.toLowerCase().replace(/\s+/g, ' ');
-  return studies.every(study => normalized.includes(study.toLowerCase().replace(/\s+/g, ' ')));
+  const namedStudy = asset.title.match(/\b([A-Z][A-Z0-9-]{2,})\s*\(STUDY\s+\d+\)/i)?.[1];
+  return studies.every(study => normalized.includes(study.toLowerCase().replace(/\s+/g, ' ')) || Boolean(namedStudy && new RegExp(`\\b${namedStudy}\\b`, "i").test(answer)));
 }
 
 /** Match the browser's actual image capability; a PDF tagged TABLE is not an image. */
