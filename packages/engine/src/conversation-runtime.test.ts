@@ -49,7 +49,10 @@ describe("replacement conversation selection", () => {
     expect(result.state.topics[0]).toMatchObject({ status: "skipped", evidence: [] });
   });
   it("does not turn a question into research-answer credit", () => {
-    expect(() => validateConversationObservation({ ...context, participantMessage: "How is it dosed?" }, { ...empty, answerStatus: "answered", answerEvidence: ["How is it dosed?"], request: { text: "How is it dosed?", evidence: "How is it dosed?" } })).toThrow("not research-answer evidence");
+    const result = validateConversationObservation({ ...context, participantMessage: "How is it dosed?" }, { ...empty, answerStatus: "answered", answerEvidence: ["How is it dosed?"], request: { text: "How is it dosed?", evidence: "How is it dosed?" } });
+    expect(result.answerEvidence).toEqual([]);
+    expect(result.answerStatus).toBe("not_answered");
+    expect(result.request?.text).toBe("How is it dosed?");
   });
   it.each(["old evidence", "That sounds useful. fabricated"])("rejects evidence absent from this message: %s", evidence => {
     expect(() => validateConversationObservation(context, { ...empty, answerStatus: "answered", answerEvidence: [evidence] })).toThrow("exact current-message");

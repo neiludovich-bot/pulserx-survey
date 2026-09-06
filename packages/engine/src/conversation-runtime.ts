@@ -8,8 +8,19 @@ export function validateConversationObservation(context: ConversationTurnContext
   if (value.answerEvidence.length && !context.question) throw new Error("No active question may receive answer credit.");
   // Asking for another explanation also answers a clarification check. It
   // remains separate from clinical reaction evidence and authored research.
-  if (value.request && !["information_need", "clarification"].includes(context.question?.kind ?? "") && value.answerEvidence.some(text => text.includes(value.request!.evidence) || value.request!.evidence.includes(text))) throw new Error("An information request is not research-answer evidence.");
-  if (value.request && value.reactionEvidence.some(text => text.includes(value.request!.evidence) || value.request!.evidence.includes(text))) throw new Error("An information request is not clinical-reaction evidence.");
+  if (value.request) {
+    // Conflicting extraction cannot earn research credit, but need not discard
+    // an otherwise valid medical question/answer. Keep independently supported clauses.
+    const overlaps = (text: string) => text.includes(value.request!.evidence) || value.request!.evidence.includes(text);
+    if (!["information_need", "clarification"].includes(context.question?.kind ?? "")) {
+      const priorCount = value.answerEvidence.length;
+      value.answerEvidence = value.answerEvidence.filter(text => !overlaps(text));
+      if (value.answerEvidence.length < priorCount) value.answerStatus = value.answerEvidence.length ? "partial" : "not_answered";
+    }
+    value.reactionEvidence = value.reactionEvidence.filter(text => !overlaps(text));
+    value.priorities = value.priorities.filter(priority => !overlaps(priority.evidence));
+    value.researchSignals = value.researchSignals?.filter(signal => !overlaps(signal.evidence));
+  }
   if (value.priorities.length && context.question?.kind !== "priorities") throw new Error("Only a priorities question may establish initial priorities.");
   if (Boolean(value.familiarity) !== Boolean(value.familiarityEvidence)) throw new Error("Familiarity requires participant evidence.");
   return value;
