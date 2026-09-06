@@ -27,9 +27,14 @@ export const conversationObservationModelSchema = conversationObservationSchema.
   familiarityEvidenceRange: evidenceTokenRangeSchema.nullable(),
 }).strict();
 export const conversationTurnInputSchema = z.object({ context: conversationTurnContextSchema.extend({ participantTokens: participantTokensSchema }).strict(), evidence: sourceEvidenceSpansInputSchema }).strict();
+// A cited passage supports the answer. Legacy source-role classifications are
+// not part of this runtime's model task or a medical-review claim.
+export const conversationWebsiteAnswerSchema = websiteAnswerModelResultSchema.extend({
+  selections: z.array(websiteAnswerModelResultSchema.shape.selections.element.omit({ evidenceRole: true, contribution: true }).strict()).max(3),
+}).strict();
 export const conversationTurnResultSchema = z.object({
   observation: conversationObservationModelSchema.omit({ request: true }).strict(),
-  source: z.object({ request: conversationObservationModelSchema.shape.request.unwrap(), answer: websiteAnswerModelResultSchema }).strict().nullable(),
+  source: z.object({ request: conversationObservationModelSchema.shape.request.unwrap(), answer: conversationWebsiteAnswerSchema }).strict().nullable(),
 }).strict();
 export type ConversationTurnContext = z.infer<typeof conversationTurnContextSchema>;
 export type ConversationObservation = z.infer<typeof conversationObservationSchema>;

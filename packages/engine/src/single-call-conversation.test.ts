@@ -29,6 +29,15 @@ function fixture(surveySlug: "nubeqa" | "brukinsa" | "padcev") {
 }
 
 describe("single-call conversation boundary", () => {
+  it("repairs an unsupported number once without reinterpreting the respondent", async () => {
+    const f = fixture("nubeqa");
+    const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], priorities: [], familiarity: null, familiarityEvidenceRange: null, outOfScope: false };
+    const source = { request: { text: f.request.participantMessage, evidenceRange: { startToken: 0, endToken: 4 } }, answer: { ...f.answer, paragraphs: [{ text: "Study A reported 99 months.", sourceIds: ["study"] }] } };
+    f.parse.mockResolvedValueOnce({ id: "initial", output_parsed: { observation, source } }).mockResolvedValueOnce({ id: "repair", output_parsed: f.answer });
+    const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: f.request.participantMessage, question: null, discussionQuery: null, recentTurns: [], topics: [] }, f.evidence);
+    expect(f.parse).toHaveBeenCalledTimes(2); expect(result.repairTrace?.response.id).toBe("repair");
+    expect(result.observation.answerEvidence).toEqual([]); expect(result.answer?.paragraphs[0].text).toContain("12 months");
+  });
   it("represents familiarity without an unsolicited answer in the v2 source envelope", async () => {
     const f = fixture("nubeqa");
     f.parse.mockResolvedValue({ id: "v2", output_parsed: { observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 4 }], reactionEvidenceRanges: [], priorities: [], familiarity: "low", familiarityEvidenceRange: { startToken: 0, endToken: 4 }, outOfScope: false }, source: null } });

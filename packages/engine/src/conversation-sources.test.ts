@@ -16,4 +16,8 @@ describe("same-page source passages", () => {
     const input=fixture(); input.selections[1].evidenceRole="contextual";
     expect(() => coalesceConversationSources(input)).toThrow("Conflicting roles");
   });
+  it("prints one citation when the same page supports two facts in a paragraph", () => {
+    const input=fixture(); input.paragraphs[0].sourceIds=["page", "page"];
+    expect(coalesceConversationSources(input).paragraphs[0]).toEqual({ text: "Two supported facts.", sourceIds: ["page"] });
+  });
 });

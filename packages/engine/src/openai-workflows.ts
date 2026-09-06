@@ -333,8 +333,33 @@ export class OpenAIResponsesGateway {
       priorities: priorities.map(({ evidenceRange, ...priority }) => ({ ...priority, evidence: excerpt(evidenceRange) })),
       familiarityEvidence: familiarityEvidenceRange ? excerpt(familiarityEvidenceRange) : null,
     });
-    const answer = call.result.source ? validateWebsiteAnswer({ ...parsedEvidence, query: observation.request!.text }, coalesceConversationSources(call.result.source.answer)) : null;
-    return { observation, answer, trace: call.trace };
+    // Adapt supported passages to the shared provenance validator. These tags
+    // identify answer support, not independent clinical classification/review.
+    let answer: ReturnType<typeof validateWebsiteAnswer> | null = null;
+    let repairTrace: typeof call.trace | null = null;
+    if (call.result.source) {
+      const answerInput = { ...parsedEvidence, query: observation.request!.text };
+      try {
+        answer = validateWebsiteAnswer(answerInput, coalesceConversationSources({ ...call.result.source.answer,
+          selections: call.result.source.answer.selections.map(selection => ({ ...selection, evidenceRole: "direct" as const, contribution: "answer" as const })),
+        }));
+      } catch (error) {
+        // One answer-only repair. Do not reinterpret the respondent, repeat
+        // retrieval, or enter the legacy routing/planning fallback cascade.
+        const feedback = error && typeof error === "object" && "websiteAnswerFeedback" in error ? error.websiteAnswerFeedback : "invalid_output";
+        console.warn(JSON.stringify({ event: "conversation_answer_repair", callGroupId: getModelCallTimingContext()?.callGroupId ?? null, feedback }));
+        const repairInput = websiteAnswerInputSchema.parse({ ...answerInput, repairFeedback: feedback,
+          candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })),
+        });
+        const repair = await this.runStructuredCall<WebsiteAnswerModelResult>({ callType: "website_answer", model: this.config.sourceModel ?? this.config.analysisModel,
+          promptVersion: websiteAnswerSystemPrompt.version, schemaName: "website_answer_v1", schema: websiteAnswerModelResultSchema,
+          instructions: websiteAnswerSystemPrompt.instructions, input: repairInput, metadata: { survey_slug: parsedEvidence.surveySlug },
+        });
+        repairTrace = repair.trace;
+        answer = validateWebsiteAnswer(answerInput, coalesceConversationSources(repair.result));
+      }
+    }
+    return { observation, answer, trace: call.trace, repairTrace };
   }
 
   async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {

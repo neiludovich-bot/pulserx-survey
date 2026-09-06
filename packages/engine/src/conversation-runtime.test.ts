@@ -5,6 +5,11 @@ import type { ConversationObservation, ConversationTurnContext } from "@intervie
 const empty: ConversationObservation = { answerStatus: "not_answered", answerEvidence: [], reactionEvidence: [], request: null, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false };
 const context: ConversationTurnContext = { version: 2, brand: "fixture", participantMessage: "That sounds useful. How is it dosed?", question: { id: "reaction", text: "What is your reaction?", kind: "reaction" }, discussionQuery: "Study A", recentTurns: [], topics: [] };
 describe("replacement conversation selection", () => {
+  it("accepts a simplification request as a response to a clarity check without clinical credit", () => {
+    const message = "Can you explain that more simply?";
+    const result = validateConversationObservation({ ...context, participantMessage: message, question: { id: "clarity", text: "Does that address your question?", kind: "clarification" } }, { ...empty, answerStatus: "partial", answerEvidence: [message], request: { text: "Explain the monitoring guidance more simply", evidence: message } });
+    expect(result.request?.evidence).toBe(message); expect(result.reactionEvidence).toEqual([]);
+  });
   it("does not count clarification satisfaction as a clinical reaction", () => {
     const state = emptyConversationState(); state.reactionPending = true;
     state.activeTopicId = "a"; state.topics = [{ id: "a", label: "efficacy", query: "efficacy", status: "presented", evidence: [] }];

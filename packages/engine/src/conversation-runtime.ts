@@ -6,7 +6,9 @@ export function validateConversationObservation(context: ConversationTurnContext
   if (excerpts.some(text => !context.participantMessage.includes(text))) throw new Error("Observation evidence must be an exact current-message excerpt.");
   if ((value.answerStatus !== "not_answered") !== Boolean(value.answerEvidence.length)) throw new Error("Answer credit requires evidence and vice versa.");
   if (value.answerEvidence.length && !context.question) throw new Error("No active question may receive answer credit.");
-  if (value.request && context.question?.kind !== "information_need" && value.answerEvidence.some(text => text.includes(value.request!.evidence) || value.request!.evidence.includes(text))) throw new Error("An information request is not research-answer evidence.");
+  // Asking for another explanation also answers a clarification check. It
+  // remains separate from clinical reaction evidence and authored research.
+  if (value.request && !["information_need", "clarification"].includes(context.question?.kind ?? "") && value.answerEvidence.some(text => text.includes(value.request!.evidence) || value.request!.evidence.includes(text))) throw new Error("An information request is not research-answer evidence.");
   if (value.request && value.reactionEvidence.some(text => text.includes(value.request!.evidence) || value.request!.evidence.includes(text))) throw new Error("An information request is not clinical-reaction evidence.");
   if (value.priorities.length && context.question?.kind !== "priorities") throw new Error("Only a priorities question may establish initial priorities.");
   if (Boolean(value.familiarity) !== Boolean(value.familiarityEvidence)) throw new Error("Familiarity requires participant evidence.");

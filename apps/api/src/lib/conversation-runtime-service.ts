@@ -45,6 +45,7 @@ export async function runConversationRuntime(input: Input) {
       candidates: websiteCandidatesForModel(candidates), sourceTopicContext: state.discussion?.query ?? null,
       priorSourceIds: state.discussion?.sourceIds ?? [], sourceQuestionPlan: null, evidenceFocus: "all" });
     trace.push(call.trace);
+    if (call.repairTrace) trace.push(call.repairTrace);
     const chunks = call.answer ? websiteAnswerChunks(candidates, call.answer) : [];
     return { ...call, text: call.answer && !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null,
       references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };

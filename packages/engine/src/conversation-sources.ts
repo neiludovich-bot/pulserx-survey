@@ -13,5 +13,7 @@ export function coalesceConversationSources(output: WebsiteAnswerModelResult) {
       prior.assetIds = [...new Set([...prior.assetIds, ...selection.assetIds])];
     }
   }
-  return websiteAnswerModelResultSchema.parse({ ...result, selections: [...sources.values()] });
+  return websiteAnswerModelResultSchema.parse({ ...result, selections: [...sources.values()],
+    paragraphs: result.paragraphs.map(paragraph => ({ ...paragraph, sourceIds: [...new Set(paragraph.sourceIds)] })),
+  });
 }
