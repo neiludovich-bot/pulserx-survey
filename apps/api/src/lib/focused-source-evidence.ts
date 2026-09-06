@@ -67,6 +67,7 @@ export async function selectFocusedSourceEvidence(input: {
   priorSourceIds?: string[];
   sourceQuestionPlan?: SourceQuestionPlan | null;
   presentationPlan?: ModeratorEvidenceSelectionInput["presentationPlan"];
+  presentationContext?: ModeratorEvidenceSelectionInput["presentationContext"];
   evidenceFocus?: "all" | "contextual";
 }): Promise<{ chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" | "unavailable" }> {
   const candidates = input.candidates.slice(0, 24);
@@ -76,6 +77,7 @@ export async function selectFocusedSourceEvidence(input: {
     priorSourceIds: input.priorSourceIds ?? [],
     sourceQuestionPlan: input.sourceQuestionPlan ?? null,
     presentationPlan: input.presentationPlan,
+    presentationContext: input.presentationContext,
     evidenceFocus: input.evidenceFocus ?? "all",
     candidates: candidates.map((chunk) => ({
       id: chunk.id, title: chunk.title, url: chunk.url, description: chunk.description,

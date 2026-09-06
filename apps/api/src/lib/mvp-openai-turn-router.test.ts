@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { env } from "../env";
-import { classifyMvpTurnRouteHybrid } from "./mvp-openai-turn-router";
+import { classifyMvpTurnRouteHybrid, sanitizeMvpRouteFailure } from "./mvp-openai-turn-router";
 
 const gateway = vi.hoisted(() => ({ analyzeMvpTurnRoute: vi.fn() }));
 vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => gateway }));
@@ -37,6 +37,26 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it("distinguishes a deliberate skip from a failed model interpretation", async () => {
+    env.MVP_TURN_ROUTER_PROVIDER = "deterministic";
+    expect(await classifyMvpTurnRouteHybrid(input)).toMatchObject({ provider: "deterministic", skipReason: "provider_disabled", error: null });
+    env.MVP_TURN_ROUTER_PROVIDER = "openai_hybrid";
+    expect(await classifyMvpTurnRouteHybrid({ ...input, candidateQuestions: [] })).toMatchObject({ skipReason: "no_candidates" });
+    expect(await classifyMvpTurnRouteHybrid({ ...input, currentQuestionId: "intro_consent" })).toMatchObject({ skipReason: "consent" });
+    expect(gateway.analyzeMvpTurnRoute).not.toHaveBeenCalled();
+    gateway.analyzeMvpTurnRoute.mockRejectedValue({ name: "ZodError", message: "PRIVATE MODEL OUTPUT", issues: [{ code: "invalid_type", path: ["understandingUpdate", "productFamiliarity", "PRIVATE FIELD"], received: "PRIVATE VALUE" }] });
+    const failed = await classifyMvpTurnRouteHybrid(input);
+    expect(failed.skipReason).toBeUndefined();
+    expect(failed.failureDiagnosis).toMatchObject({ code: "invalid_schema", errorName: "ZodError", issues: [{ code: "invalid_type", path: ["understandingUpdate", "productFamiliarity", "[unknown]"] }] });
+    expect(JSON.stringify(failed.failureDiagnosis)).not.toContain("PRIVATE");
+    expect(sanitizeMvpRouteFailure(failed.failureDiagnosis)).toEqual(failed.failureDiagnosis);
+  });
+  it("retains a fixed validation category for exact understanding excerpt failures", async () => {
+    gateway.analyzeMvpTurnRoute.mockRejectedValue(new Error("Understanding updates require exact current participant excerpts."));
+    const failed = await classifyMvpTurnRouteHybrid(input);
+    expect(failed.failureDiagnosis?.code).toBe("invalid_understanding_excerpt");
+    expect(sanitizeMvpRouteFailure(failed.failureDiagnosis)).toEqual(failed.failureDiagnosis);
+  });
   it.each(["Even more simply please.", "Simpler please", "More simply"])("keeps an elliptical source clarification open when the model misses it: %s", async (participantContent) => {
     gateway.analyzeMvpTurnRoute.mockResolvedValue({ result: { ...result, schemaVersion: 5, sourceRequest: null, asksSourceQuestion: false, answerStatus: "not_answered", answerEvidence: [] } });
     const route = await classifyMvpTurnRouteHybrid({ ...input, participantContent, sourceConversationActive: true });

@@ -5,6 +5,7 @@ import {
   type MvpDisplayTopic as SchemaMvpDisplayTopic,
 } from "@interview/schemas";
 import { env } from "../env";
+import { sanitizeSourceFailure } from "@interview/engine";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import {
   classifyMvpTurnRoute,
@@ -41,25 +42,50 @@ export type MvpHybridTurnRouteDecision = MvpParticipantIntent & {
   suggestedQuestionIds: string[];
   modelResult: MvpTurnRouteAnalysisResult | null;
   error: string | null;
+  failureDiagnosis?: ReturnType<typeof sanitizeMvpRouteFailure>;
+  skipReason?: "provider_disabled" | "no_candidates" | "out_of_scope" | "consent" | "empty_message" | "gateway_unavailable";
 };
 
-function shouldAskOpenAI(
+const routeValidationCategories: Record<string, string> = {
+  "Source requests require an exact participant excerpt.": "invalid_request_excerpt",
+  "Source requests require exact current participant excerpts.": "invalid_request_excerpt",
+  "Understanding updates require exact current participant excerpts.": "invalid_understanding_excerpt",
+  "Understanding evidence must be an exact excerpt of the participant message.": "invalid_understanding_excerpt",
+  "Route answer evidence must be an exact excerpt of the participant message.": "invalid_answer_excerpt",
+  "An explicit statement of priorities must retain answer credit for the priorities question.": "lost_priority_credit",
+  "A trailing information question must retain its source request separately from reaction evidence.": "lost_mixed_request",
+  "Route analysis cannot credit an answer without an active research question.": "missing_active_question",
+  "A turn containing only information requests cannot receive research-answer credit or close an active source discussion.": "invalid_question_credit",
+  "Route analysis cannot select a source topic belonging to another survey.": "wrong_survey_topic",
+};
+const routeFields = new Set(["schemaVersion", "answerStatus", "asksSourceQuestion", "answerEvidence", "kind", "topic", "needsSource", "isOutOfScope", "isUnanticipated", "suggestedQuestionIds", "sourceDirective", "rationale", "sourceRequest", "participantEvidence", "resolvedQuestion", "understandingUpdate", "version", "productFamiliarity", "preferredDepth", "understanding", "candidateQuestions", "id", "question", "objective", "module", "allowedByIntent", "alreadyAsked", "routeKeywords", "sourceContextRequirement", "surveySlug", "sourceBrand", "activeIntentSlug", "activeIntentLabel", "activeIntentSteeringRule", "currentQuestionId", "currentQuestion", "currentQuestionObjective", "currentQuestionKeywords", "currentQuestionCompletionSignals", "sourceConversationActive", "participantMessage", "recentInterviewerContext"]);
+export function sanitizeMvpRouteFailure(error: unknown) {
+  const { stage: _stage, ...safe } = sanitizeSourceFailure(error, "composition");
+  const raw = error !== null && typeof error === "object" ? error as Record<string, unknown> : {};
+  const code = typeof raw.code === "string" && Object.values(routeValidationCategories).includes(raw.code) ? raw.code : typeof raw.message === "string" && Object.prototype.hasOwnProperty.call(routeValidationCategories, raw.message) ? routeValidationCategories[raw.message]! : safe.code === "composition_unavailable" ? "routing_unavailable" : safe.code;
+  const rawIssues = Array.isArray(raw.issues) ? raw.issues : [];
+  return { ...safe, code, issues: safe.issues.map((issue, index) => {
+    const item = rawIssues[index] as { path?: unknown[] } | undefined;
+    return { ...issue, path: (Array.isArray(item?.path) ? item.path : []).slice(0, 6).map((part) => typeof part === "number" && Number.isInteger(part) && part >= 0 || part === "[]" ? "[]" : typeof part === "string" && routeFields.has(part) ? part : "[unknown]") };
+  }) };
+}
+
+function modelSkipReason(
   input: MvpHybridTurnRouteInput,
   deterministic: MvpTurnRouteDecision,
-) {
+): MvpHybridTurnRouteDecision["skipReason"] | undefined {
   if (env.MVP_TURN_ROUTER_PROVIDER !== "openai_hybrid") {
-    return false;
+    return "provider_disabled";
   }
 
   if (input.candidateQuestions.length === 0) {
-    return false;
+    return "no_candidates";
   }
 
-  if (deterministic.isOutOfScope || input.currentQuestionId === "intro_consent") {
-    return false;
-  }
+  if (deterministic.isOutOfScope) return "out_of_scope";
+  if (input.currentQuestionId === "intro_consent") return "consent";
 
-  return Boolean(input.participantContent.trim());
+  return input.participantContent.trim() ? undefined : "empty_message";
 }
 
 function topicFromResult(
@@ -115,7 +141,8 @@ export async function classifyMvpTurnRouteHybrid(
     ? { answerStatus: "not_answered" as const, answerEvidence: [], asksSourceQuestion: false }
     : localIntent;
 
-  if (!shouldAskOpenAI(input, deterministic)) {
+  const skipReason = modelSkipReason(input, deterministic);
+  if (skipReason) {
     return {
       ...fallbackIntent,
       decision: deterministic,
@@ -123,6 +150,7 @@ export async function classifyMvpTurnRouteHybrid(
       suggestedQuestionIds: [],
       modelResult: null,
       error: null,
+      skipReason,
     };
   }
 
@@ -135,6 +163,7 @@ export async function classifyMvpTurnRouteHybrid(
       suggestedQuestionIds: [],
       modelResult: null,
       error: "OpenAI gateway is not configured.",
+      skipReason: "gateway_unavailable",
     };
   }
 
@@ -204,6 +233,7 @@ export async function classifyMvpTurnRouteHybrid(
     };
   } catch (error) {
     return {
+      failureDiagnosis: sanitizeMvpRouteFailure(error),
       ...fallbackIntent,
       decision: deterministic,
       provider: "deterministic",

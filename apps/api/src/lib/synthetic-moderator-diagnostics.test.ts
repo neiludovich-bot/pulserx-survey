@@ -35,6 +35,15 @@ describe("synthetic-only moderator decisions", () => {
     vi.spyOn(console, "warn").mockImplementation(() => { throw new Error("logging failed"); });
     expect(() => logSyntheticModeratorDecision(input)).not.toThrow();
   });
+  it("emits safe router diagnosis and skip reason without the legacy error string", () => {
+    const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+    logSyntheticModeratorDecision({ ...input, route: { ...input.route, error: "PRIVATE PROVIDER MESSAGE", failureDiagnosis: { code: "invalid_schema", errorName: "ZodError", status: null, providerCode: null, limitKind: null, retryAfter: null, issues: [{ code: "invalid_type", path: ["understandingUpdate", "PRIVATE FIELD"] }] } } });
+    logSyntheticModeratorDecision({ ...input, route: { ...input.route, skipReason: "provider_disabled" } });
+    const events = log.mock.calls.map(([line]) => JSON.parse(line));
+    expect(events[0].router).toMatchObject({ failureDiagnosis: { code: "invalid_schema", issues: [{ path: ["understandingUpdate", "[unknown]"] }] }, skipReason: null });
+    expect(events[1].router.skipReason).toBe("provider_disabled");
+    expect(JSON.stringify(events)).not.toContain("PRIVATE");
+  });
   it("retains safe validation categories and schema paths without provider or participant text", () => {
     const local = sanitizeModeratorPlanningFailure(new Error("A participant source question must retain its source-answer action."));
     expect(local.code).toBe("lost_source_action");

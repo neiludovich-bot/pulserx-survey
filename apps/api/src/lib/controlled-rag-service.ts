@@ -1676,10 +1676,16 @@ export async function askControlledRagForSurveyInterviewerTurn(
     // Repeated simplification selects one complete fact from original evidence,
     // rather than asking composition to compress every prior monitoring case.
     // No retrieval or generated interviewer text can supply new facts here.
+    const lastSourceAnswer = [...recentTurns].reverse().find((turn) => turn.role === "interviewer" && /\[\d+\]/.test(turn.content))?.content
+      ?? [...(input.recentInterviewerContext ?? "").matchAll(/(?:^|\n)interviewer:\s*([\s\S]*?)(?=\n(?:participant|interviewer):|$)/gi)]
+        .reverse().find((match) => /\[\d+\]/.test(match[1]))?.[1]?.trim()
+      ?? null;
     chunks = narrowRetainedPresentation ? (await selectFocusedSourceEvidence({
-      surveySlug: input.surveySlug, query: retrievalQuery, candidates: retained.sources,
-      sourceTopicContext: input.sourceTopicContext, priorSourceIds: retained.sources.map((source) => source.id),
-      presentationPlan: input.presentationPlan, fallbackSourceIds: [],
+      surveySlug: input.surveySlug, query: input.participantMessage, candidates: retained.sources,
+      sourceTopicContext: retrievalQuery, priorSourceIds: retained.sources.map((source) => source.id),
+      presentationPlan: input.presentationPlan,
+      presentationContext: { version: 1, kind: "simplify_previous_answer", participantRequest: input.participantMessage.slice(0, 12000), lastSourceAnswer: lastSourceAnswer?.slice(0, 12000) ?? null },
+      fallbackSourceIds: [],
     })).chunks : retained.sources;
     evidenceCard = null;
   } else {

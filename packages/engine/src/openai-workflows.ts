@@ -95,6 +95,7 @@ type ModelConfig = {
   sourceModel?: string;
   reasoningEffort?: "none" | "low" | "medium" | "high";
   groundingReasoningEffort?: "none" | "low" | "medium" | "high";
+  interpretationReasoningEffort?: "none" | "low" | "medium" | "high";
 };
 
 type DebugTraceStore = {
@@ -451,7 +452,7 @@ export class OpenAIResponsesGateway {
     // Explicit reasoning for interpretation and evidence checks; phrasing keeps
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
-      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
+      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : ["turn_route", "moderator_plan"].includes(callType) ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
     const effectiveMetadata = { ...metadata, ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const requestPayload = {
       model,
