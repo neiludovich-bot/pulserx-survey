@@ -58,7 +58,7 @@ export const websiteRefreshSettingsSchema = z.object({
 export const websiteRefreshStateSchema = websiteRefreshSettingsSchema.extend({
   version: z.literal(1), nextRunAt: z.string().datetime(),
   status: z.enum(["queued", "running", "completed", "failed"]),
-  runId: z.string().nullable(), leaseUntil: z.string().datetime().nullable(),
+  runId: z.string().nullable(), leaseUntil: z.string().datetime().nullable(), heartbeatAt: z.string().datetime().nullable().default(null),
   lastStartedAt: z.string().datetime().nullable(), lastFinishedAt: z.string().datetime().nullable(),
   lastError: z.string().nullable(), lastReportId: z.string().nullable(),
   summary: z.object({ pages: z.number().int(), images: z.number().int(), tables: z.number().int(), issueCount: z.number().int(), truncated: z.boolean(), issues: z.array(z.object({ url: z.string(), reason: z.string() }).strict()).max(20) }).strict().nullable().default(null),

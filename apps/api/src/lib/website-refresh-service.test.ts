@@ -12,6 +12,7 @@ describe("automatic website indexing", () => {
     const state = initialRefreshState(input, new Date(0));
     expect(state).toMatchObject({ enabled: true, intervalHours: 168, status: "queued" });
     expect(refreshDue(state, 1)).toBe(true);
+    expect(refreshDue({ ...state, status: "running", lastStartedAt: new Date(0).toISOString(), leaseUntil: new Date(7200000).toISOString() }, 180001)).toBe(true);
     expect(refreshDue({ ...state, status: "completed", enabled: false }, 1)).toBe(false);
     expect(refreshDue({ ...state, status: "running", leaseUntil: new Date(100).toISOString() }, 99)).toBe(false);
     expect(refreshDue({ ...state, status: "running", leaseUntil: new Date(100).toISOString() }, 101)).toBe(true);

@@ -7,11 +7,11 @@ import { applyWebsiteIndex } from "./website-index-service";
 const TAG = "website-refresh-config:v1";
 const configId = (slug: string) => `website-refresh:${slug}`;
 export function refreshDue(state: WebsiteRefreshState, now: number) {
-  if (state.status === "running") return Date.parse(state.leaseUntil ?? "") <= now;
+  if (state.status === "running") return Math.min(Date.parse(state.leaseUntil ?? ""), (state.heartbeatAt || state.lastStartedAt ? Date.parse((state.heartbeatAt ?? state.lastStartedAt)!) + 180000 : Infinity)) <= now;
   return (state.enabled || state.status === "queued") && Date.parse(state.nextRunAt) <= now;
 }
 export function initialRefreshState(input: unknown, now = new Date()): WebsiteRefreshState {
-  return { ...websiteRefreshSettingsSchema.parse(input), version: 1, nextRunAt: now.toISOString(), status: "queued", runId: null, leaseUntil: null, lastStartedAt: null, lastFinishedAt: null, lastError: null, lastReportId: null, summary: null };
+  return { ...websiteRefreshSettingsSchema.parse(input), version: 1, nextRunAt: now.toISOString(), status: "queued", runId: null, leaseUntil: null, heartbeatAt: null, lastStartedAt: null, lastFinishedAt: null, lastError: null, lastReportId: null, summary: null };
 }
 export async function listWebsiteRefreshes() {
   const rows = await prisma.sourceDocument.findMany({ where: { tags: { has: TAG }, status: "DRAFT" }, orderBy: { surveySlug: "asc" } });
@@ -54,14 +54,27 @@ export async function runWebsiteRefreshTick() {
     const state = websiteRefreshStateSchema.parse(JSON.parse(row.content!));
     if (!refreshDue(state, Date.now())) continue;
     const started = new Date();
-    const running: WebsiteRefreshState = { ...state, status: "running", runId: randomUUID(), lastStartedAt: started.toISOString(), leaseUntil: new Date(started.getTime() + 2 * 3600000).toISOString(), lastError: null };
+    let running: WebsiteRefreshState = { ...state, status: "running", runId: randomUUID(), lastStartedAt: started.toISOString(), heartbeatAt: started.toISOString(), leaseUntil: new Date(started.getTime() + 180000).toISOString(), lastError: null };
     const claim = await prisma.sourceDocument.updateMany({ where: { id: row.id, content: row.content }, data: { content: JSON.stringify(running) } });
     if (!claim.count) continue;
+    let leaseLost = false;
+    let heartbeatWork = Promise.resolve();
+    const heartbeat = setInterval(() => {
+      heartbeatWork = heartbeatWork.then(async () => {
+        const now = new Date();
+        const renewed = { ...running, heartbeatAt: now.toISOString(), leaseUntil: new Date(now.getTime() + 180000).toISOString() };
+        const updated = await prisma.sourceDocument.updateMany({ where: { id: row.id, content: JSON.stringify(running) }, data: { content: JSON.stringify(renewed) } });
+        if (updated.count) running = renewed; else leaseLost = true;
+      }).catch(() => { leaseLost = true; });
+    }, 30000);
+    heartbeat.unref();
     let finished: WebsiteRefreshState;
     try {
       const snapshot = await indexMedicalWebsite(state.surveySlug, state.profile);
       // A failed root must not replace a previously healthy index with error-page content.
       if (!snapshot.pages.some(p => p.sourceType === "URL" && new URL(p.url).pathname === new URL(state.profile.rootUrl).pathname)) throw new Error("Root page was not indexed; existing evidence retained.");
+      clearInterval(heartbeat); await heartbeatWork;
+      if (leaseLost) continue;
       const current = await prisma.sourceDocument.findUnique({ where: { id: row.id } });
       if (current?.content !== JSON.stringify(running)) continue;
       const report = await applyWebsiteIndex(snapshot, state.profile);
@@ -69,6 +82,8 @@ export async function runWebsiteRefreshTick() {
     } catch (error) {
       finished = { ...running, status: "failed", lastError: (error instanceof Error ? error.message : "Website refresh failed").slice(0, 1000) };
     }
+    clearInterval(heartbeat); await heartbeatWork;
+    if (leaseLost) return;
     const now = new Date();
     finished = { ...finished, lastFinishedAt: now.toISOString(), leaseUntil: null, nextRunAt: new Date(now.getTime() + (finished.status === "failed" ? 24 : state.intervalHours) * 3600000).toISOString() };
     await prisma.sourceDocument.updateMany({ where: { id: row.id, content: JSON.stringify(running) }, data: { content: JSON.stringify(finished) } });
