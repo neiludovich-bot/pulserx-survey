@@ -31,6 +31,7 @@ export function getOptionalOpenAIGateway() {
       reasoningEffort: env.OPENAI_REASONING_EFFORT,
       groundingReasoningEffort: env.OPENAI_REASONING_EFFORT_GROUNDING,
       interpretationReasoningEffort: env.OPENAI_REASONING_EFFORT_INTERPRETATION,
+      conversationReasoningEffort: env.OPENAI_REASONING_EFFORT_CONVERSATION,
       moderatorReasoningEffort: env.OPENAI_REASONING_EFFORT_MODERATOR,
       compositionReasoningEffort: env.OPENAI_REASONING_EFFORT_COMPOSITION
     },

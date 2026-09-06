@@ -34,6 +34,14 @@ function moderatorInput(input: ConversationInterpretationInput, wire: Conversati
 }
 
 describe("shared conversation interpretation", () => {
+  it.each([undefined, "medium"] as const)("uses a separate bounded reasoning setting for conversation interpretation: %s", async conversationReasoningEffort => {
+    const input = context("nubeqa", "PFS and DDI");
+    const parse = vi.fn().mockResolvedValue({ output_parsed: result() });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "gpt-5.4-mini", decisionModel: "test", phrasingModel: "test", interpretationReasoningEffort: "high", conversationReasoningEffort }, undefined, { parse });
+    const { version: _version, participantTokens: _tokens, ...request } = input;
+    await gateway.interpretConversation(request);
+    expect(parse.mock.calls[0][0].reasoning.effort).toBe(conversationReasoningEffort ?? "low");
+  });
   it("credits a familiarity answer and leaves orientation selection to application policy", () => {
     const input = context("nubeqa", "Not very familiar with it.");
     input.currentQuestionId = "familiarity";

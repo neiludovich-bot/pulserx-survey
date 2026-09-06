@@ -116,6 +116,7 @@ type ModelConfig = {
   reasoningEffort?: "none" | "low" | "medium" | "high";
   groundingReasoningEffort?: "none" | "low" | "medium" | "high";
   interpretationReasoningEffort?: "none" | "low" | "medium" | "high";
+  conversationReasoningEffort?: "none" | "low" | "medium" | "high";
   moderatorReasoningEffort?: "none" | "low" | "medium" | "high";
   compositionReasoningEffort?: "none" | "low" | "medium" | "high";
 };
@@ -561,7 +562,7 @@ export class OpenAIResponsesGateway {
     // Explicit reasoning for interpretation and evidence checks; phrasing keeps
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
-      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : callType === "moderator_plan" ? this.config.moderatorReasoningEffort ?? this.config.interpretationReasoningEffort : ["turn_route", "conversation_interpretation"].includes(callType) ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
+      ? (callType === "conversation_interpretation" ? this.config.conversationReasoningEffort ?? "low" : callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : callType === "moderator_plan" ? this.config.moderatorReasoningEffort ?? this.config.interpretationReasoningEffort : callType === "turn_route" ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
     const effectiveMetadata = { ...metadata, ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const requestPayload = {
       model,
