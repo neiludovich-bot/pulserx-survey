@@ -51,11 +51,27 @@ export async function runConversationRuntime(input: Input) {
       references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };
   }
 
+  async function present(query: string) {
+    const gateway = getOptionalOpenAIGateway();
+    if (!gateway) throw new Error("Conversation model unavailable.");
+    const candidates = await retrieveWebsiteCandidates({ surveySlug: input.surveySlug, participantMessage: query,
+      surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
+      sourceTopicContext: null, responseMode: "answer_only" });
+    if (candidates.some(source => source.surveySlug !== input.surveySlug)) throw new Error("Evidence crossed bot boundaries.");
+    const call = await gateway.presentConversationEvidence({ surveySlug: input.surveySlug, query: query.slice(0, 4000),
+      candidates: websiteCandidatesForModel(candidates), sourceTopicContext: null, priorSourceIds: [], sourceQuestionPlan: null, evidenceFocus: "all" });
+    trace.push(...call.traces);
+    const chunks = websiteAnswerChunks(candidates, call.answer);
+    return { text: !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null,
+      references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };
+  }
+
   try {
-    let prepared: Awaited<ReturnType<typeof understand>> | null = null;
+    let prepared: Awaited<ReturnType<typeof present>> | null = null;
     if (!input.resume) {
-      prepared = await understand(input.message, input.question);
-      observation = prepared.observation;
+      const understood = await understand(input.message, input.question);
+      prepared = understood;
+      observation = understood.observation;
     }
     const selection = selectConversationAction(state, observation, input.resume, Boolean(observation?.reactionEvidence?.length));
     state = selection.state; action = selection.action;
@@ -63,7 +79,7 @@ export async function runConversationRuntime(input: Input) {
       if (!state.parkedGuideId && input.question && !["reaction", "clarification"].includes(questionKind(input.question)) && observation?.answerStatus !== "answered") state.parkedGuideId = input.question.id;
       const topic = state.topics.find(t => t.id === state.activeTopicId);
       const query = action === "present_topic" ? topic!.query : observation!.request!.text;
-      if (action === "present_topic") prepared = await understand(query, null);
+      if (action === "present_topic") prepared = await present(query);
       if (!prepared?.text) return done("I don't have enough information in the available material to answer that reliably. Could you narrow the question, or would you like to move on?", input.question);
       const wasDiscussing = Boolean(initialState.discussion);
       state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
@@ -94,7 +110,7 @@ export async function runConversationRuntime(input: Input) {
     if (!question) return done("Thank you for sharing your perspective. That completes the interview.", null, [], true);
     const transition = initialState.discussion ? "Let's return to your perspective. " : observation?.answerStatus === "answered" ? "Thank you. " : "";
     if (question.sourceContextRequirement && !question.captureBeforeSourceContext) {
-      const result = await understand(`Briefly explain the clinical information needed to consider this question: ${question.canonicalQuestion}. ${question.sourceContextRequirement}`, null);
+      const result = await present(`Briefly explain the clinical information needed to consider this question: ${question.canonicalQuestion}. ${question.sourceContextRequirement}`);
       if (result.text) {
         state.discussion = { query: question.canonicalQuestion, lastAnswer: result.text, sourceIds: result.sourceIds };
         return done(`${transition}${result.text}\n\n${question.canonicalQuestion}`, question, result.references);

@@ -1,13 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emptyConversationState } from "@interview/engine";
 import { runConversationRuntime } from "./conversation-runtime-service";
-const mocks = vi.hoisted(() => ({ turn: vi.fn(), retrieve: vi.fn() }));
-vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => ({ conversationTurn: mocks.turn }) }));
+const mocks = vi.hoisted(() => ({ turn: vi.fn(), present: vi.fn(), retrieve: vi.fn() }));
+vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => ({ conversationTurn: mocks.turn, presentConversationEvidence: mocks.present }) }));
 vi.mock("./controlled-rag-service", () => ({ retrieveWebsiteCandidates: mocks.retrieve }));
 const observation = { answerStatus: "not_answered", answerEvidence: [], request: { text: "What is the result?", evidence: "What is the result?" }, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false };
 const guide = { id: "fit", canonicalQuestion: "Which patients fit?", module: "fit", objective: "fit", sourceContextRequirement: null, routeKeywords: [], completionSignals: [], adaptiveProbes: [], analyzableOutputs: [] };
 beforeEach(() => { vi.resetAllMocks(); });
 describe("new shared dispatch", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("presents both %s priorities without treating the selected topic as participant speech", async brand => {
+    mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Study", url: "https://example.test/study", description: "", text: "A supported result.", tags: [], assets: [] }]);
+    mocks.present.mockResolvedValue({ traces: [{ presentation: true }], answer: { selections: [{ sourceId: "a", supportExcerpt: "A supported result.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported result.", sourceIds: ["a"] }], unavailableReason: null } });
+    mocks.turn.mockResolvedValueOnce({ observation: { ...observation, request: null, answerStatus: "answered", answerEvidence: ["Efficacy and dosing"], reactionEvidence: [], priorities: [{ label: "Efficacy", query: "Efficacy", evidence: "Efficacy" }, { label: "Dosing", query: "Dosing", evidence: "dosing" }] }, trace: {}, answer: null });
+    const input = { brand, surveySlug: brand, question: { ...guide, canonicalQuestion: "What are your top priorities?" }, history: [], message: "Efficacy and dosing", resume: false, stop: false, selectGuide: () => guide };
+    const first = await runConversationRuntime(input);
+    expect(first.content).toContain("stands out to you about Efficacy");
+    expect(mocks.turn).toHaveBeenCalledOnce();
+    expect(mocks.present).toHaveBeenLastCalledWith(expect.objectContaining({ query: "Efficacy", sourceTopicContext: null }));
+    mocks.turn.mockResolvedValueOnce({ observation: { ...observation, request: null, answerStatus: "answered", answerEvidence: ["Useful"], reactionEvidence: ["Useful"] }, trace: {}, answer: null });
+    const second = await runConversationRuntime({ ...input, state: first.state, question: first.question, message: "Useful" });
+    expect(second.content).toContain("Turning to Dosing:");
+    expect(mocks.turn).toHaveBeenCalledTimes(2);
+    expect(mocks.present).toHaveBeenLastCalledWith(expect.objectContaining({ query: "Dosing", sourceTopicContext: null }));
+    expect(second.state.topics.map(topic => topic.status)).toEqual(["discussed", "presented"]);
+  });
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("answers %s follow-ups in one call and preserves a parked question through resume", async brand => {
     mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Study", url: "https://example.test/study", description: "Study", text: "The result was reported.", tags: [], assets: [] }]);
     mocks.turn.mockResolvedValue({ observation, trace: {}, answer: { selections: [{ sourceId: "a", supportExcerpt: "The result was reported.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "The result was reported.", sourceIds: ["a"] }], unavailableReason: null } });

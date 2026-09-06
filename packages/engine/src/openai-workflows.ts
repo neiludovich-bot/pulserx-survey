@@ -3,7 +3,7 @@ import { join } from "node:path";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { conversationTurnSystemPrompt } from "@interview/prompts";
-import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnContextSchema, type ConversationTurnContext } from "@interview/schemas";
+import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnContextSchema, conversationWebsiteAnswerSchema, type ConversationTurnContext } from "@interview/schemas";
 import { validateConversationObservation } from "./conversation-runtime";
 import { coalesceConversationSources } from "./conversation-sources";
 import {
@@ -360,6 +360,35 @@ export class OpenAIResponsesGateway {
       }
     }
     return { observation, answer, trace: call.trace, repairTrace };
+  }
+
+  /** Present an application-selected topic; never reinterpret it as participant speech. */
+  async presentConversationEvidence(input: ModeratorEvidenceSelectionInput) {
+    const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
+    const traces: unknown[] = [];
+    let repairFeedback: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint" | null = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const call = await this.runStructuredCall<import("zod").infer<typeof conversationWebsiteAnswerSchema>>({
+        callType: "website_answer", model: this.config.sourceModel ?? this.config.analysisModel,
+        promptVersion: websiteAnswerSystemPrompt.version, schemaName: "conversation_presentation_v2", schema: conversationWebsiteAnswerSchema,
+        instructions: websiteAnswerSystemPrompt.instructions,
+        input: websiteAnswerInputSchema.parse({ ...parsed, repairFeedback,
+          candidates: parsed.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })),
+        }), metadata: { survey_slug: parsed.surveySlug },
+      });
+      traces.push(call.trace);
+      try {
+        const answer = validateWebsiteAnswer(parsed, coalesceConversationSources({ ...call.result,
+          selections: call.result.selections.map(selection => ({ ...selection, evidenceRole: "direct" as const, contribution: "answer" as const })),
+        }));
+        return { answer, traces };
+      } catch (error) {
+        if (attempt === 1) throw error;
+        const feedback = error && typeof error === "object" && "websiteAnswerFeedback" in error ? error.websiteAnswerFeedback : null;
+        repairFeedback = feedback === "unsupported_number" || feedback === "too_verbose" || feedback === "unrequested_endpoint" ? feedback : "invalid_output";
+      }
+    }
+    throw new Error("Conversation presentation exceeded its attempt bound.");
   }
 
   async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {
