@@ -19,7 +19,17 @@ export async function runModeratorTurn(input: Input) {
   if (input.sourceRequest !== undefined) input = { ...input, asksSourceQuestion: Boolean(input.sourceRequest) };
   const gateway = getOptionalOpenAIGateway();
   const state = moderatorStateSchema.parse(structuredClone(input.state));
-  const fastPath = sourceDiscussionFastPath(state, input.participantMessage, input.isResumeCue);
+  const navigationFastPath = input.isResumeCue ? sourceDiscussionFastPath(state, input.participantMessage, true) : null;
+  // Navigation advances past an unanswered reaction; it is never research
+  // evidence. Keep the skipped state durable so a later turn cannot re-ask it.
+  const navigationSkippedPriorityIds = input.isResumeCue ? state.priorities.filter(p =>
+    state.sourceDiscussion ? ["pending", "presented"].includes(p.status) : p.id === state.activePriorityId && p.status === "presented"
+  ).map(p => p.id) : [];
+  if (navigationSkippedPriorityIds.length) {
+    for (const priority of state.priorities) if (navigationSkippedPriorityIds.includes(priority.id)) priority.status = "skipped";
+    state.activePriorityId = null;
+  }
+  const fastPath = navigationFastPath ?? sourceDiscussionFastPath(state, input.participantMessage, input.isResumeCue);
   if (fastPath) applyParticipantUnderstanding(state, fastPath.understandingUpdate, input.participantMessage);
   const hadOpenPriorities = state.priorities.some((p) => p.status === "pending" || p.status === "presented");
   if (!state.priorities.length && !gateway) return null;
@@ -70,7 +80,7 @@ export async function runModeratorTurn(input: Input) {
   const reactionEvidence = previousActive?.status === "presented" && plan.reactionTargetPriorityId === previousActive.id && !retryRequested && !input.isResumeCue && !legacySourceOnlyTurn
     ? moderatorReactionEvidenceOutsideRequest(input.participantMessage, plan.reactionEvidence, requestForReaction) : [];
   plan = { ...plan, reactionEvidence, reactionTargetPriorityId: reactionEvidence.length ? previousActive!.id : null, reactionStatus: reactionEvidence.length ? plan.reactionStatus : "not_answered" };
-  if (plan.newPriorities.length === 0 && ((!hadOpenPriorities && !state.sourceDiscussion) || state.priorities.length === 0)) {
+  if (!navigationSkippedPriorityIds.length && plan.newPriorities.length === 0 && ((!hadOpenPriorities && !state.sourceDiscussion) || state.priorities.length === 0)) {
     if (!plan.sourceRequest) return null;
     // The legacy guide orchestrator owns the exact return target outside a
     // priority agenda. Return the recovered request instead of losing it or
@@ -202,5 +212,5 @@ export async function runModeratorTurn(input: Input) {
       } else { action = "resume_guide"; state.activePriorityId = null; }
     }
   }
-  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, recoveredSourceRequest: null, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerFailures, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding, sourceOutcome: sourcePlanning.outcome ?? null } };
+  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, recoveredSourceRequest: null, decision: { plan, action, selectedPriorityId: state.activePriorityId, navigationSkippedPriorityIds, plannerError, plannerAttempts, plannerErrors, plannerFailures, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding, sourceOutcome: sourcePlanning.outcome ?? null } };
 }

@@ -107,6 +107,17 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("advances past an unanswered displayed reaction without a planning call or invented answer", async () => {
+    const first = await presentAgenda(surveySlug);
+    const state = structuredClone(first.state);
+    state.priorities = [state.priorities[0]];
+    mocks.plan.mockClear(); mocks.phrase.mockClear(); mocks.source.mockClear();
+    const resumed = await runModeratorTurn(inputFor(surveySlug, { state, participantMessage: "continue", isPriorityQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
+    expect(resumed?.decision).toMatchObject({ action: "resume_guide", plannerAttempts: 0, navigationSkippedPriorityIds: [state.priorities[0].id] });
+    expect(resumed?.state.priorities[0]).toMatchObject({ status: "skipped", reactionEvidence: [], probeCount: 0 });
+    expect(resumed?.question).toBeNull();
+    expect(mocks.plan).not.toHaveBeenCalled(); expect(mocks.source).not.toHaveBeenCalled(); expect(mocks.phrase).not.toHaveBeenCalled();
+  });
   it.each(["PFS", "DDI"])("keeps a DDI detour opinion separate from the active %s research question across restart and resume", async (activeTopic) => {
     const first = await presentAgenda(surveySlug);
     const state = structuredClone(first.state);
@@ -130,9 +141,9 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     const resumed = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(detour!.state), participantMessage: "Thanks, continue.", isPriorityQuestion: false, sourceRequest: null, asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
     expect(mocks.source).not.toHaveBeenCalled();
     if (activeTopic === "PFS") {
-      expect(resumed?.state.activePriorityId).toBe(pfs.id);
-      expect(resumed?.question).toContain("PFS");
-      expect(resumed?.state.priorities[1].status).toBe("pending");
+      expect(resumed?.state.activePriorityId).toBeNull();
+      expect(resumed?.question).toBeNull();
+      expect(resumed?.state.priorities.map(p => p.status)).toEqual(["skipped", "skipped"]);
     } else expect(resumed?.decision.action).toBe("resume_guide");
   });
 
@@ -165,7 +176,8 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     mocks.source.mockClear();
     const resumed = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(retried!.state), participantMessage: "Thanks, continue.", isPriorityQuestion: false, asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
     expect(resumed?.decision.plannerAttempts).toBe(0);
-    expect(resumed?.state.priorities).toEqual(state.priorities);
+    expect(resumed?.state.priorities.map(p => p.status)).toEqual(["skipped", "skipped"]);
+    expect(resumed?.state.priorities.every(p => p.reactionEvidence.length === 0)).toBe(true);
     expect(resumed?.state.sourceDiscussion).toBeUndefined();
     expect(mocks.source).not.toHaveBeenCalled();
     expect(mocks.plan).not.toHaveBeenCalled();
@@ -288,7 +300,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(first.state.priorities[0].evidencePacket).toEqual(oldPacket);
   });
 
-  it("credits a separate mixed-turn reaction even when upstream says not_answered, then resumes the next priority", async () => {
+  it("preserves a mixed-turn reaction while explicit survey return skips remaining priorities", async () => {
     const first = await presentAgenda(surveySlug);
     const reaction = "It's something I need to track but not terribly concerning.";
     const question = "So someone on those medications is at risk for what adverse reactions";
@@ -300,8 +312,9 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(detour?.decision.plan.reactionStatus).toBe("answered");
     mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest: null, action: "present_priority", selectedPriorityId: first.state.priorities[1].id }) });
     const resumed = await runModeratorTurn(inputFor(surveySlug, { state: detour!.state, participantMessage: "Thanks, continue.", isPriorityQuestion: false, sourceRequest: null, asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
-    expect(resumed?.state.priorities[1].status).toBe("presented");
-    expect(resumed?.state.activePriorityId).toBe(first.state.priorities[1].id);
+    expect(resumed?.state.priorities[0]).toMatchObject({ status: "reacted", reactionEvidence: [reaction] });
+    expect(resumed?.state.priorities[1].status).toBe("skipped");
+    expect(resumed?.state.activePriorityId).toBeNull();
   });
 
   it("rejects overlapping request text as reaction credit even if upstream and planner both say answered", async () => {
@@ -339,10 +352,11 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ participantMessage: "What else does that evidence say?", sourceTopicContext: active.sourceQuestion, evidencePacket: active.evidencePacket });
     expect(retried?.content).not.toContain('say "continue"');
     const resumed = await runModeratorTurn(inputFor(surveySlug, { state: retried!.state, isPriorityQuestion: false, participantMessage: "continue", asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
-    expect(resumed?.state.activePriorityId).toBe(active.id);
+    expect(resumed?.state.activePriorityId).toBeNull();
     expect(resumed?.state.priorities[0].probeCount).toBe(0);
     expect(resumed?.state.sourceDiscussion).toBeUndefined();
-    expect(resumed?.question).toContain("PFS");
+    expect(resumed?.question).toBeNull();
+    expect(resumed?.state.priorities.map(p => p.status)).toEqual(["skipped", "skipped"]);
   });
   it.each(["schema", "evidence"])("retries one invalid planner %s result without duplicate state changes or source calls", async (failure) => {
     const first = await presentAgenda(surveySlug);
@@ -375,7 +389,6 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     { content: "That evidence would increase my confidence in choosing it for appropriate patients.", answerStatus: "answered" as const, asksSourceQuestion: false, isResumeCue: false, probes: 1 },
     { content: "CYP3A4 inducers", answerStatus: "answered" as const, asksSourceQuestion: false, isResumeCue: false, probes: 1 },
     { content: "Can you explain that more simply?", answerStatus: "not_answered" as const, asksSourceQuestion: true, isResumeCue: false, probes: 0 },
-    { content: "continue", answerStatus: "not_answered" as const, asksSourceQuestion: false, isResumeCue: true, probes: 0 },
   ])("preserves conservative answer credit after both planner attempts fail: $content", async ({ content, answerStatus, asksSourceQuestion, isResumeCue, probes }) => {
     const first = await presentAgenda(surveySlug);
     mocks.plan.mockClear();
@@ -439,7 +452,7 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.phrase).toHaveBeenCalledWith(expect.objectContaining({ action: "transition", priorityLabel: "DDI", previousPriorityLabel: "PFS" }));
   });
 
-  it("preserves an unanswered reaction through a source-question detour and navigation back", async () => {
+  it("returns to the guide after a detour without re-asking or crediting unanswered reactions", async () => {
     const first = await presentAgenda(surveySlug);
     const question = "Does that evidence include older people?";
     mocks.plan.mockResolvedValueOnce({ result: planned({ action: "answer_source", selectedPriorityId: first.state.activePriorityId }) });
@@ -460,10 +473,11 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       state: detour!.state, currentQuestion: first.question, participantMessage: "Thanks, continue.",
       isPriorityQuestion: false, answerStatus: "not_answered", isResumeCue: true,
     }));
-    expect(resumed?.state).toEqual(first.state);
-    expect(resumed?.question).toBe(first.question);
+    expect(resumed?.decision.action).toBe("resume_guide");
+    expect(resumed?.decision.navigationSkippedPriorityIds).toEqual(first.state.priorities.map(p => p.id));
+    expect(resumed?.question).toBeNull();
     expect(resumed?.state.priorities[0].reactionEvidence).toEqual([]);
-    expect(resumed?.state.priorities[1].status).toBe("pending");
+    expect(resumed?.state.priorities.map(p => p.status)).toEqual(["skipped", "skipped"]);
     expect(mocks.source).not.toHaveBeenCalled();
   });
 
@@ -590,9 +604,10 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       state: followup!.state, currentQuestion: first.question, participantMessage: "continue",
       isPriorityQuestion: false, isResumeCue: true, answerStatus: "not_answered",
     }));
-    expect(resumed?.state).toMatchObject(first.state);
+    expect(resumed?.state.priorities.map(p => p.status)).toEqual(["skipped", "skipped"]);
+    expect(resumed?.state.priorities[0].evidencePacket).toEqual(first.state.priorities[0].evidencePacket);
     expect(resumed?.state.understanding).toMatchObject({ preferredDepth: "brief", depthPreferenceExplicit: true, participantEvidence: ["Can you explain that more simply?"] });
-    expect(resumed?.question).toBe(first.question);
+    expect(resumed?.question).toBeNull();
     expect(resumed?.state).not.toHaveProperty("sourceDiscussion");
     expect(mocks.source).not.toHaveBeenCalled();
   });

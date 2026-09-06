@@ -123,6 +123,25 @@ describe("moderator controller integration", () => {
     }
   });
 
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("persists skipped reactions when %s returns from a DDI detour after restart", async surveySlug => {
+    const started = startMvpCustomGptSurvey({ surveySlug, targetDurationSeconds: 600, guide });
+    const turn = (content: string) => submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content });
+    await turn("PFS and DDI");
+    const question = "What drug interactions should I consider?";
+    const detour = await turn(question);
+    const parked = auditFor(question).session;
+    mocks.load.mockResolvedValueOnce({ session: structuredClone(parked), messages: structuredClone(detour.messages), turnCount: detour.turnCount });
+    resetMvpCustomGptSurveySessions();
+    mocks.source.mockClear(); mocks.plan.mockClear();
+    const resumed = await turn("Thanks, continue.");
+    const saved = auditFor("Thanks, continue.").session;
+    expect(resumed.currentQuestion).toBe(guide[1]);
+    expect(saved.moderatorState.priorities.map((p: { status: string }) => p.status)).toEqual(["skipped", "skipped"]);
+    expect(saved.moderatorState.sourceDiscussion).toBeUndefined();
+    for (const priority of parked.moderatorState.priorities) expect(saved.answeredQuestionIds).not.toContain(`moderator-reaction:${priority.id}`);
+    expect(mocks.source).not.toHaveBeenCalled(); expect(mocks.plan).not.toHaveBeenCalled();
+  });
+
   it.each((["nubeqa", "brukinsa", "padcev"] as const).flatMap((surveySlug) => [
     { surveySlug, router: "deterministic" as const }, { surveySlug, router: "openai_hybrid" as const },
   ]))("handles the exact mixed reaction and adverse-reaction question for $surveySlug ($router)", async ({ surveySlug, router }) => {
@@ -242,11 +261,6 @@ describe("moderator controller integration", () => {
       expect(auditFor(sourceQuestion).session.answeredQuestionIds).not.toContain(firstQuestionId);
       expect(auditFor(sourceQuestion).session.moderatorState.activePriorityId).toBe(priorities[0].id);
 
-      const resumed = await turn("Thanks, continue.");
-      expect(resumed.currentQuestion).toBe(first.currentQuestion);
-      expect(resumed.messages.at(-1)?.content).toBe(first.currentQuestion);
-      expect(auditFor("Thanks, continue.").session.answeredQuestionIds).not.toContain(firstQuestionId);
-
       const second = await turn(firstReaction);
       const secondAudit = auditFor(firstReaction);
       expect(secondAudit.session.currentQuestionId).toBe(secondQuestionId);
@@ -268,9 +282,6 @@ describe("moderator controller integration", () => {
         sourceTopicContext: priorities[1].sourceQuestion,
         responseMode: "answer_only",
       });
-      const returnedToDdi = await turn("continue");
-      expect(returnedToDdi.currentQuestion).toBe(second.currentQuestion);
-
       const returned = await turn(secondReaction);
       const completedAudit = auditFor(secondReaction);
       expect(completedAudit.session.answeredQuestionIds).toContain(secondQuestionId);
