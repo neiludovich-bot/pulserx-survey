@@ -29,5 +29,5 @@ export const websiteAnswerModelResultSchema = sourceEvidenceSpanSelectionModelRe
 }).strict();
 export type WebsiteAnswerModelResult = z.infer<typeof websiteAnswerModelResultSchema>;
 export const websiteAnswerInputSchema = sourceEvidenceSpansInputSchema.extend({
-  repairFeedback: z.enum(["invalid_output", "unsupported_number", "too_verbose"]).nullable(),
+  repairFeedback: z.enum(["invalid_output", "unsupported_number", "too_verbose", "unrequested_endpoint"]).nullable(),
 }).strict();

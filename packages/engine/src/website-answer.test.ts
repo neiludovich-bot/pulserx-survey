@@ -35,6 +35,12 @@ describe("one-pass website answers", () => {
   it("rejects a fabricated numerical value", () => {
     expect(() => validateWebsiteAnswer(input, { ...output, paragraphs: [{ ...output.paragraphs[0], text: "Study A reported 24 months." }] })).toThrow("unsupported_number");
   });
+  it("rejects unsolicited MFS or OS even when that comparison has source support", () => {
+    const scoped = { ...input, query: "What PFS information is available?", candidates: [{ ...input.candidates[0], text: "Study A reports PFS. Study B reports MFS and overall survival." }] };
+    const comparison = { ...output, paragraphs: [{ text: "Study A reports PFS; Study B reports MFS and overall survival instead.", sourceIds: ["study-a"] }] };
+    expect(() => validateWebsiteAnswer(scoped, comparison)).toThrow("unrequested_endpoint");
+    expect(() => validateWebsiteAnswer({ ...scoped, query: "Compare PFS and MFS with overall survival." }, comparison)).not.toThrow();
+  });
   it("cannot convert no evidence into a fabricated answer", () => {
     expect(() => validateWebsiteAnswer(input, { ...output, unavailableReason: "not_in_sources" })).toThrow();
     expect(validateWebsiteAnswer(input, { ...output, selections: [], paragraphs: [], unavailableReason: "not_in_sources" }).paragraphs).toEqual([]);

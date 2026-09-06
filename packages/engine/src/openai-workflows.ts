@@ -505,7 +505,7 @@ export class OpenAIResponsesGateway {
 
   async answerFromWebsite(input: ModeratorEvidenceSelectionInput) {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
-    let repairFeedback: "invalid_output" | "unsupported_number" | "too_verbose" | null = null;
+    let repairFeedback: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint" | null = null;
     for (let attempt = 1; attempt <= 2; attempt += 1) {
       const call = await this.runStructuredCall<WebsiteAnswerModelResult>({
         callType: "website_answer", model: this.config.sourceModel ?? this.config.analysisModel,
@@ -517,9 +517,14 @@ export class OpenAIResponsesGateway {
       });
       try { return { ...call, result: validateWebsiteAnswer(parsed, call.result), attempts: attempt }; }
       catch (error) {
-        if (attempt === 2) throw error;
         const feedback = error && typeof error === "object" && "websiteAnswerFeedback" in error ? error.websiteAnswerFeedback : null;
-        repairFeedback = feedback === "unsupported_number" || feedback === "too_verbose" ? feedback : "invalid_output";
+        repairFeedback = feedback === "unsupported_number" || feedback === "too_verbose" || feedback === "unrequested_endpoint" ? feedback : "invalid_output";
+        const selectionErrors = ["Evidence span selection must use a submitted source ID.", "Evidence span range is outside its source or reversed.", "Evidence span range exceeds the 1500-character excerpt bound.", "A single-fact presentation requires at most one selected source.", "Selected assets must be unique and belong to their selected source.", "Evidence selection must use distinct submitted source IDs."];
+        console.warn(JSON.stringify({ event: "website_answer_validation", callGroupId: getModelCallTimingContext()?.callGroupId ?? null,
+          survey_slug: parsed.surveySlug, attempt, feedback: repairFeedback,
+          selectionErrorIndex: error instanceof Error ? selectionErrors.indexOf(error.message) : -1,
+          failure: sanitizeSourceFailure(error, "composition") }));
+        if (attempt === 2) throw error;
       }
     }
     throw new Error("Website answer exceeded its attempt bound.");

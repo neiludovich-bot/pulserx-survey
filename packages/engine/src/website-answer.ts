@@ -2,7 +2,7 @@ import { websiteAnswerModelResultSchema, type ModeratorEvidenceSelectionInput } 
 import { normalizeSourceEvidenceSpanSelection } from "./source-evidence-spans";
 
 const numbers = (text: string) => [...text.matchAll(/(?<![\p{L}\p{N}])\d+(?:[.,]\d+)*(?![\p{L}\p{N}])/gu)].map(match => String(Number(match[0].replace(/,/g, ""))));
-function reject(code: "invalid_output" | "unsupported_number" | "too_verbose") {
+function reject(code: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint") {
   throw Object.assign(new Error(`Website answer validation: ${code}`), { websiteAnswerFeedback: code });
 }
 
@@ -15,6 +15,12 @@ export function validateWebsiteAnswer(input: ModeratorEvidenceSelectionInput, ou
     return { ...result, selections: evidence.selections };
   }
   if (!result.paragraphs.length || !evidence.selections.length) reject("invalid_output");
+  // A PFS-only request does not authorize an unsolicited MFS/OS comparison.
+  // Search expansions and broad page titles cannot widen the participant's ask.
+  const pfs = /\b(?:r?pfs|(?:radiographic[ -])?progression[ -]free survival)\b/i;
+  const otherEndpoints = /\b(?:mfs|os|metastasis[ -]free survival|overall survival)\b/i;
+  const scope = input.presentationContext ? input.sourceTopicContext ?? input.query : input.query;
+  if (pfs.test(scope) && !otherEndpoints.test(scope) && result.paragraphs.some(p => otherEndpoints.test(p.text))) reject("unrequested_endpoint");
   const cited = new Set<string>();
   for (const paragraph of result.paragraphs) {
     if (new Set(paragraph.sourceIds).size !== paragraph.sourceIds.length || /\[\d+\]|https?:\/\//i.test(paragraph.text)) reject("invalid_output");
