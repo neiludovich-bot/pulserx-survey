@@ -15,3 +15,12 @@ export function sourceAssetAnswerEligible(asset: { title: string; description?: 
   const normalized = answer.toLowerCase().replace(/\s+/g, ' ');
   return studies.every(study => normalized.includes(study.toLowerCase().replace(/\s+/g, ' ')));
 }
+
+/** Match the browser's actual image capability; a PDF tagged TABLE is not an image. */
+export function sourceAssetDisplayEligible(asset: { assetKind: string; url: string }) {
+  if (!["CHART", "TABLE", "IMAGE"].includes(asset.assetKind.toUpperCase())) return true;
+  try {
+    const url = new URL(asset.url);
+    return ["https:", "http:"].includes(url.protocol) && /\.(?:png|jpe?g|webp|gif|svg)$/i.test(url.pathname);
+  } catch { return false; }
+}

@@ -12,7 +12,7 @@ import { stripQuestionSentences } from "./source-answer-sentences";
 import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 import { recoverSelectedSourceExcerpt } from "./source-extractive-recovery";
 import { sourceContentSearchSql, sourceContentSearchTerms } from "./source-retrieval-query";
-import { sourceAssetMeasureEligible } from "./source-asset-measure";
+import { sourceAssetMeasureEligible, sourceAssetDisplayEligible } from "./source-asset-measure";
 import { planSourceQuestion } from "./source-question-planner";
 import { answerFromWebsite, renderWebsiteAnswer } from "./website-answer-service";
 import { sourceTurnOutcome } from "./source-turn-outcome";
@@ -1379,7 +1379,7 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
       assets: rankAssets(source.assets ?? [], assetTerms, contextAssetTerms).slice(0, 3),
     })),
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
-  ].slice(0, 24).map(source => ({ ...source, assets: source.assets?.filter(asset => sourceAssetMeasureEligible(asset, input.participantMessage)) }));
+  ].slice(0, 24).map(source => ({ ...source, assets: source.assets?.filter(asset => sourceAssetDisplayEligible(asset) && sourceAssetMeasureEligible(asset, input.participantMessage)) }));
 }
 
 const retrieveChunks = retrieveWebsiteCandidates;

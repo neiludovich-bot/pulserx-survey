@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { sourceAssetMeasureEligible, sourceAssetAnswerEligible } from "./source-asset-measure";
+import { sourceAssetMeasureEligible, sourceAssetAnswerEligible, sourceAssetDisplayEligible } from "./source-asset-measure";
 
 describe('figure measure eligibility across bots', () => {
+  it('does not offer PDF documents mislabeled as visual tables', () => {
+    expect(sourceAssetDisplayEligible({ assetKind: 'TABLE', url: 'https://example.com/guide.pdf' })).toBe(false);
+    expect(sourceAssetDisplayEligible({ assetKind: 'TABLE', url: 'https://example.com/figure.svg?v=1' })).toBe(true);
+    expect(sourceAssetDisplayEligible({ assetKind: 'PDF', url: 'https://example.com/guide.pdf' })).toBe(true);
+  });
   const exposure = { title: 'Median durations of exposure to treatment for therapy and comparator' };
   it.each(['NUBEQA', 'BRUKINSA', 'PADCEV'])('does not use exposure duration to illustrate %s side effects', brand => {
     expect(sourceAssetMeasureEligible(exposure, `What are the ${brand} side effects?`)).toBe(false);
