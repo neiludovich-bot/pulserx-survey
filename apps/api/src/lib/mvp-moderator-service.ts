@@ -6,6 +6,7 @@ import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-servi
 import { isReferentialClarification } from "./controlled-rag-service";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
 import { presentationFor } from "./mvp-presentation";
+import { sanitizeModeratorPlanningFailure } from "./synthetic-moderator-diagnostics";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
 type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string };
@@ -22,6 +23,7 @@ export async function runModeratorTurn(input: Input) {
   let plannerError: string | null = null;
   let plannerAttempts = 0;
   const plannerErrors: string[] = [];
+  const plannerFailures: ReturnType<typeof sanitizeModeratorPlanningFailure>[] = [];
   // Retry the typed planning boundary once before mutating state or calling
   // the source/phrasing providers. Invalid output must not consume a probe.
   while (gateway && plannerAttempts < 2 && plan === null) {
@@ -32,6 +34,7 @@ export async function runModeratorTurn(input: Input) {
       if (candidate.newPriorities.some((p) => !input.participantMessage.includes(p.participantEvidence)) || candidate.reactionEvidence.some((e) => !input.participantMessage.includes(e))) throw new Error("Moderator evidence must be an exact participant excerpt.");
       plan = candidate;
     } catch (error) {
+      plannerFailures.push(sanitizeModeratorPlanningFailure(error));
       plannerErrors.push(error instanceof Error ? error.message : "Moderator planning failed.");
     }
   }
@@ -58,7 +61,7 @@ export async function runModeratorTurn(input: Input) {
     // priority agenda. Return the recovered request instead of losing it or
     // manufacturing an agenda entry solely to answer a participant question.
     return { state, content: null, question: null, references: [] as GroundedReference[], sourceUsed: false, creditOriginalAnswer: false,
-      recoveredSourceRequest: plan.sourceRequest, decision: { plan, action: "answer_source", selectedPriorityId: null, plannerError, plannerAttempts, plannerErrors, plannerRecovered } };
+      recoveredSourceRequest: plan.sourceRequest, decision: { plan, action: "answer_source", selectedPriorityId: null, plannerError, plannerAttempts, plannerErrors, plannerFailures, plannerRecovered } };
   }
   for (const priority of plan.newPriorities) {
     if (state.priorities.length >= 64) break;
@@ -179,5 +182,5 @@ export async function runModeratorTurn(input: Input) {
       } else { action = "resume_guide"; state.activePriorityId = null; }
     }
   }
-  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, recoveredSourceRequest: null, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding, sourceOutcome: sourcePlanning.outcome ?? null } };
+  return { state: moderatorStateSchema.parse(state), content, question, references, sourceUsed, creditOriginalAnswer, recoveredSourceRequest: null, decision: { plan, action, selectedPriorityId: state.activePriorityId, plannerError, plannerAttempts, plannerErrors, plannerFailures, plannerRecovered, sourceReason, sourceQuestionPlan: sourcePlanning.plan, sourceAnswerGrounding: sourcePlanning.grounding, sourceOutcome: sourcePlanning.outcome ?? null } };
 }

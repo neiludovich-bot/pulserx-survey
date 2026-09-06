@@ -37,7 +37,7 @@ const sourceTurnAttemptSchema = z.object({
   responseId: z.string().nullable(),
   model: z.string().nullable(),
 }).strict();
-const outcomeFields = { version: z.literal(1), attempts: z.array(sourceTurnAttemptSchema).max(4).default([]) };
+const outcomeFields = { version: z.literal(1), attempts: z.array(sourceTurnAttemptSchema).max(5).default([]) };
 export const sourceTurnOutcomeSchema = z.discriminatedUnion("status", [
   z.object({ ...outcomeFields, status: z.literal("success") }).strict(),
   z.object({ ...outcomeFields, status: z.literal("no_evidence") }).strict(),

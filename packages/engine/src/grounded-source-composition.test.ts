@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../prompts/src/index"));
-import { controlledRagCompositionInputSchema } from "@interview/schemas";
+import { controlledRagCompositionInputSchema, sourceAnswerGroundingAuditSchema } from "@interview/schemas";
 import { OpenAIResponsesGateway } from "./openai-workflows";
 
 const supported = { version: 1, supported: true, unsupportedClaims: [] };
@@ -15,6 +15,12 @@ const contextual = (practicalAnswer: string, qualification: string | null = null
 const requestInput = (parse: ReturnType<typeof vi.fn>, index: number) => JSON.parse(parse.mock.calls[index][0].input[0].content[0].text);
 
 describe("shared direct and contextual grounding", () => {
+  it("accepts existing grounding audit attempts and the bounded third draft, rejecting a fourth", () => {
+    const audit = { version: 1, status: "supported", model: "fixture", responseId: "fixture-review" };
+    for (const attempt of [1, 2, 3]) expect(sourceAnswerGroundingAuditSchema.safeParse({ ...audit, attempt }).success).toBe(true);
+    expect(sourceAnswerGroundingAuditSchema.safeParse({ ...audit, attempt: 4 }).success).toBe(false);
+  });
+
   it("reviews direct answers, repairs an unsupported absence from its exact draft, and preserves direct output", async () => {
     const rejected = direct("  The label does not name a special toxicity checklist. [1]\n");
     const repaired = direct("With combined P-gp and strong CYP3A4 inhibitors, the label calls for more frequent monitoring for NUBEQA adverse reactions. [1]");
@@ -102,6 +108,65 @@ describe("shared direct and contextual grounding", () => {
     expect(error.contextualCompositionAttempts).toHaveLength(2);
     expect(parse).toHaveBeenCalledTimes(2);
     expect(parse.mock.calls.every(([request]) => request.text.format.name !== "source_grounding_review_result_v1")).toBe(true);
+  });
+
+  it.each(["direct", "contextual"] as const)("gives %s a grounding repair after a word-budget repair without exceeding two reviews", async (mode) => {
+    const long = "The selected source describes one supported finding. ".repeat(4).trim() + " [1]";
+    const unsupported = "Monitor every patient more frequently. [1]";
+    const corrected = "With combined P-gp and strong CYP3A4 inhibitors, monitor NUBEQA adverse reactions more frequently. [1]";
+    const violation = { excerpt: "every patient", reason: "The coadministration condition is missing." };
+    const draft = mode === "direct" ? direct : contextual;
+    const input = controlledRagCompositionInputSchema.parse({ ...base,
+      presentationPlan: { version: 1, purpose: "source_answer", depth: "brief", maxFacts: 2, maxTopics: 1, askReadiness: false, maxWords: 20 },
+      sources: base.sources.map((source) => ({ ...source, evidenceRole: mode })),
+    });
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: draft(long) })
+      .mockResolvedValueOnce({ output_parsed: draft(unsupported) })
+      .mockResolvedValueOnce({ output_parsed: { version: 1, supported: false, unsupportedClaims: [violation] } })
+      .mockResolvedValueOnce({ output_parsed: draft(corrected) })
+      .mockResolvedValueOnce({ output_parsed: supported });
+    const result = await gatewayFor(parse).composeControlledRagAnswer(input);
+    expect(result.result.answerBody).toBe(corrected);
+    expect(result.groundingReview.attempt).toBe(3);
+    expect(result.contextualCompositionAttempts.map((attempt) => attempt.failure?.code ?? null)).toEqual(["word_budget_exceeded", "unsupported_claims", null]);
+    expect(requestInput(parse, 1).previousDraft).toEqual({ practicalAnswer: long, qualification: null });
+    expect(requestInput(parse, 3).previousDraft).toEqual({ practicalAnswer: unsupported, qualification: null });
+    expect(requestInput(parse, 3).groundingViolations).toEqual([violation]);
+    for (const index of [2, 4]) {
+      expect(requestInput(parse, index).sources).toEqual(input.sources.map(({ index, text }) => ({ index, text })));
+    }
+    expect(parse).toHaveBeenCalledTimes(5);
+  });
+
+  it("allows one format correction after grounding rejection and still reviews the final exact draft", async () => {
+    const unsupported = "Monitor every patient more frequently. [1]";
+    const long = "The selected source describes one supported finding. ".repeat(4).trim() + " [1]";
+    const corrected = "With combined P-gp and strong CYP3A4 inhibitors, monitor NUBEQA adverse reactions more frequently. [1]";
+    const violation = { excerpt: "every patient", reason: "The coadministration condition is missing." };
+    const input = controlledRagCompositionInputSchema.parse({ ...base, presentationPlan: { version: 1, purpose: "source_answer", depth: "brief", maxFacts: 2, maxTopics: 1, askReadiness: false, maxWords: 20 } });
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: direct(unsupported) })
+      .mockResolvedValueOnce({ output_parsed: { version: 1, supported: false, unsupportedClaims: [violation] } })
+      .mockResolvedValueOnce({ output_parsed: direct(long) })
+      .mockResolvedValueOnce({ output_parsed: direct(corrected) }).mockResolvedValueOnce({ output_parsed: supported });
+    const result = await gatewayFor(parse).composeControlledRagAnswer(input);
+    expect(result.groundingReview.attempt).toBe(3);
+    expect(requestInput(parse, 3).previousDraft).toEqual({ practicalAnswer: long, qualification: null });
+    expect(requestInput(parse, 4).draft).toEqual({ practicalAnswer: corrected, qualification: null });
+    expect(parse).toHaveBeenCalledTimes(5);
+  });
+
+  it("stops after two rejected reviews even when a formatting failure preceded them", async () => {
+    const long = "The selected source describes one supported finding. ".repeat(4).trim() + " [1]";
+    const unsupported = "Monitor every patient more frequently. [1]";
+    const review = { version: 1, supported: false, unsupportedClaims: [{ excerpt: "every patient", reason: "The coadministration condition is missing." }] };
+    const input = controlledRagCompositionInputSchema.parse({ ...base, presentationPlan: { version: 1, purpose: "source_answer", depth: "brief", maxFacts: 2, maxTopics: 1, askReadiness: false, maxWords: 20 } });
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: direct(long) })
+      .mockResolvedValueOnce({ output_parsed: direct(unsupported) }).mockResolvedValueOnce({ output_parsed: review })
+      .mockResolvedValueOnce({ output_parsed: direct(unsupported) }).mockResolvedValueOnce({ output_parsed: review });
+    const error = await gatewayFor(parse).composeControlledRagAnswer(input).catch((error) => error);
+    expect(error.contextualCompositionAttempts).toHaveLength(3);
+    expect(error.contextualCompositionAttempts.filter((attempt: { groundingTrace?: unknown }) => attempt.groundingTrace)).toHaveLength(2);
+    expect(parse).toHaveBeenCalledTimes(5);
   });
 
   it("does not count standalone citation markers against a direct word budget", async () => {

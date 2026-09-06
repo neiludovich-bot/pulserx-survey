@@ -269,7 +269,11 @@ export class OpenAIResponsesGateway {
     const attempts: Array<{ trace?: OpenAIDebugTrace; groundingTrace?: OpenAIDebugTrace; error: string | null; failure?: SourceFailureMetadata }> = [];
     let groundingViolations: SourceGroundingReviewResult["unsupportedClaims"] = [];
     let previousDraft: Pick<ControlledRagContextualCompositionResult, "practicalAnswer" | "qualification"> | undefined;
-    for (let attempt = 1; attempt <= 2; attempt += 1) {
+    let compositionFailures = 0;
+    let groundingReviews = 0;
+    // A formatting correction must not consume the first grounded draft's repair.
+    // Each stage gets at most one repair, with three drafts and two reviews total.
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
       let trace: OpenAIDebugTrace | undefined;
       let groundingTrace: OpenAIDebugTrace | undefined;
       let failureStage: SourceFailureMetadata["stage"] = "composition";
@@ -282,7 +286,7 @@ export class OpenAIResponsesGateway {
           schema: contextual ? controlledRagContextualCompositionResultSchema : controlledRagCompositionModelResultSchema,
           instructions: [
             ...prompt.instructions,
-            ...(attempt === 2 ? prompt.repairInstructions : []),
+            ...(attempt > 1 ? prompt.repairInstructions : []),
           ],
           input: contextualSourceCompositionInputSchema.parse({ ...input, groundingViolations, ...(previousDraft ? { previousDraft } : {}) }),
           metadata: { survey_slug: input.surveySlug, composition_attempt: String(attempt) },
@@ -318,6 +322,7 @@ export class OpenAIResponsesGateway {
         }
         if (reviewedText.includes("?")) throw new Error("Source composition cannot append a question.");
         failureStage = "grounding";
+        groundingReviews += 1;
         const review = await this.runStructuredCall<SourceGroundingReviewResult>({
           callType: "source_grounding_review",
           model: this.config.sourceModel ?? this.config.phrasingModel,
@@ -348,7 +353,8 @@ export class OpenAIResponsesGateway {
         const failure = sanitizeSourceFailure(error, failureStage);
         attempts.push({ trace, groundingTrace, error: failure.code, failure });
         const recoverable = trace || (error instanceof Error && (error.name === "ZodError" || message.includes("returned no parsed output")));
-        if (!recoverable || attempt === 2) {
+        if (failureStage === "composition") compositionFailures += 1;
+        if (!recoverable || attempt === 3 || compositionFailures >= 2 || groundingReviews >= 2) {
           throw Object.assign(error instanceof Error ? error : new Error(message), { contextualCompositionAttempts: attempts });
         }
       }

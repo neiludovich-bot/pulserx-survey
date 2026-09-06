@@ -238,6 +238,8 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
     expect(mocks.plan.mock.calls[0][0]).toEqual(mocks.plan.mock.calls[1][0]);
     expect(recovered?.decision).toMatchObject({ plannerAttempts: 2, plannerRecovered: true, plannerError: null });
     expect(recovered?.decision.plannerErrors).toHaveLength(1);
+    expect(recovered?.decision.plannerFailures).toEqual([expect.objectContaining({ code: failure === "schema" ? "invalid_schema" : "invalid_reaction_excerpt", status: null })]);
+    expect(JSON.stringify(recovered?.decision.plannerFailures)).not.toContain("fabricated");
     expect(recovered?.state.priorities[0]).toMatchObject({ status: "reacted", reactionEvidence: [reaction], probeCount: 0 });
     expect(recovered?.state.priorities[1].status).toBe("presented");
     expect(mocks.source).toHaveBeenCalledTimes(1);

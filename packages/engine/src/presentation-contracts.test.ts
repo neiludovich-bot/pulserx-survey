@@ -107,7 +107,8 @@ describe("presentation and understanding contracts", () => {
     expect(sourceTurnOutcomeSchema.parse({ version: 1, status: "success" })).toEqual({ version: 1, status: "success", attempts: [] });
     const attempt = { stage: "grounding", code: "unsupported_claim", responseId: null, model: "test" };
     expect(sourceTurnOutcomeSchema.parse({ version: 1, status: "grounding_rejected", attempts: [attempt] }).attempts).toEqual([attempt]);
-    expect(() => sourceTurnOutcomeSchema.parse({ version: 1, status: "grounding_rejected", attempts: Array(5).fill(attempt) })).toThrow();
+    expect(sourceTurnOutcomeSchema.parse({ version: 1, status: "grounding_rejected", attempts: Array(5).fill(attempt) }).attempts).toHaveLength(5);
+    expect(() => sourceTurnOutcomeSchema.parse({ version: 1, status: "grounding_rejected", attempts: Array(6).fill(attempt) })).toThrow();
     expect(() => sourceTurnOutcomeSchema.parse({ version: 1, status: "composition_failure", participantMessage: "raw transcript", attempts: [] })).toThrow();
   });
 

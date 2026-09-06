@@ -13,7 +13,7 @@ export function logSyntheticGroundingDiagnostics(surveyContext: string, error: u
   try {
     const entries = record(error).contextualCompositionAttempts;
     if (!Array.isArray(entries)) return;
-    const failures = entries.slice(-2).flatMap((entry: unknown) => {
+    const failures = entries.slice(-3).flatMap((entry: unknown) => {
       const attempt = record(entry);
       if (!attempt.failure || typeof attempt.failure !== "object") return [];
       const failure = sanitizeSourceFailure(attempt.failure, record(attempt.failure).stage === "grounding" ? "grounding" : "composition");

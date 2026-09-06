@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { logSyntheticModeratorDecision } from "./synthetic-moderator-diagnostics";
+import { logSyntheticModeratorDecision, sanitizeModeratorPlanningFailure } from "./synthetic-moderator-diagnostics";
 
 const reaction = "PRIVATE REACTION.";
 const question = "PRIVATE QUESTION?";
@@ -34,5 +34,18 @@ describe("synthetic-only moderator decisions", () => {
   it("never changes delivery if diagnostic logging fails", () => {
     vi.spyOn(console, "warn").mockImplementation(() => { throw new Error("logging failed"); });
     expect(() => logSyntheticModeratorDecision(input)).not.toThrow();
+  });
+  it("retains safe validation categories and schema paths without provider or participant text", () => {
+    const local = sanitizeModeratorPlanningFailure(new Error("A participant source question must retain its source-answer action."));
+    expect(local.code).toBe("lost_source_action");
+    expect(sanitizeModeratorPlanningFailure(local)).toEqual(local);
+    const invalid = sanitizeModeratorPlanningFailure({ name: "ZodError", message: "PRIVATE OUTPUT", issues: [{ code: "invalid_type", path: ["sourceRequest", "participantEvidence", "PRIVATE KEY", 1], received: "PRIVATE VALUE", message: "PRIVATE VALIDATION" }] });
+    expect(invalid).toMatchObject({ code: "invalid_schema", errorName: "ZodError", issues: [{ code: "invalid_type", path: ["sourceRequest", "participantEvidence", "[unknown]", "[]"] }] });
+    expect(sanitizeModeratorPlanningFailure(invalid)).toEqual(invalid);
+    const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+    logSyntheticModeratorDecision({ ...input, moderatorDecision: { ...(input.moderatorDecision as object), plannerFailures: [local, invalid] } });
+    const event = JSON.parse(log.mock.calls[0]![0]);
+    expect(event.moderator.plannerFailures.map((failure: { code: string }) => failure.code)).toEqual(["lost_source_action", "invalid_schema"]);
+    expect(JSON.stringify(event)).not.toContain("PRIVATE");
   });
 });

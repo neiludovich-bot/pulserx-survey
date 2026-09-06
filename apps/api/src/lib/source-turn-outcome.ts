@@ -24,7 +24,7 @@ function traceAttempt(trace: unknown, stage: "composition" | "grounding", code: 
 
 export function sourceTurnOutcome(status: SourceTurnOutcome["status"], value?: unknown): SourceTurnOutcome {
   const input = record(value);
-  const entries = Array.isArray(input.contextualCompositionAttempts) ? input.contextualCompositionAttempts.slice(-2) : [];
+  const entries = Array.isArray(input.contextualCompositionAttempts) ? input.contextualCompositionAttempts.slice(-3) : [];
   const attempts = entries.flatMap((entry: unknown) => {
     const attempt = record(entry);
     const failure = attempt.failure ? sanitizeSourceFailure(attempt.failure, record(attempt.failure).stage === "grounding" ? "grounding" : "composition") : null;

@@ -2,6 +2,17 @@ import { describe, expect, it } from "vitest";
 import { sourceTurnOutcome } from "./source-turn-outcome";
 
 describe("source outcome audit", () => {
+  it("preserves the format correction and both grounding reviews in a successful repair", () => {
+    const trace = (id: string) => ({ response: { id, model: "source-model" } });
+    const result = sourceTurnOutcome("success", { contextualCompositionAttempts: [
+      { trace: trace("long"), failure: { stage: "composition", code: "word_budget_exceeded" } },
+      { trace: trace("short"), groundingTrace: trace("rejected"), failure: { stage: "grounding", code: "unsupported_claims" } },
+      { trace: trace("repaired"), groundingTrace: trace("supported"), error: null },
+    ] });
+    expect(result.status).toBe("success");
+    expect(result.attempts.map(({ responseId }) => responseId)).toEqual(["long", "short", "rejected", "repaired", "supported"]);
+    expect(result.attempts.map(({ code }) => code)).toEqual(["word_budget_exceeded", "composed", "unsupported_claims", "composed", "supported"]);
+  });
   it("retains failures after composition when the reviewer has no trace, then a provider failure without any trace", () => {
     const outcome = sourceTurnOutcome("composition_failure", { contextualCompositionAttempts: [
       { trace: { response: { id: "composition-id", model: "source-model" } }, error: "PRIVATE", failure: { stage: "grounding", errorName: "ZodError", status: null, issues: [{ code: "invalid_type", path: ["supported"], received: "PRIVATE" }] } },

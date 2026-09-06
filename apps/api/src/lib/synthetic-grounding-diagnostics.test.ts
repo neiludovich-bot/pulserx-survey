@@ -16,6 +16,17 @@ function attempt(id = "review-id") {
 }
 
 describe("synthetic-only grounding diagnostics", () => {
+  it("retains all three bounded failure categories without retaining raw errors", () => {
+    const log = vi.spyOn(console, "warn").mockImplementation(() => {});
+    logSyntheticGroundingDiagnostics(context, { contextualCompositionAttempts: [
+      { failure: { stage: "composition", code: "word_budget_exceeded" }, error: "PRIVATE" },
+      { failure: { stage: "grounding", code: "unsupported_claims" }, error: "PRIVATE" },
+      { failure: { stage: "grounding", code: "unsupported_claims" }, error: "PRIVATE" },
+    ] });
+    const logged = JSON.parse(log.mock.calls[0][0]);
+    expect(logged.attempts.map((item: { code: string }) => item.code)).toEqual(["word_budget_exceeded", "unsupported_claims", "unsupported_claims"]);
+    expect(log.mock.calls[0][0]).not.toContain("PRIVATE");
+  });
   it("logs safe validation/provider failures without a rejected grounding trace, only for synthetic QA", () => {
     const log = vi.spyOn(console, "warn").mockImplementation(() => {});
     const error = { contextualCompositionAttempts: [

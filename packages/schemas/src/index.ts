@@ -288,7 +288,7 @@ export type SourceGroundingReviewResult = z.infer<typeof sourceGroundingReviewRe
 export const sourceAnswerGroundingAuditSchema = z.object({
   version: z.literal(1),
   status: z.literal("supported"),
-  attempt: z.number().int().min(1).max(2),
+  attempt: z.number().int().min(1).max(3),
   model: z.string().nullable(),
   responseId: z.string().nullable(),
 }).strict();
