@@ -6,7 +6,8 @@ import { getOptionalOpenAIGateway } from "./model-gateway";
 import { askSourceProviderForSurveyInterviewerTurn } from "./source-answer-service";
 import { isReferentialClarification } from "./controlled-rag-service";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
-import { presentationFor } from "./mvp-presentation";
+import { presentationFor, applyParticipantUnderstanding } from "./mvp-presentation";
+import { sourceDiscussionFastPath } from "./mvp-source-fast-path";
 import { sanitizeModeratorPlanningFailure } from "./synthetic-moderator-diagnostics";
 import { prioritySourceLabel, prioritySourceQuestion } from "./mvp-priority-source-scope";
 
@@ -18,10 +19,12 @@ export async function runModeratorTurn(input: Input) {
   if (input.sourceRequest !== undefined) input = { ...input, asksSourceQuestion: Boolean(input.sourceRequest) };
   const gateway = getOptionalOpenAIGateway();
   const state = moderatorStateSchema.parse(structuredClone(input.state));
+  const fastPath = sourceDiscussionFastPath(state, input.participantMessage, input.isResumeCue);
+  if (fastPath) applyParticipantUnderstanding(state, fastPath.understandingUpdate, input.participantMessage);
   const hadOpenPriorities = state.priorities.some((p) => p.status === "pending" || p.status === "presented");
   if (!state.priorities.length && !gateway) return null;
   const planningInput = moderatorPlanInputSchema.parse({ brand: input.brand, currentQuestion: input.currentQuestion, participantMessage: input.participantMessage, recentTurns: input.recentTurns, state, isPriorityQuestion: input.isPriorityQuestion, asksSourceQuestion: input.asksSourceQuestion, sourceRequest: input.sourceRequest, answerStatus: input.answerStatus, isResumeCue: input.isResumeCue });
-  let plan: ModeratorPlanResult | null = null;
+  let plan: ModeratorPlanResult | null = fastPath?.plan ?? null;
   let plannerError: string | null = null;
   let plannerAttempts = 0;
   const plannerErrors: string[] = [];
@@ -120,10 +123,10 @@ export async function runModeratorTurn(input: Input) {
       return kind === "reaction" ? probeIntent === "first_impression" ? `What is your initial reaction to this information about ${label}?` : `How does this information about ${label} affect your assessment of ${input.brand}?` : `You also mentioned ${label}. Let's look at that next.`;
     }
   };
-  const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket) => {
+  const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket, requestOrigin: "participant" | "selected_priority" = "participant") => {
     sourceUsed = true;
     try {
-      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, presentationPlan: presentationFor(state, "source_answer"), surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, requestOrigin, presentationPlan: presentationFor(state, "source_answer"), surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
       sourcePlanning.plan = answer.sourceQuestionPlan ?? null;
       sourcePlanning.grounding = answer.sourceAnswerGrounding ?? null;
       sourcePlanning.outcome = answer.sourceOutcome;
@@ -172,7 +175,7 @@ export async function runModeratorTurn(input: Input) {
         next.label = prioritySourceLabel(next);
         next.sourceQuestion = prioritySourceQuestion(next, input.brand);
         beginSourceDiscussion(state, next.sourceQuestion, { kind: "priority", id: next.id });
-        const answer = await source(next.sourceQuestion);
+        const answer = await source(next.sourceQuestion, null, undefined, "selected_priority");
         if (answer) {
           delete state.sourceDiscussion;
           next.status = "presented";
@@ -180,8 +183,10 @@ export async function runModeratorTurn(input: Input) {
           if (sourceEvidencePacket) next.evidencePacket = structuredClone(sourceEvidencePacket);
           state.activePriorityId = next.id;
           const acknowledgement = state.priorities.filter((p) => p.status === "pending" || p.id === next.id).map((p) => p.label).join(" and ");
-          const transition = previousActive ? await phrase("transition", next.label) : `You mentioned ${acknowledgement}. Let's start with ${next.label}.`;
-          question = await phrase("reaction", next.label);
+          const [transition, reactionQuestion] = previousActive
+            ? await Promise.all([phrase("transition", next.label), phrase("reaction", next.label)])
+            : [`You mentioned ${acknowledgement}. Let's start with ${next.label}.`, await phrase("reaction", next.label)];
+          question = reactionQuestion;
           content = `${transition}\n\n${answer}\n\n${question}`;
         } else {
           failSourceDiscussion(state, sourceDiscussionFailure(sourcePlanning.outcome, sourceReason ?? "Priority evidence unavailable."));

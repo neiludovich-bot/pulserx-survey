@@ -78,6 +78,21 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s source question pla
     return data;
   }
 
+  it("uses the already selected priority without another interpretation call, while retaining evidence selection and composition", async () => {
+    const { input, ddi } = setup();
+    const question = `What approved evidence about DDI is available for ${surveySlug}?`;
+    mocks.select.mockResolvedValue({ result: { selections: [{ sourceId: ddi.id, supportExcerpt: ddi.text, assetIds: [], evidenceRole: "direct", contribution: "answer" }], rationale: "Answer the selected priority." } });
+    mocks.compose.mockResolvedValue({ result: { answerBody: "Original interaction monitoring excerpt. [1]", usedSourceIndexes: [1] } });
+    const result = await askControlledRagForSurveyInterviewerTurn({ ...input, participantMessage: question, requestOrigin: "selected_priority" });
+    expect(mocks.plan).not.toHaveBeenCalled();
+    expect(mocks.select).toHaveBeenCalledOnce();
+    expect(mocks.compose).toHaveBeenCalledOnce();
+    expect(result.enabled).toBe(true);
+    expect(result.sourceQuestionPlan).toMatchObject({ interpretedQuestion: question, retrievalQueries: [question], answerApproach: "direct", usesSourceContext: false });
+    expect(mocks.select.mock.calls[0][0]).toMatchObject({ query: question, priorSourceIds: [], sourceTopicContext: null });
+    expect(mocks.compose.mock.calls[0][0]).toMatchObject({ resolvedSourceQuestion: question });
+  });
+
   it("plans the screenshot monitoring question with recent context and retrieves complementary original safety evidence", async () => {
     const { input, plan, ddi, safety } = setup();
     const result = await askControlledRagForSurveyInterviewerTurn(input);

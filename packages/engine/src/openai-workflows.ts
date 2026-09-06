@@ -117,6 +117,8 @@ type ResponsesParseResult<T> = {
     input_tokens?: number | null;
     output_tokens?: number | null;
     total_tokens?: number | null;
+    input_tokens_details?: { cached_tokens?: number | null } | null;
+    output_tokens_details?: { reasoning_tokens?: number | null } | null;
   } | null;
   output_parsed?: T;
   [key: string]: unknown;
@@ -136,6 +138,24 @@ type StructuredCallParams<TOutput> = {
   input: unknown;
   metadata?: Record<string, string>;
 };
+
+function logModelCallTiming(input: {
+  callType: CallType; model: string; schemaName: string; metadata?: Record<string, string>;
+  elapsedMs: number; reasoningEffort?: string; response?: ResponsesParseResult<unknown>;
+}) {
+  const counter = (value: unknown) => typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  const candidateSlug = input.metadata?.survey_slug ?? input.metadata?.brand?.toLowerCase();
+  const usage = input.response?.usage;
+  try {
+    console.info(JSON.stringify({ event: "model_call_timing", callType: input.callType, model: input.model,
+      schemaName: input.schemaName, survey_slug: candidateSlug && ["nubeqa", "brukinsa", "padcev"].includes(candidateSlug) ? candidateSlug : null,
+      status: input.response?.output_parsed === undefined ? "failure" : "success", elapsedMs: input.elapsedMs,
+      reasoningEffort: input.reasoningEffort ?? null, inputTokens: counter(usage?.input_tokens),
+      outputTokens: counter(usage?.output_tokens), reasoningTokens: counter(usage?.output_tokens_details?.reasoning_tokens),
+      cachedInputTokens: counter(usage?.input_tokens_details?.cached_tokens),
+    }));
+  } catch { /* Diagnostics must never change a model call's outcome. */ }
+}
 
 function toIsoDate(value?: number | null) {
   if (!value) {
@@ -359,7 +379,7 @@ export class OpenAIResponsesGateway {
               presentationPlan: input.presentationPlan ?? null,
             },
           }),
-          metadata: { composition_attempt: String(attempt) },
+          metadata: { survey_slug: input.surveySlug, composition_attempt: String(attempt) },
         });
         groundingTrace = review.trace;
         const grounding = sourceGroundingReviewResultSchema.parse(review.result);
@@ -488,7 +508,9 @@ export class OpenAIResponsesGateway {
       store: true
     };
 
-    let response: ResponsesParseResult<TOutput>;
+    let response: ResponsesParseResult<TOutput> | undefined;
+    let elapsedMs = 0;
+    const modelStartedAt = performance.now();
     try {
       response = (await this.client.parse(requestPayload)) as ResponsesParseResult<TOutput>;
     } catch (error) {
@@ -498,9 +520,12 @@ export class OpenAIResponsesGateway {
           ...(failure.limitKind ? { limitKind: failure.limitKind } : {}), ...(failure.retryAfter !== null ? { retryAfter: failure.retryAfter } : {}) })); } catch { /* Logging must preserve the provider failure. */ }
       }
       throw error;
+    } finally {
+      elapsedMs = Math.max(0, Math.round(performance.now() - modelStartedAt));
+      logModelCallTiming({ callType, model, schemaName, metadata, elapsedMs, reasoningEffort, response });
     }
 
-    if (response.output_parsed === undefined) {
+    if (response?.output_parsed === undefined) {
       throw new Error(`OpenAI ${callType} call returned no parsed output.`);
     }
 
@@ -508,6 +533,7 @@ export class OpenAIResponsesGateway {
       callType,
       promptVersion,
       requestedAt,
+      elapsedMs,
       request: {
         model,
         schemaName,

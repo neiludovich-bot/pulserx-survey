@@ -17,6 +17,7 @@ import {
   mvpCustomGptSurveyVoiceTurnResponseSchema,
 } from "@interview/schemas";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
+import { sourceDiscussionFastPath } from "./mvp-source-fast-path";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
 import { isReferentialClarification } from "./controlled-rag-service";
 import { applyParticipantUnderstanding, presentationFor } from "./mvp-presentation";
@@ -3218,9 +3219,15 @@ export async function submitMvpCustomGptSurveyTurn(
 
   const participantRequestedStop =
     !fixedFlow && contentLooksLikeSurveyStop(input.content);
+  const sourceFastPath = !fixedFlow && !participantRequestedStop
+    ? sourceDiscussionFastPath(session.moderatorState, input.content, contentLooksLikeReturnToSurveyCue(input.content)) : null;
   // Interpret answers and participant questions independently, before answer
   // rejection or research selection. Medical terms alone are not requests.
-  let participantAnalysis: MvpHybridTurnRouteDecision | null = resumeQuestion || retrySourceRequested
+  let participantAnalysis: MvpHybridTurnRouteDecision | null = sourceFastPath
+    ? { answerStatus: "not_answered", answerEvidence: [], asksSourceQuestion: Boolean(sourceFastPath.plan.sourceRequest), sourceRequest: sourceFastPath.plan.sourceRequest, understandingUpdate: sourceFastPath.understandingUpdate,
+        decision: { kind: sourceFastPath.plan.sourceRequest ? "source_question" : "planned_answer", topic: null, needsSource: Boolean(sourceFastPath.plan.sourceRequest), isOutOfScope: false, isUnanticipated: false, sourceDirective: null, rationale: sourceFastPath.plan.rationale },
+        provider: "deterministic", suggestedQuestionIds: [], modelResult: null, error: null }
+    : resumeQuestion || retrySourceRequested
     ? {
         answerStatus: "not_answered",
         answerEvidence: [],

@@ -2,13 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../prompts/src/index"));
 import { OpenAIResponsesGateway } from "./openai-workflows";
+import { controlledRagCompositionInputSchema } from "../../schemas/src/index";
 
 const plan = { version: 1, interpretedQuestion: "What does the selected study report?", usesSourceContext: false, retrievalQueries: ["study result"], answerApproach: "direct", contextBoundary: "Preserve the study population.", rationale: "A direct study question." };
-const input = { surveySlug: "nubeqa", participantMessage: "What does the study report?", sourceTopicContext: null, recentTurns: [] };
+const input = { surveySlug: "nubeqa" as const, participantMessage: "What does the study report?", sourceTopicContext: null, recentTurns: [] };
 
 describe("explicit reasoning configuration", () => {
   it.each([undefined, "medium"] as const)("separates interpretation from source planning: %s", async (interpretationReasoningEffort) => {
-    const routeInput = { surveySlug: "nubeqa", sourceBrand: "NUBEQA", activeIntentSlug: null, activeIntentLabel: null, activeIntentSteeringRule: null,
+    const routeInput = { surveySlug: "nubeqa" as const, sourceBrand: "NUBEQA", activeIntentSlug: null, activeIntentLabel: null, activeIntentSteeringRule: null,
       currentQuestionId: "familiarity", currentQuestion: "How familiar are you?", currentQuestionObjective: "Product familiarity", currentQuestionKeywords: [], currentQuestionCompletionSignals: [], sourceConversationActive: false,
       participantMessage: "Not very familiar.", recentInterviewerContext: null, candidateQuestions: [{ id: "factors", question: "What matters most?", objective: "Priorities", module: "Baseline", allowedByIntent: true, alreadyAsked: false, routeKeywords: [], sourceContextRequirement: null }] };
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { schemaVersion: 6, sourceRequest: null, answerStatus: "answered", asksSourceQuestion: false, answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false, suggestedQuestionIds: [], sourceDirective: null, rationale: "Explicit familiarity.", understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidenceRanges: [{ startToken: 0, endToken: 2 }] } } })
@@ -40,7 +41,7 @@ describe("explicit reasoning configuration", () => {
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { answerBody: "The source describes a study result. [1]", usedSourceIndexes: [1], limitations: [] } })
       .mockResolvedValueOnce({ output_parsed: { version: 1, supported: true, unsupportedClaims: [] } });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "gpt-5.4-mini", decisionModel: "gpt-5.4-mini", phrasingModel: "gpt-5.4-mini", sourceModel: "gpt-5.4", reasoningEffort: "low", groundingReasoningEffort, compositionReasoningEffort }, undefined, { parse });
-    await gateway.composeControlledRagAnswer({ surveySlug: "nubeqa", participantMessage: "Explain the study.", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, sources: [{ index: 1, title: "Study", url: null, description: null, text: "The source describes a study result." }] });
+    await gateway.composeControlledRagAnswer(controlledRagCompositionInputSchema.parse({ surveySlug: "nubeqa", participantMessage: "Explain the study.", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, sources: [{ index: 1, title: "Study", url: null, description: null, text: "The source describes a study result." }] }));
     expect(parse).toHaveBeenCalledTimes(2);
     expect(parse.mock.calls.map(([request]) => request.reasoning)).toEqual([{ effort: compositionReasoningEffort ?? "low" }, { effort: groundingReasoningEffort ?? "low" }]);
     for (const [request] of parse.mock.calls) {

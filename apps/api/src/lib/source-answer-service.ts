@@ -22,6 +22,8 @@ export type SourceAnswerProviderInput = {
   remainingSeconds: number;
   askedQuestions: string[];
   responseMode?: "answer_only" | "answer_then_ask";
+  /** App-selected priority already has a resolved, standalone information need. */
+  requestOrigin?: "participant" | "selected_priority";
 };
 
 export type SourceAnswerProviderResult = {
@@ -91,6 +93,7 @@ async function timedControlledRag(input: SourceAnswerProviderInput) {
     evidencePacket: input.evidencePacket,
     presentationPlan: input.presentationPlan,
     responseMode: input.responseMode,
+    requestOrigin: input.requestOrigin,
   });
 
   return {

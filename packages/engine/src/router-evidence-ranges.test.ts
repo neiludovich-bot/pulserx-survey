@@ -5,6 +5,7 @@ import { mvpTurnRouteAnalysisIndexedModelResultSchema, mvpTurnRouteAnalysisResul
 import { zodTextFormat } from "openai/helpers/zod";
 import { evidenceFromTokenRange, participantTokensForModel } from "./evidence-ranges";
 import { OpenAIResponsesGateway } from "./openai-workflows";
+import { z } from "zod";
 
 const input: MvpTurnRouteAnalysisInput = {
   surveySlug: "nubeqa", sourceBrand: "NUBEQA", activeIntentSlug: null, activeIntentLabel: null, activeIntentSteeringRule: null,
@@ -49,7 +50,8 @@ describe("indexed participant evidence", () => {
   it("requires strict range-only model evidence and every wire field", () => {
     const schema = zodTextFormat(mvpTurnRouteAnalysisIndexedModelResultSchema, "route_v6").schema;
     expect(schema.additionalProperties).toBe(false);
-    expect([...schema.required].sort()).toEqual(Object.keys(schema.properties).sort());
+    const shape = z.object({ required: z.array(z.string()), properties: z.record(z.unknown()) }).parse(schema);
+    expect([...shape.required].sort()).toEqual(Object.keys(shape.properties).sort());
     expect(schema.properties).not.toHaveProperty("answerEvidence");
     expect(mvpTurnRouteAnalysisIndexedModelResultSchema.safeParse({ ...output, answerEvidence: ["I don't know the product"] }).success).toBe(false);
   });

@@ -30,6 +30,45 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
+  it("skips router and moderator interpretation for persisted clarification, retry and resume cues", async () => {
+    const sessionId = startAtFamiliarity("nubeqa");
+    mocks.source.mockResolvedValue(success("nubeqa"));
+    const first = await submitMvpCustomGptSurveyTurn({ sessionId, content: "What drug interactions are described?" });
+    rehydrate(first);
+    mocks.route.mockClear(); mocks.plan.mockClear();
+    mocks.source.mockResolvedValueOnce({ ...success("nubeqa"), enabled: false, answer: null, reason: "Temporarily unavailable" });
+    const clarification = await submitMvpCustomGptSurveyTurn({ sessionId, content: "Can you explain that more simply?" });
+    let saved = mocks.persist.mock.calls.at(-1)![0].session;
+    expect(saved.moderatorState.understanding).toMatchObject({ preferredDepth: "brief", depthPreferenceExplicit: true });
+    expect(saved.moderatorState.sourceDiscussion).toMatchObject({ status: "failed", returnTarget: { kind: "guide", id: "familiarity" } });
+    expect(saved.answeredQuestionIds).not.toContain("familiarity");
+    rehydrate(clarification);
+    const retried = await submitMvpCustomGptSurveyTurn({ sessionId, content: "Please retry." });
+    rehydrate(retried);
+    await submitMvpCustomGptSurveyTurn({ sessionId, content: "Thanks, continue." });
+    saved = mocks.persist.mock.calls.at(-1)![0].session;
+    expect(saved.moderatorState.sourceDiscussion).toBeUndefined();
+    expect(saved.answeredQuestionIds).not.toContain("familiarity");
+    expect(mocks.route).not.toHaveBeenCalled();
+    expect(mocks.plan).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "Continue, but what adverse reactions are described?",
+    "Can you explain that more simply? Also, what was the comparator?",
+    "That seems manageable. Can you explain that more simply?",
+    "Retry, but first what was the comparator?"
+  ])("retains typed interpretation for a mixed turn within a persisted discussion: %s", async (content) => {
+    const sessionId = startAtFamiliarity("nubeqa");
+    mocks.source.mockResolvedValue(success("nubeqa"));
+    const first = await submitMvpCustomGptSurveyTurn({ sessionId, content: "What drug interactions are described?" });
+    rehydrate(first);
+    mocks.route.mockClear();
+    await submitMvpCustomGptSurveyTurn({ sessionId, content });
+    expect(mocks.route).toHaveBeenCalledOnce();
+    expect(mocks.route.mock.calls[0]![0].participantContent).toBe(content);
+  });
+
   it("completes and persists a delivered extractive recovery without claiming model grounding", async () => {
     const sessionId = startAtFamiliarity("nubeqa");
     const outcome = { version: 1, status: "extractive_recovery", attempts: [{ stage: "grounding", code: "unsupported_claims", responseId: "rejected-review", model: "fixture" }], recovery: { method: "verbatim_curated_source_card", sourceId: "fixture", cause: "grounding_rejected" } };

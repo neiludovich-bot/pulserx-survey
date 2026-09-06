@@ -29,6 +29,61 @@ const contextualPlan: SourceQuestionPlan = {
 describe("focused evidence selection", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("skips redundant context selection after validated requested-context evidence for %s", async (surveySlug) => {
+    const candidates = [source(surveySlug, "direct"), source(surveySlug, "context"), source(surveySlug, "qualifier")];
+    const direct = "Progression-free survival evidence from this trial.";
+    const context = "Separate safety context is also present in this document.";
+    const select = mockSelector({ selections: [
+      { sourceId: "direct", supportExcerpt: direct, assetIds: ["direct:asset:0"], evidenceRole: "direct", contribution: "answer" },
+      { sourceId: "context", supportExcerpt: context, assetIds: ["context:asset:1"], evidenceRole: "contextual", contribution: "requested_context" },
+      { sourceId: "qualifier", supportExcerpt: "Administration instructions are present.", assetIds: ["qualifier:asset:0"], evidenceRole: "contextual", contribution: "essential_qualification" },
+    ], rationale: "The first selection already answers the original and complementary requests." });
+    const result = await selectFocusedSourceEvidence({ surveySlug, query: contextualPlan.interpretedQuestion, sourceQuestionPlan: contextualPlan, candidates, fallbackSourceIds: [] });
+    expect(select).toHaveBeenCalledOnce();
+    expect(select.mock.calls[0][0].evidenceFocus).toBe("all");
+    expect(result.mode).toBe("semantic");
+    expect(result.chunks.map(({ id, text, contribution }) => ({ id, text, contribution }))).toEqual([
+      { id: "direct", text: direct, contribution: "answer" },
+      { id: "context", text: context, contribution: "requested_context" },
+      { id: "qualifier", text: "Administration instructions are present.", contribution: "essential_qualification" },
+    ]);
+    expect(result.chunks[0].assets).toEqual([candidates[0].assets![0]]);
+    expect(result.chunks[1].assets).toEqual([candidates[1].assets![1]]);
+    expect(result.chunks[2].assets).toEqual([]);
+  });
+
+  it.each([
+    { evidenceRole: "contextual", contribution: undefined },
+    { evidenceRole: "contextual", contribution: "answer" },
+    { evidenceRole: "contextual", contribution: "essential_qualification" },
+    { evidenceRole: "contextual", contribution: "contrast_or_limit_only" },
+    { evidenceRole: "direct", contribution: "requested_context" },
+  ])("still selects requested detail when first context is $evidenceRole/$contribution", async ({ evidenceRole, contribution }) => {
+    const candidates = [source("nubeqa", "direct"), source("nubeqa", "context")];
+    const direct = "Progression-free survival evidence from this trial.";
+    const context = "Separate safety context is also present in this document.";
+    const select = mockSelector({ selections: [{ sourceId: "context", supportExcerpt: context, assetIds: [], evidenceRole: "contextual", contribution: "requested_context" }], rationale: "The focused pass supplies the requested practical answer." });
+    select.mockResolvedValueOnce({ result: { selections: [
+      { sourceId: "direct", supportExcerpt: direct, assetIds: [], evidenceRole: "direct", contribution: "answer" },
+      { sourceId: "context", supportExcerpt: direct, assetIds: [], evidenceRole, ...(contribution ? { contribution } : {}) },
+    ], rationale: "The first context candidate has not established the requested complementary detail." } });
+    const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: contextualPlan.interpretedQuestion, sourceQuestionPlan: contextualPlan, candidates, fallbackSourceIds: [] });
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls[1][0]).toMatchObject({ evidenceFocus: "contextual", query: contextualPlan.interpretedQuestion });
+    expect(result.chunks.map(({ id, text }) => ({ id, text }))).toEqual([{ id: "direct", text: direct }, { id: "context", text: context }]);
+    expect(result.chunks[1].contribution).toBe("requested_context");
+  });
+
+  it.each(["excerpt", "asset"])("does not accept invalid requested-context %s to skip validation", async (invalid) => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const candidate = source("padcev", "context");
+    const select = mockSelector({ selections: [{ sourceId: candidate.id, supportExcerpt: invalid === "excerpt" ? "Invented monitoring fact." : candidate.text, assetIds: invalid === "asset" ? ["another-source:asset:0"] : [], evidenceRole: "contextual", contribution: "requested_context" }], rationale: "Invalid requested context must not bypass validation." });
+    const result = await selectFocusedSourceEvidence({ surveySlug: "padcev", query: contextualPlan.interpretedQuestion, sourceQuestionPlan: contextualPlan, candidates: [candidate], fallbackSourceIds: [candidate.id] });
+    expect(result).toEqual({ mode: "unavailable", chunks: [] });
+    expect(select).toHaveBeenCalledTimes(2);
+    expect(select.mock.calls.every(([input]) => input.evidenceFocus === "all")).toBe(true);
+  });
+
   it("does not add a second contextual pass to a one-fact presentation", async () => {
     const candidate = source("nubeqa", "selected");
     const select = mockSelector({ selections: [{ sourceId: candidate.id, supportExcerpt: candidate.text.split(". ")[0] + ".", assetIds: [], evidenceRole: "contextual" }], rationale: "One complete fact." });

@@ -654,6 +654,7 @@ export const openAIDebugTraceSchema = z.object({
   ]),
   promptVersion: z.string().min(1),
   requestedAt: z.string().datetime(),
+  elapsedMs: z.number().int().min(0).optional(),
   request: z.object({
     model: z.string().min(1),
     schemaName: z.string().min(1),

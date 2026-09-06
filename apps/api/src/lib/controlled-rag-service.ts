@@ -1,4 +1,4 @@
-import { moderatorEvidencePacketSchema, sourceAnswerGroundingAuditSchema, type SourceAnswerGroundingAudit, type GroundedReference, type ModeratorEvidencePacket, type SourceQuestionPlan, type SourceQuestionPlanInput, type SourceTurnOutcome } from "@interview/schemas";
+import { moderatorEvidencePacketSchema, sourceQuestionPlanSchema, sourceAnswerGroundingAuditSchema, type SourceAnswerGroundingAudit, type GroundedReference, type ModeratorEvidencePacket, type SourceQuestionPlan, type SourceQuestionPlanInput, type SourceTurnOutcome } from "@interview/schemas";
 import {
   CONTROLLED_RAG_CHUNKS,
   NUBEQA_ARANOTE_UTI_FACTS,
@@ -49,6 +49,7 @@ export type ControlledRagSurveyTurnInput = {
   evidencePacket?: ModeratorEvidencePacket | null;
   presentationPlan?: SourceQuestionPlanInput["presentationPlan"];
   responseMode?: "answer_only" | "answer_then_ask";
+  requestOrigin?: "participant" | "selected_priority";
 };
 
 export type ControlledRagSurveyTurnResult = {
@@ -1657,7 +1658,14 @@ export async function askControlledRagForSurveyInterviewerTurn(
     ? parsedPacket.data : null;
   const pureClarification = input.responseMode === "answer_only" && isReferentialClarification(input.participantMessage);
   const recentTurns = (input.recentTurns ?? []).slice(-24).map((turn) => ({ ...turn, content: turn.content.slice(0, 12000) }));
-  const sourceQuestionPlan = input.responseMode === "answer_only" && !(pureClarification && retained)
+  // The moderator already selected and resolved this standalone priority from
+  // participant evidence. A second interpretation cannot improve its authority.
+  // Participant follow-ups still receive the full contextual planning boundary.
+  const sourceQuestionPlan: SourceQuestionPlan | null = input.requestOrigin === "selected_priority"
+    ? sourceQuestionPlanSchema.parse({ version: 1, interpretedQuestion: original.retrievalQuery, retrievalQueries: [original.retrievalQuery],
+        answerApproach: "direct", usesSourceContext: false, contextBoundary: null,
+        rationale: "Use the application-selected priority directly; preserve its participant-derived scope." })
+    : input.responseMode === "answer_only" && !(pureClarification && retained)
     ? await planSourceQuestion({ surveySlug: input.surveySlug, participantMessage: input.participantMessage.slice(0, 12000),
         sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null, recentTurns, presentationPlan: input.presentationPlan })
     : null;

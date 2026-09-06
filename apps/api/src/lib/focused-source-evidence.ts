@@ -127,10 +127,11 @@ async function selectEvidenceUnits(input: FocusedEvidenceInput, hasPriorAnswer =
         if (contribution === "contrast_or_limit_only" || contribution === "essential_qualification" && !hasAnswer) return [];
         return [{ chunk: { ...source, text: supportExcerpt, assets: contribution === "essential_qualification" ? [] : assets, ...(evidenceRole ? { evidenceRole } : {}), ...(contribution ? { contribution } : {}) }, contribution: contribution ?? "answer" }];
       });
-      if (input.presentationPlan?.maxFacts !== 1 && input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation") {
-        // The original relation and the useful background are different evidence
-        // needs. Always run the focused pass: a contextual label on the first
-        // selection alone cannot establish that it contains useful background.
+      // Only a validated, retained answer to the requested contextual question
+      // makes the second selection redundant. A contextual role alone, legacy
+      // answer contribution, or qualification does not establish that detail.
+      const hasRequestedContext = units.some((unit) => unit.chunk.evidenceRole === "contextual" && unit.contribution === "requested_context");
+      if (!hasRequestedContext && input.presentationPlan?.maxFacts !== 1 && input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation") {
         // The plan's complementary search hints remain available, but the
         // selected request still owns scope in this focused pass.
         const focused = await selectEvidenceUnits({ ...input, evidenceFocus: "contextual", fallbackSourceIds: [] }, units.some(isAnswerUnit));

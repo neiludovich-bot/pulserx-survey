@@ -107,6 +107,54 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("handles clarification, retry and resume without planning an already parked source discussion", async () => {
+    const first = await presentAgenda(surveySlug);
+    const state = structuredClone(first.state);
+    const priority = state.priorities[0];
+    state.sourceDiscussion = { query: "What interaction instructions are described?", status: "open", returnTarget: { kind: "priority", id: priority.id }, evidencePacket: priority.evidencePacket, navigationHintShown: true };
+    mocks.plan.mockClear();
+    mocks.source.mockClear();
+    mocks.source.mockResolvedValueOnce({ enabled: false, answer: null, references: [], reason: "Evidence unavailable" });
+    const clarified = await runModeratorTurn(inputFor(surveySlug, { state, currentQuestion: first.question, participantMessage: "Can you explain that more simply?", isPriorityQuestion: false, asksSourceQuestion: true, answerStatus: "not_answered" }));
+    expect(clarified?.decision).toMatchObject({ plannerAttempts: 0, plan: { reactionStatus: "not_answered", rationale: expect.stringContaining("Deterministic source-discussion clarification") } });
+    expect(clarified?.state.understanding).toMatchObject({ preferredDepth: "brief", depthPreferenceExplicit: true, participantEvidence: ["Can you explain that more simply?"] });
+    expect(clarified?.state.priorities).toEqual(state.priorities);
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ requestOrigin: "participant", presentationPlan: { depth: "brief" } });
+    const retried = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(clarified!.state), participantMessage: "retry", isPriorityQuestion: false, asksSourceQuestion: false, answerStatus: "not_answered" }));
+    expect(retried?.decision.plannerAttempts).toBe(0);
+    expect(retried?.state.priorities).toEqual(state.priorities);
+    expect(mocks.source.mock.calls.at(-1)![0].participantMessage).toBe("Can you explain that more simply?");
+    mocks.source.mockClear();
+    const resumed = await runModeratorTurn(inputFor(surveySlug, { state: structuredClone(retried!.state), participantMessage: "Thanks, continue.", isPriorityQuestion: false, asksSourceQuestion: false, answerStatus: "not_answered", isResumeCue: true }));
+    expect(resumed?.decision.plannerAttempts).toBe(0);
+    expect(resumed?.state.priorities).toEqual(state.priorities);
+    expect(resumed?.state.sourceDiscussion).toBeUndefined();
+    expect(mocks.source).not.toHaveBeenCalled();
+    expect(mocks.plan).not.toHaveBeenCalled();
+  });
+
+  it("starts transition and reaction phrasing together after the next priority evidence is ready", async () => {
+    const first = await presentAgenda(surveySlug);
+    const reaction = "This would be part of my assessment.";
+    mocks.plan.mockResolvedValueOnce({ result: planned({ reactionStatus: "answered", reactionEvidence: [reaction], action: "present_priority", selectedPriorityId: first.state.priorities[1].id }) });
+    let releaseTransition!: () => void;
+    let markReactionStarted!: () => void;
+    const reactionStarted = new Promise<void>((resolve) => { markReactionStarted = resolve; });
+    const transitionReady = new Promise<void>((resolve) => { releaseTransition = resolve; });
+    mocks.phrase.mockImplementation(async (input: ModeratorPhrasingInput) => {
+      if (input.action === "transition") { await transitionReady; return { result: { text: "Next, DDI." } }; }
+      markReactionStarted();
+      return { result: { text: "What is your reaction to DDI?" } };
+    });
+    const pending = runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: reaction, isPriorityQuestion: false }));
+    await reactionStarted;
+    releaseTransition();
+    const next = await pending;
+    expect(next?.content).toMatch(/^Next, DDI\./);
+    expect(next?.content).toMatch(/What is your reaction to DDI\?$/);
+    expect(mocks.source.mock.calls.at(-1)![0]).toMatchObject({ requestOrigin: "selected_priority" });
+  });
+
   it("treats an attributed recovery as delivered evidence and retains its distinct audit", async () => {
     const packet = evidenceFor(surveySlug, "PFS");
     const outcome = { version: 1, status: "extractive_recovery", attempts: [{ stage: "grounding", code: "unsupported_claims", responseId: "rejected", model: "fixture" }], recovery: { method: "verbatim_curated_source_card", sourceId: packet.sources[0].id, cause: "grounding_rejected" } };
@@ -503,7 +551,8 @@ describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator 
       state: followup!.state, currentQuestion: first.question, participantMessage: "continue",
       isPriorityQuestion: false, isResumeCue: true, answerStatus: "not_answered",
     }));
-    expect(resumed?.state).toEqual(first.state);
+    expect(resumed?.state).toMatchObject(first.state);
+    expect(resumed?.state.understanding).toMatchObject({ preferredDepth: "brief", depthPreferenceExplicit: true, participantEvidence: ["Can you explain that more simply?"] });
     expect(resumed?.question).toBe(first.question);
     expect(resumed?.state).not.toHaveProperty("sourceDiscussion");
     expect(mocks.source).not.toHaveBeenCalled();
