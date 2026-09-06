@@ -1311,7 +1311,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   }
 }
 
-async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
+export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnInput) {
   const queryTokenGroups = retrievalTokenGroups(input);
   const displayTopic = displayTopicForTurn(input);
   const focusedEvidenceId = focusedNubeqaEvidenceId(input);
@@ -1346,6 +1346,8 @@ async function retrieveChunks(input: ControlledRagSurveyTurnInput) {
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
   ].slice(0, 24);
 }
+
+const retrieveChunks = retrieveWebsiteCandidates;
 
 function referencesForChunks(
   chunks: ControlledRagChunk[],

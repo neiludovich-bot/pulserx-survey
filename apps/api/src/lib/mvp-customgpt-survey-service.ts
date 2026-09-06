@@ -3133,7 +3133,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     answerEvidenceByQuestionId: {},
     currentQuestionId: firstQuestion.id,
     pendingReturnQuestionId: null,
-    moderatorState: emptyModeratorState(),
+    moderatorState: { ...emptyModeratorState(), ...(input.conversationRuntime ? { runtime: input.conversationRuntime } : {}) },
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
@@ -3225,7 +3225,7 @@ export async function submitMvpCustomGptSurveyTurn(
     !REQUIRED_INTAKE_QUESTION_IDS.has(currentQuestionBefore.id) &&
     !currentQuestionBefore.id.startsWith("moderator-reaction:") &&
     /\b(?:priorities|factors|decision drivers)\b/i.test(`${currentQuestionBefore.canonicalQuestion} ${currentQuestionBefore.objective}`));
-  const canInterpretConversation = discussionBefore?.returnTarget?.kind !== "guide" && session.surveySlug !== "data" && !hardTimeboxExpired(session) &&
+  const canInterpretConversation = (discussionBefore?.returnTarget?.kind !== "guide" || session.moderatorState.runtime === "single_call_v1") && session.surveySlug !== "data" && !hardTimeboxExpired(session) &&
     ((currentQuestionBefore && !currentQuestionBefore.close && currentQuestionBefore.id !== "intro_consent") || Boolean(session.moderatorState.sourceDiscussion) || session.moderatorState.priorities.some(p => p.status === "pending" || p.status === "presented"));
   // Interpret answers and participant questions independently, before answer
   // rejection or research selection. Medical terms alone are not requests.
@@ -3337,6 +3337,7 @@ export async function submitMvpCustomGptSurveyTurn(
       answerStatus: participantAnalysis.answerStatus,
       isResumeCue: contentLooksLikeReturnToSurveyCue(input.content),
       sourceRequest: participantAnalysis.sourceRequest,
+      preparedSourceAnswer: participantAnalysis.preparedSourceAnswer,
       projectId: session.projectId,
       surveyContext: `Study: ${session.studyName}\nApproved ${session.sourceBrand} market research evidence. Active disease areas: ${session.activeDiseaseAreas.join(", ") || "not yet specified"}. Do not infer a treatment setting when the participant has not supplied it.`,
     });
@@ -3739,7 +3740,7 @@ export async function submitMvpCustomGptSurveyTurn(
     nextAction = "setup_required";
   } else {
     try {
-      const sourceTurn = await askSourceProviderForSurveyInterviewerTurn({
+      const sourceTurn = sourceResponseMode === "answer_only" && participantAnalysis?.preparedSourceAnswer ? participantAnalysis.preparedSourceAnswer : await askSourceProviderForSurveyInterviewerTurn({
         surveySlug: sourceSurveySlug as "brukinsa" | "padcev" | "nubeqa",
         projectId: session.projectId,
         participantMessage: sourceRequestContent,

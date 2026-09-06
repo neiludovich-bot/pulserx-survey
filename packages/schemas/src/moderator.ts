@@ -52,6 +52,7 @@ export const moderatorPrioritySchema = z.object({
 
 export const moderatorStateSchema = z.object({
   version: z.literal(1),
+  runtime: z.enum(["current", "single_call_v1"]).optional(),
   priorities: z.array(moderatorPrioritySchema).max(64),
   activePriorityId: z.string().min(1).nullable(),
   understanding: participantUnderstandingSchema.optional(),

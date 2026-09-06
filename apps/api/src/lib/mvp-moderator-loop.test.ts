@@ -107,6 +107,21 @@ beforeEach(() => {
 });
 
 describe.each(["nubeqa", "brukinsa", "padcev"] as const)("%s reusable moderator loop", (surveySlug) => {
+  it("uses the already validated current-request answer without another source-model call", async () => {
+    const first = await presentAgenda(surveySlug);
+    const question = "What did the study compare?";
+    const sourceRequest = { kind: "question" as const, participantEvidence: question, resolvedQuestion: question };
+    mocks.plan.mockResolvedValueOnce({ result: planned({ sourceRequest, action: "answer_source" }) });
+    mocks.source.mockClear();
+    const answer = await runModeratorTurn(inputFor(surveySlug, { state: first.state, participantMessage: question,
+      isPriorityQuestion: false, sourceRequest, asksSourceQuestion: true, answerStatus: "not_answered",
+      preparedSourceAnswer: { provider: "controlled_rag", enabled: true, answer: "The study compared the two regimens. [1]",
+        references: [{ citationId: "fixture", title: "Study", url: "https://example.test/study", description: null, assets: [] }],
+        citationIds: ["fixture"], conversationId: null, reason: null, evidencePacket: evidenceFor(surveySlug, "PFS") } }));
+    expect(mocks.source).not.toHaveBeenCalled();
+    expect(answer?.content).toContain("The study compared the two regimens.");
+    expect(answer?.state.priorities[0].reactionEvidence).toEqual([]);
+  });
   it("advances past an unanswered displayed reaction without a planning call or invented answer", async () => {
     const first = await presentAgenda(surveySlug);
     const state = structuredClone(first.state);

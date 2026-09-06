@@ -30,6 +30,18 @@ function rehydrate(response: Awaited<ReturnType<typeof submitMvpCustomGptSurveyT
 }
 
 describe("shared persisted source detours", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s pilot runtime in the persisted session and reuses its prepared answer", async brand => {
+    const response = startMvpCustomGptSurvey({ surveySlug: brand, targetDurationSeconds: 600, conversationRuntime: "single_call_v1" });
+    const snapshot = mocks.started.mock.calls.at(-1)![0].session as MvpPersistenceSessionSnapshot;
+    expect(snapshot.moderatorState?.runtime).toBe("single_call_v1");
+    mocks.load.mockResolvedValue({ session: { ...snapshot, currentQuestionId: "familiarity", askedQuestionIds: ["intro_consent", "familiarity"], answeredQuestionIds: ["intro_consent"] }, messages: response.messages, turnCount: 1 });
+    resetMvpCustomGptSurveySessions();
+    mocks.route.mockResolvedValueOnce({ ...questionRoute, preparedSourceAnswer: success(brand) });
+    const answered = await submitMvpCustomGptSurveyTurn({ sessionId: response.sessionId, content: "What population was studied?" });
+    expect(mocks.source).not.toHaveBeenCalled();
+    expect(answered.messages.at(-1)?.content).toContain("The selected evidence addresses your question.");
+    expect(mocks.persist.mock.calls.at(-1)![0].session.moderatorState.runtime).toBe("single_call_v1");
+  });
   it("skips router and moderator interpretation for persisted clarification, retry and resume cues", async () => {
     const sessionId = startAtFamiliarity("nubeqa");
     mocks.source.mockResolvedValue(success("nubeqa"));

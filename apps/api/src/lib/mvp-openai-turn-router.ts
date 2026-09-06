@@ -11,6 +11,8 @@ import {
 import { env } from "../env";
 import { sanitizeSourceFailure } from "@interview/engine";
 import { getOptionalOpenAIGateway } from "./model-gateway";
+import { interpretWithWebsite } from "./single-call-conversation-service";
+import type { SourceAnswerProviderResult } from "./source-answer-service";
 import {
   classifyMvpTurnRoute,
   type MvpDisplayTopic,
@@ -40,6 +42,7 @@ export type MvpHybridTurnRouteInput = MvpParticipantIntentInput & {
 };
 
 export type MvpHybridTurnRouteDecision = MvpParticipantIntent & {
+  preparedSourceAnswer?: SourceAnswerProviderResult;
   conversationInterpretation?: ConversationInterpretationResult;
   sourceRequest?: MvpTurnRouteAnalysisResult["sourceRequest"];
   understandingUpdate?: MvpTurnRouteAnalysisResult["understandingUpdate"];
@@ -198,7 +201,9 @@ export async function classifyMvpTurnRouteHybrid(
   for (let attempt = 1; attempt <= 2; attempt += 1) {
   try {
     const callInput = { ...modelInput, ...(repairContext ? { repairContext } : {}) };
-    const route = input.conversationContext && gateway.interpretConversation
+    const route = input.conversationContext?.state.runtime === "single_call_v1"
+      ? await interpretWithWebsite({ ...callInput, ...input.conversationContext })
+      : input.conversationContext && gateway.interpretConversation
       ? await gateway.interpretConversation({ ...callInput, ...input.conversationContext })
       : await gateway.analyzeMvpTurnRoute(callInput);
     const result = mvpTurnRouteAnalysisResultSchema.parse(route.result);
@@ -249,6 +254,7 @@ export async function classifyMvpTurnRouteHybrid(
       modelAttempts: attempt,
       modelFailures,
       ...("interpretation" in route ? { conversationInterpretation: route.interpretation as ConversationInterpretationResult } : {}),
+      ...("preparedSourceAnswer" in route ? { preparedSourceAnswer: route.preparedSourceAnswer as SourceAnswerProviderResult | undefined } : {}),
     };
   } catch (error) {
     const failureDiagnosis = sanitizeMvpRouteFailure(error);

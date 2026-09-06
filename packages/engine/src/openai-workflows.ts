@@ -8,6 +8,7 @@ import {
   mvpTurnRouterSystemPrompt,
   conversationInterpreterSystemPrompt,
   websiteAnswerSystemPrompt,
+  singleCallConversationSystemPrompt,
   moderatorPlannerSystemPrompt,
   moderatorPhraserSystemPrompt,
   moderatorEvidenceSelectorSystemPrompt,
@@ -39,6 +40,8 @@ import {
   mvpTurnRouteModelSchemaForSurvey,
   conversationInterpretationInputSchema,
   conversationInterpretationSchemaForSurvey,
+  singleCallConversationInputSchema,
+  singleCallConversationResultSchema,
   type ConversationInterpretationInput,
   type ConversationInterpretationResult,
   type MvpTurnRouteAnalysisIndexedModelResult,
@@ -105,6 +108,7 @@ type CallType =
   | "moderator_evidence"
   | "source_question_plan"
   | "conversation_interpretation"
+  | "single_call_conversation"
   | "website_answer"
   | "turn_route";
 
@@ -278,6 +282,31 @@ export class OpenAIResponsesGateway {
     });
     const interpretation = validateConversationInterpretation(parsed, call.result);
     return { ...call, result: conversationRouteResult(parsed.participantMessage, interpretation), interpretation };
+  }
+
+  async interpretAndAnswerConversation(input: Omit<ConversationInterpretationInput, "version" | "participantTokens">, evidence: ModeratorEvidenceSelectionInput) {
+    const { evidencePacket: _packet, ...discussion } = input.state.sourceDiscussion ?? {};
+    const conversation = conversationInterpretationInputSchema.parse({ ...input, version: 1,
+      participantTokens: participantTokensForModel(input.participantMessage),
+      state: { ...input.state, ...(input.state.sourceDiscussion ? { sourceDiscussion: discussion } : {}),
+        priorities: input.state.priorities.map(({ evidencePacket: _evidence, ...priority }) => priority) } });
+    const parsedEvidence = moderatorEvidenceSelectionInputSchema.parse(evidence);
+    if (conversation.surveySlug !== parsedEvidence.surveySlug) throw new Error("Conversation evidence belongs to another bot.");
+    const schema = singleCallConversationResultSchema(conversation.surveySlug);
+    const call = await this.runStructuredCall<import("zod").infer<typeof schema>>({
+      callType: "single_call_conversation", model: this.config.analysisModel,
+      promptVersion: singleCallConversationSystemPrompt.version,
+      schemaName: `single_call_conversation_v1_${conversation.surveySlug}`, schema,
+      instructions: singleCallConversationSystemPrompt.instructions,
+      input: singleCallConversationInputSchema.parse({ conversation, evidence: { ...parsedEvidence,
+        candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
+      metadata: { survey_slug: conversation.surveySlug },
+    });
+    const interpretation = validateConversationInterpretation(conversation, call.result.interpretation);
+    if (Boolean(interpretation.sourceRequest) !== Boolean(call.result.answer)) throw new Error("Only an actual participant request may have a prepared answer.");
+    const answer = call.result.answer ? validateWebsiteAnswer({ ...parsedEvidence,
+      query: interpretation.sourceRequest!.resolvedQuestion, sourceQuestionPlan: interpretation.sourceQuestionPlan }, call.result.answer) : null;
+    return { ...call, interpretation, answer, result: conversationRouteResult(conversation.participantMessage, interpretation) };
   }
 
   async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {
@@ -563,10 +592,11 @@ export class OpenAIResponsesGateway {
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
       ? (callType === "conversation_interpretation" ? this.config.conversationReasoningEffort ?? "low" : callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : callType === "moderator_plan" ? this.config.moderatorReasoningEffort ?? this.config.interpretationReasoningEffort : callType === "turn_route" ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
-    const effectiveMetadata = { ...metadata, ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
+    const effectiveReasoningEffort = callType === "single_call_conversation" ? "none" : reasoningEffort;
+    const effectiveMetadata = { ...metadata, ...(effectiveReasoningEffort ? { reasoning_effort: effectiveReasoningEffort } : {}) };
     const requestPayload = {
       model,
-      ...(reasoningEffort ? { reasoning: { effort: reasoningEffort } } : {}),
+      ...(effectiveReasoningEffort ? { reasoning: { effort: effectiveReasoningEffort } } : {}),
       instructions: instructions.join("\n"),
       input: buildMessages(input),
       text: {
@@ -590,7 +620,7 @@ export class OpenAIResponsesGateway {
       throw error;
     } finally {
       elapsedMs = Math.max(0, Math.round(performance.now() - modelStartedAt));
-      logModelCallTiming({ callType, model, schemaName, metadata, elapsedMs, reasoningEffort, response });
+      logModelCallTiming({ callType, model, schemaName, metadata, elapsedMs, reasoningEffort: effectiveReasoningEffort, response });
     }
 
     if (response?.output_parsed === undefined) {

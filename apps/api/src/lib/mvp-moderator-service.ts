@@ -12,7 +12,7 @@ import { sanitizeModeratorPlanningFailure } from "./synthetic-moderator-diagnost
 import { prioritySourceLabel, prioritySourceQuestion } from "./mvp-priority-source-scope";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
-type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string; interpretation?: import("@interview/schemas").ConversationInterpretationResult };
+type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string; interpretation?: import("@interview/schemas").ConversationInterpretationResult; preparedSourceAnswer?: import("./source-answer-service").SourceAnswerProviderResult };
 const normalized = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export async function runModeratorTurn(input: Input) {
@@ -143,7 +143,7 @@ export async function runModeratorTurn(input: Input) {
   const source = async (query: string, sourceTopicContext: string | null = null, evidencePacket?: ModeratorEvidencePacket, requestOrigin: "participant" | "selected_priority" = "participant") => {
     sourceUsed = true;
     try {
-      const answer = await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, requestOrigin, sourceQuestionPlan: requestOrigin === "participant" && plan?.sourceRequest ? input.interpretation?.sourceQuestionPlan : undefined, presentationPlan: presentationFor(state, "source_answer"), surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
+      const answer = requestOrigin === "participant" && input.preparedSourceAnswer ? input.preparedSourceAnswer : await askSourceProviderForSurveyInterviewerTurn({ surveySlug: input.surveySlug, projectId: input.projectId, participantMessage: query, sourceTopicContext, evidencePacket, requestOrigin, sourceQuestionPlan: requestOrigin === "participant" && plan?.sourceRequest ? input.interpretation?.sourceQuestionPlan : undefined, presentationPlan: presentationFor(state, "source_answer"), surveyContext: input.surveyContext, currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, recentTurns: input.recentTurns.slice(-12), recentInterviewerContext: input.recentTurns.slice(-12).map((t) => `${t.role}: ${t.content}`).join("\n"), remainingSeconds: 600, askedQuestions: [], responseMode: "answer_only" });
       sourcePlanning.plan = answer.sourceQuestionPlan ?? null;
       sourcePlanning.grounding = answer.sourceAnswerGrounding ?? null;
       sourcePlanning.outcome = answer.sourceOutcome;

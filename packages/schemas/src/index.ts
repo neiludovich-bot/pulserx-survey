@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { websiteAnswerModelResultSchema, sourceEvidenceSpansInputSchema } from "./source-evidence-spans";
 import { evidenceTokenRangeSchema, participantTokensSchema } from "./evidence-ranges";
 export * from "./evidence-ranges";
 import { sourceRequestSchema } from "./source-request";
@@ -298,6 +299,17 @@ export function conversationInterpretationSchemaForSurvey(surveySlug: z.infer<ty
 }
 export type ConversationInterpretationInput = z.infer<typeof conversationInterpretationInputSchema>;
 export type ConversationInterpretationResult = z.infer<typeof conversationInterpretationResultSchema>;
+
+export const singleCallConversationInputSchema = z.object({
+  conversation: conversationInterpretationInputSchema,
+  evidence: sourceEvidenceSpansInputSchema,
+}).strict();
+export function singleCallConversationResultSchema(surveySlug: ConversationInterpretationInput["surveySlug"]) {
+  return z.object({
+    interpretation: conversationInterpretationSchemaForSurvey(surveySlug),
+    answer: websiteAnswerModelResultSchema.nullable(),
+  }).strict();
+}
 
 export const controlledRagContextualCompositionResultSchema = z.object({
   practicalAnswer: z.string().trim().min(1).max(2000),
@@ -684,6 +696,7 @@ export const openAIDebugTraceSchema = z.object({
     "source_grounding_review",
     "turn_route",
     "conversation_interpretation",
+    "single_call_conversation",
     "website_answer",
     "moderator_plan",
     "moderator_phrasing",
@@ -1869,6 +1882,7 @@ export const sessionAuditResponseSchema = z.object({
 });
 
 export const mvpCustomGptSurveyStartRequestSchema = z.object({
+  conversationRuntime: z.enum(["current", "single_call_v1"]).optional(),
   projectId: z.string().trim().min(1).optional(),
   surveySlug: z
     .string()
