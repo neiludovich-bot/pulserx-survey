@@ -79,7 +79,7 @@ export async function runConversationRuntime(input: Input) {
       if (!state.parkedGuideId && input.question && !["reaction", "clarification"].includes(questionKind(input.question)) && observation?.answerStatus !== "answered") state.parkedGuideId = input.question.id;
       const topic = state.topics.find(t => t.id === state.activeTopicId);
       const query = action === "present_topic" ? topic!.query : observation!.request!.text;
-      if (action === "present_topic") prepared = await present(query);
+      if (action === "present_topic") prepared = await present(`${input.brand}: ${query}`);
       if (!prepared?.text) return done("I don't have enough information in the available material to answer that reliably. Could you narrow the question, or would you like to move on?", input.question);
       const wasDiscussing = Boolean(initialState.discussion);
       state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };

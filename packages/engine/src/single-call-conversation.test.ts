@@ -29,6 +29,14 @@ function fixture(surveySlug: "nubeqa" | "brukinsa" | "padcev") {
 }
 
 describe("single-call conversation boundary", () => {
+  it("presents application-selected evidence without requiring a participant request", async () => {
+    const f = fixture("nubeqa");
+    f.parse.mockResolvedValue({ id: "presentation", output_parsed: f.answer });
+    const result = await f.gateway.presentConversationEvidence({ ...f.evidence, query: "Efficacy" });
+    expect(f.parse).toHaveBeenCalledOnce();
+    expect(result.answer.paragraphs[0].text).toContain("12 months");
+    expect(result.traces).toHaveLength(1);
+  });
   it("repairs an unsupported number once without reinterpreting the respondent", async () => {
     const f = fixture("nubeqa");
     const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], priorities: [], familiarity: null, familiarityEvidenceRange: null, outOfScope: false };

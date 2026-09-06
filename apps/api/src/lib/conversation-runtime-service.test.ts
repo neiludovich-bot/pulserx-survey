@@ -16,12 +16,12 @@ describe("new shared dispatch", () => {
     const first = await runConversationRuntime(input);
     expect(first.content).toContain("stands out to you about Efficacy");
     expect(mocks.turn).toHaveBeenCalledOnce();
-    expect(mocks.present).toHaveBeenLastCalledWith(expect.objectContaining({ query: "Efficacy", sourceTopicContext: null }));
+    expect(mocks.present).toHaveBeenLastCalledWith(expect.objectContaining({ query: `${brand}: Efficacy`, sourceTopicContext: null }));
     mocks.turn.mockResolvedValueOnce({ observation: { ...observation, request: null, answerStatus: "answered", answerEvidence: ["Useful"], reactionEvidence: ["Useful"] }, trace: {}, answer: null });
     const second = await runConversationRuntime({ ...input, state: first.state, question: first.question, message: "Useful" });
     expect(second.content).toContain("Turning to Dosing:");
     expect(mocks.turn).toHaveBeenCalledTimes(2);
-    expect(mocks.present).toHaveBeenLastCalledWith(expect.objectContaining({ query: "Dosing", sourceTopicContext: null }));
+    expect(mocks.present).toHaveBeenLastCalledWith(expect.objectContaining({ query: `${brand}: Dosing`, sourceTopicContext: null }));
     expect(second.state.topics.map(topic => topic.status)).toEqual(["discussed", "presented"]);
   });
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("answers %s follow-ups in one call and preserves a parked question through resume", async brand => {
