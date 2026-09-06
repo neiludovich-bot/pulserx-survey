@@ -1,16 +1,16 @@
 import { createHash } from "node:crypto";
 import { Prisma } from "@prisma/client";
-import { websiteIndexSnapshotSchema, WEBSITE_PROFILES, allowedWebsiteIndexUrl } from "@interview/schemas";
+import { websiteIndexSnapshotSchema, WEBSITE_PROFILES, allowedWebsiteIndexUrl, type WebsiteProfile } from "@interview/schemas";
 import { prisma } from "./prisma";
 import { chunkSourceText } from "./source-text-chunks";
 import { renderWebsiteTable } from "./website-table-renderer";
 
 const INDEX_TAG = "website-index:v1";
-export function prepareWebsiteIndex(input: unknown) {
+export function prepareWebsiteIndex(input: unknown, profile?: WebsiteProfile) {
   const snapshot = websiteIndexSnapshotSchema.parse(input);
-  if (snapshot.rootUrl !== WEBSITE_PROFILES[snapshot.surveySlug].rootUrl) throw new Error("Snapshot root does not match the bot's approved website.");
+  if (snapshot.rootUrl !== (profile ?? WEBSITE_PROFILES[snapshot.surveySlug as keyof typeof WEBSITE_PROFILES])?.rootUrl) throw new Error("Snapshot root does not match the bot's approved website.");
   const pages = snapshot.pages.map(page => {
-    if (!allowedWebsiteIndexUrl(snapshot.surveySlug, page.url, page.sourceType === "PDF") || !allowedWebsiteIndexUrl(snapshot.surveySlug, page.discoveredFrom)) throw new Error("Indexed page or discovery link is outside the bot's approved website.");
+    if (!allowedWebsiteIndexUrl(snapshot.surveySlug, page.url, page.sourceType === "PDF", profile) || !allowedWebsiteIndexUrl(snapshot.surveySlug, page.discoveredFrom, false, profile)) throw new Error("Indexed page or discovery link is outside the bot's approved website.");
     const digest = createHash("sha256").update(page.content).digest("hex");
     if (digest !== page.hash) throw new Error("Indexed page hash does not match its content.");
     // Asset changes also require a version, without mutating earlier citations.
@@ -28,8 +28,8 @@ export function prepareWebsiteIndex(input: unknown) {
 
 /** Append versions and archive only superseded crawler-owned versions. Never
  * delete evidence or remove pages merely because a crawl failed to find them. */
-export async function applyWebsiteIndex(input: unknown) {
-  const { snapshot, pages } = prepareWebsiteIndex(input);
+export async function applyWebsiteIndex(input: unknown, profile?: WebsiteProfile) {
+  const { snapshot, pages } = prepareWebsiteIndex(input, profile);
   return prisma.$transaction(async tx => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`website-index:${snapshot.surveySlug}`}))`;
     const prior = await tx.sourceDocument.findMany({ where: { surveySlug: snapshot.surveySlug, tags: { has: INDEX_TAG }, status: "ACTIVE" } });

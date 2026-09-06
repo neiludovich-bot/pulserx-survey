@@ -15,7 +15,7 @@ export const websiteIndexPageSchema = z.object({
   tables: z.array(websiteTableSchema).max(24).default([]),
 }).strict();
 export const websiteIndexSnapshotSchema = z.object({
-  version: z.literal(1), surveySlug: z.enum(["nubeqa", "brukinsa", "padcev"]),
+  version: z.literal(1), surveySlug: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
   rootUrl: z.string().url(), fetchedAt: z.string().datetime(),
   pages: z.array(websiteIndexPageSchema).min(1).max(1000),
   issues: z.array(z.object({ url: z.string().url(), reason: z.string().max(1000) }).strict()).max(2000),
@@ -33,11 +33,35 @@ export const WEBSITE_PROFILES = {
 } as const;
 
 /** Exact approved domains, no credentials, query crawling or alternate ports. */
-export function allowedWebsiteIndexUrl(slug: WebsiteIndexSnapshot["surveySlug"], value: string, document = false) {
+export function allowedWebsiteIndexUrl(slug: WebsiteIndexSnapshot["surveySlug"], value: string, document = false, configuredProfile?: WebsiteProfile) {
   try {
-    const url = new URL(value); const profile = WEBSITE_PROFILES[slug];
+    const url = new URL(value); const profile = configuredProfile ?? WEBSITE_PROFILES[slug as keyof typeof WEBSITE_PROFILES];
+    if (!profile) return false;
     return url.protocol === "https:" && !url.username && !url.password && !url.port && !url.search &&
       ((profile.hosts as readonly string[]).includes(url.hostname) ||
        (document && /\.pdf$/i.test(url.pathname) && (profile.documentHosts as readonly string[]).includes(url.hostname)));
   } catch { return false; }
 }
+
+export const websiteProfileSchema = z.object({
+  rootUrl: z.string().url().refine(value => { const u = new URL(value); return u.protocol === "https:" && !u.port && !u.username && !u.password && !u.search && !u.hash; }, "Use a public HTTPS website URL"),
+  hosts: z.array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/)).min(1).max(10),
+  documentHosts: z.array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/)).max(10),
+}).strict().refine(p => p.hosts.includes(new URL(p.rootUrl).hostname), "Root hostname must be approved");
+export type WebsiteProfile = z.infer<typeof websiteProfileSchema>;
+export const websiteRefreshSettingsSchema = z.object({
+  surveySlug: z.string().regex(/^[a-z][a-z0-9-]{1,63}$/),
+  profile: websiteProfileSchema,
+  intervalHours: z.number().int().min(24).max(720).default(168),
+  enabled: z.boolean().default(true),
+}).strict();
+export const websiteRefreshStateSchema = websiteRefreshSettingsSchema.extend({
+  version: z.literal(1), nextRunAt: z.string().datetime(),
+  status: z.enum(["queued", "running", "completed", "failed"]),
+  runId: z.string().nullable(), leaseUntil: z.string().datetime().nullable(),
+  lastStartedAt: z.string().datetime().nullable(), lastFinishedAt: z.string().datetime().nullable(),
+  lastError: z.string().nullable(), lastReportId: z.string().nullable(),
+  summary: z.object({ pages: z.number().int(), images: z.number().int(), tables: z.number().int(), issueCount: z.number().int(), truncated: z.boolean(), issues: z.array(z.object({ url: z.string(), reason: z.string() }).strict()).max(20) }).strict().nullable().default(null),
+});
+export type WebsiteRefreshSettings = z.infer<typeof websiteRefreshSettingsSchema>;
+export type WebsiteRefreshState = z.infer<typeof websiteRefreshStateSchema>;

@@ -11,6 +11,15 @@ beforeEach(() => {
   mocks.transaction.mockImplementation(fn => fn({ $executeRaw: mocks.lock, sourceDocument: { findMany: mocks.findMany, create: mocks.create, updateMany: mocks.updateMany }, sourceChunk: { createMany: mocks.chunks }, sourceAsset: { createMany: mocks.assets } }));
 });
 describe("website ingestion", () => {
+  it("indexes a new survey only under its configured website profile", () => {
+    const custom = snapshot(); custom.surveySlug = "future-bot"; custom.rootUrl = "https://example.com/";
+    custom.pages[0].url = "https://example.com/safety"; custom.pages[0].discoveredFrom = custom.rootUrl;
+    const profile = { rootUrl: custom.rootUrl, hosts: ["example.com"], documentHosts: [] };
+    expect(() => prepareWebsiteIndex(custom)).toThrow("approved website");
+    expect(prepareWebsiteIndex(custom, profile).pages).toHaveLength(1);
+    custom.pages[0].url = "https://other.example/safety";
+    expect(() => prepareWebsiteIndex(custom, profile)).toThrow("outside");
+  });
   it("preserves long clinical sentences, decimals and qualifiers across chunk boundaries", () => {
     const sentence = `${"Context ".repeat(170)}Only if the stated condition is met, the label describes 1.25 mg/kg, up to 125 mg.`;
     const chunks = chunkSourceText(`Heading\n\n${sentence}\n\nAnother complete sentence.`);

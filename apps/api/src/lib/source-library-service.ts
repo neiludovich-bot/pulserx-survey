@@ -248,6 +248,7 @@ export async function importSourceLibraryDocuments(
     await prisma.sourceDocument.deleteMany({
       where: {
         surveySlug: input.surveySlug,
+        NOT: { tags: { has: "website-refresh-config:v1" } },
       },
     });
   }

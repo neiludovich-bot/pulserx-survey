@@ -1,3 +1,5 @@
+import { listWebsiteRefreshes, saveWebsiteRefresh, queueWebsiteRefresh, websiteRefreshProfile } from "./lib/website-refresh-service";
+import { websiteRefreshSettingsSchema } from "@interview/schemas";
 import cors from "@fastify/cors";
 import { InterviewEngine, withModelCallTimingContext } from "@interview/engine";
 import { randomUUID } from "node:crypto";
@@ -389,19 +391,28 @@ export function buildApp() {
     },
   );
 
+  app.get("/admin/source-library/websites", async () => listWebsiteRefreshes());
+  app.put<{ Body: unknown }>("/admin/source-library/websites", async (request, reply) => {
+    try { return await saveWebsiteRefresh(websiteRefreshSettingsSchema.parse(request.body)); }
+    catch (error) { return reply.status(400).send({ message: error instanceof Error ? error.message : "Invalid website settings" }); }
+  });
+  app.post<{ Params: { slug: string } }>("/admin/source-library/websites/:slug/refresh", async (request, reply) => {
+    try { return await queueWebsiteRefresh(request.params.slug); }
+    catch (error) { return reply.status(400).send({ message: error instanceof Error ? error.message : "Unable to queue refresh" }); }
+  });
   app.post<{ Body: unknown }>("/admin/source-library/website-index", async (request, reply) => {
-    try { return await applyWebsiteIndex(request.body); }
+    try { const body = request.body as { surveySlug?: string }; return await applyWebsiteIndex(request.body, body?.surveySlug ? await websiteRefreshProfile(body.surveySlug) : undefined); }
     catch (error) {
       request.log.error(error);
       return reply.status(400).send({ message: error instanceof Error ? error.message : "Website index failed; no changes applied." });
     }
   });
   app.get<{ Querystring: { surveySlug: string } }>("/admin/source-library/website-index/reports", async (request, reply) => {
-    if (!["nubeqa", "brukinsa", "padcev"].includes(request.query.surveySlug)) return reply.status(400).send({ message: "Unknown bot" });
+    if (!/^[a-z][a-z0-9-]{1,63}$/.test(request.query.surveySlug ?? "")) return reply.status(400).send({ message: "Invalid survey slug" });
     return websiteIndexReports(request.query.surveySlug);
   });
   app.get<{ Querystring: { surveySlug: string } }>("/admin/source-library/export", async (request, reply) => {
-    if (!["nubeqa", "brukinsa", "padcev"].includes(request.query.surveySlug)) return reply.status(400).send({ message: "Unknown bot" });
+    if (!/^[a-z][a-z0-9-]{1,63}$/.test(request.query.surveySlug ?? "")) return reply.status(400).send({ message: "Invalid survey slug" });
     return { documents: await prisma.sourceDocument.findMany({ where: { surveySlug: request.query.surveySlug }, include: { chunks: true, assets: true } }) };
   });
 

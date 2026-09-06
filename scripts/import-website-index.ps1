@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference='Stop'
 $snapshot=Get-Content -LiteralPath $SnapshotPath -Raw
 $parsed=$snapshot|ConvertFrom-Json
-if($parsed.surveySlug -notin @('nubeqa','brukinsa','padcev')) { throw 'Unknown bot' }
+if($parsed.surveySlug -notmatch '^[a-z][a-z0-9-]{1,63}$') { throw 'Invalid survey slug' }
 if(([uri]$ApiBase).Scheme -ne 'https') { throw 'Admin requests require HTTPS' }
 $credential=Import-Clixml -LiteralPath $CredentialPath
 $login=Invoke-RestMethod -Uri "$ApiBase/admin/auth/login" -Method Post -ContentType 'application/json' -Body (@{password=$credential.GetNetworkCredential().Password}|ConvertTo-Json)
