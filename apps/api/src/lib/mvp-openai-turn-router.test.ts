@@ -37,6 +37,17 @@ const result = {
 };
 
 describe("typed hybrid participant turn interpretation", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("accepts a direct request as the answer to %s information needs without retrying", async surveySlug => {
+    const participantContent = "Tell me about DDIs.";
+    const sourceRequest = { kind: "explanation_request", participantEvidence: participantContent, resolvedQuestion: participantContent };
+    gateway.interpretConversation.mockResolvedValue({ result: { ...result, schemaVersion: 5, topic: null,
+      answerEvidence: [participantContent], sourceRequest, asksSourceQuestion: true, needsSource: true, kind: "source_question" } });
+    const routed = await classifyMvpTurnRouteHybrid({ ...input, surveySlug, sourceBrand: surveySlug.toUpperCase(),
+      currentQuestionId: "familiarity_information_need", currentQuestion: "What would you most like clarified?", participantContent,
+      conversationContext: { state: { version: 1, priorities: [], activePriorityId: null }, isPriorityQuestion: true, isResumeCue: false } });
+    expect(routed).toMatchObject({ answerStatus: "answered", asksSourceQuestion: true, modelAttempts: 1, error: null });
+    expect(gateway.interpretConversation).toHaveBeenCalledOnce();
+  });
   it("uses one shared interpreter when conversation state is supplied", async () => {
     const interpretation = { version: 1, rationale: "Retain both priorities." };
     gateway.interpretConversation.mockResolvedValue({ result, interpretation });

@@ -223,7 +223,7 @@ export async function classifyMvpTurnRouteHybrid(
     }
     if (
       participantOnlyRequestsInformation(input.participantContent) &&
-      (result.answerStatus !== "not_answered" || (input.sourceConversationActive && !result.asksSourceQuestion))
+      ((result.answerStatus !== "not_answered" && input.currentQuestionId !== "familiarity_information_need") || (input.sourceConversationActive && !result.asksSourceQuestion))
     ) {
       throw new Error("A turn containing only information requests cannot receive research-answer credit or close an active source discussion.");
     }

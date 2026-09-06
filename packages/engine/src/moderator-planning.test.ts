@@ -77,6 +77,26 @@ const presentedInput: ModeratorPlanInput = {
   },
 };
 
+it("answers an information request without also queueing its contained topic for another presentation", () => {
+  const participantMessage = "Tell me about DDI";
+  const sourceRequest = request(participantMessage);
+  const normalized = normalizeModeratorPlanModelResult({ ...input, participantMessage, sourceRequest, asksSourceQuestion: true }, {
+    ...modelPlan, sourceRequest,
+    priorityMentions: [modelPlan.priorityMentions[1]],
+  });
+  expect(normalized).toMatchObject({ action: "answer_source", sourceRequest, newPriorities: [] });
+});
+
+it("retains a separately named priority when a different topic is requested now", () => {
+  const participantMessage = "PFS matters to me. Tell me about DDI";
+  const sourceRequest = request("Tell me about DDI");
+  const normalized = normalizeModeratorPlanModelResult({ ...input, participantMessage, sourceRequest, asksSourceQuestion: true }, {
+    ...modelPlan, sourceRequest,
+  });
+  expect(normalized.action).toBe("answer_source");
+  expect(normalized.newPriorities.map(priority => priority.label)).toEqual(["PFS"]);
+});
+
 const evidencePacket: ModeratorEvidencePacket = {
   sources: [{
     id: "source-1", surveySlug: "nubeqa", title: "Selected evidence", url: "https://example.com/source",

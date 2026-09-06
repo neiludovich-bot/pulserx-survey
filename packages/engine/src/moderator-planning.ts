@@ -107,6 +107,10 @@ export function normalizeModeratorPlanModelResult(input: ModeratorPlanInput, out
   const newPriorities: Array<{ label: string; participantEvidence: string; sourceQuestion: string }> = [];
   const labels = new Set(parsed.state.priorities.map((priority) => priority.label.toLowerCase().trim()));
   for (const mention of parsed.isResumeCue ? [] : model.priorityMentions) {
+    // Answer a direct request now without also scheduling its topic for a
+    // second presentation. A separately stated addition still owns its queue entry.
+    if (sourceRequest?.participantEvidence.includes(mention.participantEvidence) &&
+        mention.kind === "initial_priority") continue;
     if (!parsed.participantMessage.includes(mention.participantEvidence) ||
         (mention.additionEvidence !== null && !parsed.participantMessage.includes(mention.additionEvidence))) {
       continue;
