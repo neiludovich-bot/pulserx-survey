@@ -50,7 +50,7 @@ describe("source library content retrieval", () => {
     mocks.findMany.mockResolvedValue([...ids].reverse().map((id) => ({ id, content: "Content-ranked source passage.", tags: id === "section-0" ? [] : ["drug", "interactions"], sourceDocument: { title: "Document", description: null, url: "https://example.com/document", tags: [], assets: [] } })));
     const chunks = await controlledRagTestInternals.retrieveChunks(input);
     expect(chunks[0].id).toBe("db:section-0");
-    expect(chunks.filter((chunk) => chunk.id.startsWith("db:")).map((chunk) => chunk.id).sort()).toEqual(ids.slice(0, 18).map((id) => `db:${id}`).sort());
+    expect(chunks.filter((chunk) => chunk.id.startsWith("db:")).map((chunk) => chunk.id).sort()).toEqual(ids.slice(0, 17).map((id) => `db:${id}`).sort());
   });
 
   it("does not load unrelated first pages when the content query has no matches", async () => {

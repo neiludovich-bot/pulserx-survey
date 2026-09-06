@@ -29,6 +29,18 @@ function fixture(surveySlug: "nubeqa" | "brukinsa" | "padcev") {
 }
 
 describe("single-call conversation boundary", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("uses the v2 contract for a mixed %s response without legacy routing", async brand => {
+    const f = fixture(brand);
+    const message = "That sounds useful. What did Study A report?";
+    f.parse.mockResolvedValue({ id: "v2", model: "gpt-5.4-mini", output_parsed: {
+      observation: { answerStatus: "answered", answerEvidence: ["That sounds useful."], request: { text: "What did Study A report?", evidence: "What did Study A report?" }, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false }, answer: f.answer,
+    } });
+    const result = await f.gateway.conversationTurn({ version: 2, brand, participantMessage: message,
+      question: { id: "reaction", text: "What is your reaction?", kind: "reaction" }, discussionQuery: "Study A", recentTurns: [], topics: [] }, f.evidence);
+    expect(f.parse).toHaveBeenCalledOnce();
+    expect(result.observation.answerEvidence).toEqual(["That sounds useful."]);
+    expect(result.answer?.selections[0].supportExcerpt).toBe(f.evidence.candidates[0].text);
+  });
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("interprets and answers %s with one call while retaining source validation", async brand => {
     const f = fixture(brand);
     const result = await f.gateway.interpretAndAnswerConversation(f.request, f.evidence);

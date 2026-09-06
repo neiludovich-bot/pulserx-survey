@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { conversationStateSchema } from "./conversation-state";
 import { sourceRequestSchema } from "./source-request";
 import { sourceQuestionPlanSchema } from "./source-question";
 import { participantUnderstandingSchema, presentationPlanSchema } from "./presentation";
@@ -52,7 +53,8 @@ export const moderatorPrioritySchema = z.object({
 
 export const moderatorStateSchema = z.object({
   version: z.literal(1),
-  runtime: z.enum(["current", "single_call_v1"]).optional(),
+  runtime: z.enum(["current", "single_call_v1", "conversation_v2"]).optional(),
+  conversation: conversationStateSchema.optional(),
   priorities: z.array(moderatorPrioritySchema).max(64),
   activePriorityId: z.string().min(1).nullable(),
   understanding: participantUnderstandingSchema.optional(),

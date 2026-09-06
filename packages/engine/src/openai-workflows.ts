@@ -2,6 +2,9 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
+import { conversationTurnSystemPrompt } from "@interview/prompts";
+import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnContextSchema, type ConversationTurnContext } from "@interview/schemas";
+import { validateConversationObservation } from "./conversation-runtime";
 import {
   analysisSystemPrompt,
   decisionSystemPrompt,
@@ -307,6 +310,24 @@ export class OpenAIResponsesGateway {
     const answer = call.result.answer ? validateWebsiteAnswer({ ...parsedEvidence,
       query: interpretation.sourceRequest!.resolvedQuestion, sourceQuestionPlan: interpretation.sourceQuestionPlan }, call.result.answer) : null;
     return { ...call, interpretation, answer, result: conversationRouteResult(conversation.participantMessage, interpretation) };
+  }
+
+  async conversationTurn(context: ConversationTurnContext, evidence: ModeratorEvidenceSelectionInput) {
+    const parsedContext = conversationTurnContextSchema.parse(context);
+    const parsedEvidence = moderatorEvidenceSelectionInputSchema.parse(evidence);
+    const call = await this.runStructuredCall<import("zod").infer<typeof conversationTurnResultSchema>>({
+      callType: "single_call_conversation", model: this.config.analysisModel,
+      promptVersion: conversationTurnSystemPrompt.version,
+      schemaName: "conversation_turn_v2", schema: conversationTurnResultSchema,
+      instructions: conversationTurnSystemPrompt.instructions,
+      input: conversationTurnInputSchema.parse({ context: parsedContext, evidence: { ...parsedEvidence,
+        candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
+      metadata: { survey_slug: parsedEvidence.surveySlug },
+    });
+    const observation = validateConversationObservation(parsedContext, call.result.observation);
+    if (Boolean(observation.request) !== Boolean(call.result.answer)) throw new Error("Current request and answer must occur together.");
+    const answer = call.result.answer ? validateWebsiteAnswer({ ...parsedEvidence, query: observation.request!.text }, call.result.answer) : null;
+    return { observation, answer, trace: call.trace };
   }
 
   async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {

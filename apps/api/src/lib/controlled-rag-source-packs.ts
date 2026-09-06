@@ -36,6 +36,16 @@ export const NUBEQA_DDI_FACTS = [
 
 export const CONTROLLED_RAG_CHUNKS = [
   {
+    // Verified 2026-09-06: the dosing guide linked from /cll/dosing/, PDF page 2.
+    id: "brukinsa-tablet-administration", surveySlug: "brukinsa",
+    title: "BRUKINSA Tablet Dosing and Administration",
+    url: "https://brukinsahcp.com/wp-content/uploads/brukinsa-dosing-and-administration-guide.pdf",
+    description: "Routine tablet dose and administration from the medical website's dosing guide.",
+    tags: ["dosing", "dose", "tablet", "administration", "once daily", "twice daily"],
+    text: "The recommended total daily BRUKINSA dose is 320 mg: either 320 mg once daily (two 160 mg tablets) or 160 mg twice daily (one tablet in the morning and one in the evening). Tablets may be taken with or without food and must not be chewed or crushed. Tablets are scored and may be split. Treatment continues until disease progression or unacceptable toxicity. Dose changes are required in selected situations, including severe hepatic impairment and certain CYP3A interactions; the dosing guide provides those adjustments.",
+    assets: [],
+  },
+  {
     id: "brukinsa-cll-sequoia",
     surveySlug: "brukinsa",
     title: "BRUKINSA CLL/SLL Efficacy: SEQUOIA",

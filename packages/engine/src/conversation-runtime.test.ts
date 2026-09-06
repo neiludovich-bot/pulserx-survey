@@ -1,0 +1,43 @@
+import { describe, expect, it, vi } from "vitest";
+vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
+import { emptyConversationState, selectConversationAction, validateConversationObservation } from "./conversation-runtime";
+import type { ConversationObservation, ConversationTurnContext } from "@interview/schemas";
+const empty: ConversationObservation = { answerStatus: "not_answered", answerEvidence: [], request: null, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false };
+const context: ConversationTurnContext = { version: 2, brand: "fixture", participantMessage: "That sounds useful. How is it dosed?", question: { id: "reaction", text: "What is your reaction?", kind: "reaction" }, discussionQuery: "Study A", recentTurns: [], topics: [] };
+describe("replacement conversation selection", () => {
+  it("retains a reaction and independently selects the follow-up request", () => {
+    const observation = validateConversationObservation(context, { ...empty, answerStatus: "answered", answerEvidence: ["That sounds useful."], request: { text: "How is fixture dosed?", evidence: "How is it dosed?" } });
+    const state = emptyConversationState();
+    state.topics = [{ id: "a", label: "efficacy", query: "efficacy", status: "presented", evidence: [] }, { id: "b", label: "dosing", query: "dosing", status: "pending", evidence: [] }];
+    state.activeTopicId = "a"; state.reactionPending = true;
+    const result = selectConversationAction(state, observation, false);
+    expect(result.action).toBe("answer_request");
+    expect(result.state.topics[0]).toMatchObject({ status: "discussed", evidence: ["That sounds useful."] });
+    expect(result.state.topics[1].status).toBe("pending");
+    expect(state.topics[0].status).toBe("presented");
+  });
+  it("queues both named priorities in order, without marking either presented before delivery", () => {
+    const result = selectConversationAction(emptyConversationState(), { ...empty, answerStatus: "answered", answerEvidence: ["PFS and DDI"], priorities: [{ label: "PFS", query: "PFS evidence", evidence: "PFS" }, { label: "DDI", query: "DDI evidence", evidence: "DDI" }] }, false);
+    expect(result.action).toBe("present_topic");
+    expect(result.state.topics.map(t => [t.label, t.status])).toEqual([["PFS", "pending"], ["DDI", "pending"]]);
+    expect(result.state.activeTopicId).toBe("topic-1");
+  });
+  it("continue clears the discussion and skips remaining topics without inventing answers", () => {
+    const state = emptyConversationState(); state.parkedGuideId = "fit";
+    state.topics = [{ id: "a", label: "DDI", query: "DDI", status: "presented", evidence: [] }];
+    state.discussion = { query: "DDI", lastAnswer: "A sourced answer", sourceIds: ["a"] }; state.reactionPending = true;
+    const result = selectConversationAction(state, null, true);
+    expect(result.action).toBe("resume_guide");
+    expect(result.state).toMatchObject({ parkedGuideId: "fit", reactionPending: false, discussion: null });
+    expect(result.state.topics[0]).toMatchObject({ status: "skipped", evidence: [] });
+  });
+  it("does not turn a question into research-answer credit", () => {
+    expect(() => validateConversationObservation({ ...context, participantMessage: "How is it dosed?" }, { ...empty, answerStatus: "answered", answerEvidence: ["How is it dosed?"], request: { text: "How is it dosed?", evidence: "How is it dosed?" } })).toThrow("not research-answer evidence");
+  });
+  it.each(["old evidence", "That sounds useful. fabricated"])("rejects evidence absent from this message: %s", evidence => {
+    expect(() => validateConversationObservation(context, { ...empty, answerStatus: "answered", answerEvidence: [evidence] })).toThrow("exact current-message");
+  });
+  it("does not infer an overview from low familiarity", () => {
+    expect(selectConversationAction(emptyConversationState(), { ...empty, familiarity: "low", familiarityEvidence: "Not familiar" }, false).action).toBe("ask_information_need");
+  });
+});

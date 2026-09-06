@@ -1882,7 +1882,7 @@ export const sessionAuditResponseSchema = z.object({
 });
 
 export const mvpCustomGptSurveyStartRequestSchema = z.object({
-  conversationRuntime: z.enum(["current", "single_call_v1"]).optional(),
+  conversationRuntime: z.enum(["current", "single_call_v1", "conversation_v2"]).optional(),
   projectId: z.string().trim().min(1).optional(),
   surveySlug: z
     .string()
@@ -2536,3 +2536,5 @@ export type SourceLibraryBulkImport = z.infer<
 export type SourceLibraryBulkImportResponse = z.infer<
   typeof sourceLibraryBulkImportResponseSchema
 >;
+export * from "./conversation-state";
+export * from "./conversation-turn";

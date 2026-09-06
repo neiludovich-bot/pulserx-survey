@@ -17,6 +17,7 @@ import {
   mvpCustomGptSurveyVoiceTurnResponseSchema,
 } from "@interview/schemas";
 import { emptyModeratorState, runModeratorTurn } from "./mvp-moderator-service";
+import { runConversationRuntime } from "./conversation-runtime-service";
 import { sourceDiscussionFastPath } from "./mvp-source-fast-path";
 import { beginSourceDiscussion, completeSourceDiscussion, failSourceDiscussion, isSourceRetryCue, sourceRequestForTurn, sourceDiscussionFailure, sourceDiscussionContextForTurn, sourceFailureParticipantMessage, withSourceNavigationHint } from "./mvp-source-discussion";
 import { isReferentialClarification } from "./controlled-rag-service";
@@ -3198,6 +3199,43 @@ export async function submitMvpCustomGptSurveyTurn(
   session.messages.push(createMessage("participant", input.content));
   session.turnCount += 1;
   const sequenceBase = turnSequenceBase(session);
+
+  if (session.moderatorState.runtime === "conversation_v2" && session.surveySlug !== "data" && currentQuestionBefore?.id !== "intro_consent") {
+    const result = await runConversationRuntime({ brand: session.sourceBrand, surveySlug: session.surveySlug,
+      state: session.moderatorState.conversation, question: currentQuestionBefore,
+      history: session.messages.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content })),
+      message: input.content, resume: contentLooksLikeReturnToSurveyCue(input.content),
+      stop: contentLooksLikeSurveyStop(input.content) || hardTimeboxExpired(session),
+      selectGuide: (state, observation) => {
+        const credited = new Set(session.answeredQuestionIds);
+        if (currentQuestionBefore && observation?.answerStatus === "answered") credited.add(currentQuestionBefore.id);
+        const eligible = session.guide.filter(q => !credited.has(q.id) && !state.skippedGuideIds.includes(q.id) && intentAllowsQuestion(session.surveyIntent, q) && questionAllowedByDiseaseLane(session, q));
+        return eligible.find(q => q.id === state.parkedGuideId) ?? eligible[0] ?? null;
+      },
+    });
+    session.moderatorState.conversation = result.state;
+    if (result.observation?.answerEvidence.length && currentQuestionBefore) {
+      session.answerEvidenceByQuestionId[currentQuestionBefore.id] = [...new Set([...(session.answerEvidenceByQuestionId[currentQuestionBefore.id] ?? []), ...result.observation.answerEvidence])];
+      if (result.observation.answerStatus === "answered" && !session.answeredQuestionIds.includes(currentQuestionBefore.id)) session.answeredQuestionIds.push(currentQuestionBefore.id);
+      updateDiseaseStateFromParticipant(session, result.observation.answerEvidence.join(" "));
+    }
+    if (result.question) {
+      if (!session.guide.some(q => q.id === result.question!.id)) session.adaptiveProbeQuestions = [...session.adaptiveProbeQuestions.filter(q => q.id !== result.question!.id), result.question];
+      session.currentQuestionId = result.question.id;
+      if (!session.askedQuestionIds.includes(result.question.id)) session.askedQuestionIds.push(result.question.id);
+    } else session.currentQuestionId = null;
+    if (result.completed) session.completedReason = "Conversation interview completed.";
+    session.messages.push(createMessage("interviewer", result.content, result.references));
+    const nextAction = result.completed ? "wrap_up" as const : result.references.length ? "answer_then_ask" as const : "ask" as const;
+    const audit = { eventType: "turn_completed" as const, participantMessage: input.content, assistantMessage: result.content, sequenceBase,
+      currentQuestionBefore: questionText(currentQuestionBefore), currentQuestionAfter: questionText(result.question),
+      actualAskedQuestionId: result.question?.id ?? null, actualAskedQuestion: questionText(result.question), nextAction,
+      remainingSeconds: remainingSeconds(session), moderatorDecision: { runtime: "conversation_v2", action: result.action, before: result.initialState, observation: result.observation, trace: result.trace },
+      references: result.references.map(({ citationId, title, url }) => ({ citationId, title, url })) };
+    appendMvpAuditEvent(session, audit);
+    await persistMvpSurveyTurnAudit({ session: persistenceSnapshot(session), turn: audit });
+    return responseForSession(session, nextAction);
+  }
 
   const fixedFlow = isFixedFlowSurvey(session);
   const discussionBefore = session.moderatorState.sourceDiscussion;
