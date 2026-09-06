@@ -588,3 +588,13 @@ export function getMvpSurveyAuditSession(sessionId: string) {
     `/mvp/customgpt-survey/audit/sessions/${sessionId}`,
   );
 }
+
+export async function getWebsiteRefreshes() {
+  return apiFetch<{ websites: import("@interview/schemas").WebsiteRefreshState[] }>("/admin/source-library/websites");
+}
+export async function saveWebsiteRefreshSettings(input: import("@interview/schemas").WebsiteRefreshSettings) {
+  return apiFetch<import("@interview/schemas").WebsiteRefreshState>("/admin/source-library/websites", { method: "PUT", body: JSON.stringify(input) });
+}
+export async function refreshSurveyWebsite(slug: string) {
+  return apiFetch<import("@interview/schemas").WebsiteRefreshState>(`/admin/source-library/websites/${encodeURIComponent(slug)}/refresh`, { method: "POST" });
+}

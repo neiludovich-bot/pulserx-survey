@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { AdminGate } from "./AdminGate";
+import { WebsiteRefreshPanel } from "./WebsiteRefreshPanel";
 import { SourceLibraryClient } from "./SourceLibraryClient";
 
 export function AdminSourceLibraryClient() {
@@ -31,6 +32,7 @@ export function AdminSourceLibraryClient() {
               </button>
             </header>
 
+            <WebsiteRefreshPanel />
             <SourceLibraryClient initialSurveySlug={initialSurveySlug} />
           </section>
         </main>
