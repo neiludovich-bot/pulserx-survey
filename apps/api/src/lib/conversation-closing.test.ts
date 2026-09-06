@@ -1,0 +1,64 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emptyConversationState } from "@interview/engine";
+import { runConversationRuntime } from "./conversation-runtime-service";
+import { researchPlanForGuide } from "./mvp-research-objectives";
+const mocks = vi.hoisted(() => ({ turn: vi.fn(), present: vi.fn(), retrieve: vi.fn() }));
+vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => ({ conversationTurn: mocks.turn, presentConversationEvidence: mocks.present }) }));
+vi.mock("./controlled-rag-service", () => ({ retrieveWebsiteCandidates: mocks.retrieve }));
+const observation = { answerStatus: "not_answered", answerEvidence: [], request: { text: "What is the result?", evidence: "What is the result?" }, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false };
+const guide = { id: "fit", canonicalQuestion: "Which patients fit?", module: "fit", objective: "fit", sourceContextRequirement: null, routeKeywords: [], completionSignals: [], adaptiveProbes: [], analyzableOutputs: [] };
+beforeEach(() => vi.resetAllMocks());
+
+describe("optional final questions and recap", () => {
+  it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s open beyond time, answers remaining questions, then recaps", async brand => {
+    mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Trial efficacy", url: "https://example.test/study", description: "", text: "A supported fact.", tags: [], assets: [] }]);
+    const answer = { selections: [{ sourceId: "a", supportExcerpt: "A supported fact.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported fact.", sourceIds: ["a"] }], unavailableReason: null };
+    mocks.turn.mockResolvedValue({ observation, trace: {}, answer });
+    const selectGuide = vi.fn(() => guide);
+    const input = { brand, surveySlug: brand, question: guide, history: [], message: "What is the result?", resume: false, stop: false, timeExpired: true, selectGuide };
+    const first = await runConversationRuntime(input);
+    expect(first.completed).toBe(false);
+    expect(first.content).toContain("A supported fact.");
+    expect(first.content).toContain("reached the planned time");
+    expect(first.question?.id).toBe("conversation-final-questions");
+    expect(selectGuide).not.toHaveBeenCalled();
+    expect(first.references).toHaveLength(1);
+    const second = await runConversationRuntime({ ...input, state: first.state, question: first.question });
+    expect(second.completed).toBe(false);
+    expect(second.content).toContain("any other questions");
+    expect(second.content).not.toContain("reached the planned time");
+    expect(mocks.turn.mock.calls[1][0].closing).toBe(true);
+    mocks.turn.mockResolvedValue({ observation: { ...observation, request: null, closingResponse: { intent: "finish", evidence: "I'm all set" } }, trace: {}, answer: null });
+    const last = await runConversationRuntime({ ...input, state: second.state, question: second.question, message: "I'm all set" });
+    expect(last.completed).toBe(true);
+    expect(last.content).toContain("A brief recap");
+    expect(last.content).toContain("Trial efficacy");
+    expect(last.content).not.toContain("A supported fact.");
+    expect(mocks.present).not.toHaveBeenCalled();
+  });
+  it("invites final questions on guide exhaustion and does not end for continue or a mixed final question", async () => {
+    const input = { brand: "nubeqa", surveySlug: "nubeqa" as const, question: guide, history: [], message: "continue", resume: true, stop: false, selectGuide: vi.fn(() => null) };
+    const first = await runConversationRuntime(input);
+    expect(first.completed).toBe(false);
+    expect(first.state.closing?.reason).toBe("guide");
+    const continued = await runConversationRuntime({ ...input, state: first.state, question: first.question });
+    expect(continued.completed).toBe(false);
+    expect(input.selectGuide).toHaveBeenCalledOnce();
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation: { ...observation, closingResponse: { intent: "finish", evidence: "I'm done" } }, trace: {}, answer: null });
+    const mixed = await runConversationRuntime({ ...input, state: first.state, question: first.question, message: "I'm done, but what is the result?", resume: false });
+    expect(mixed.completed).toBe(false);
+    expect(mixed.content).toContain("any other questions");
+  });
+  it("recaps only recorded topics and views on explicit stop, without a model call", async () => {
+    const state = emptyConversationState(); state.coveredTopics = ["Safety", "Safety"];
+    state.research = researchPlanForGuide([guide]);
+    state.research.objectives[0].evidence = [{ objectiveId: "fit", criterionId: "perspective", evidence: "Not convincing for my practice", turn: 1 }];
+    const result = await runConversationRuntime({ brand: "nubeqa", surveySlug: "nubeqa", state, question: guide, history: [], message: "stop", resume: false, stop: true, selectGuide: () => null });
+    expect(result.completed).toBe(true);
+    expect(result.content.match(/Safety/g)).toHaveLength(1);
+    expect(result.content).toContain("Not convincing for my practice");
+    expect(result.content).not.toContain("Which patients fit?");
+    expect(mocks.turn).not.toHaveBeenCalled();
+  });
+});

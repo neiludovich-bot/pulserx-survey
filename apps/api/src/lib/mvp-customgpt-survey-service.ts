@@ -3139,7 +3139,7 @@ export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
     currentQuestionId: firstQuestion.id,
     pendingReturnQuestionId: null,
     moderatorState: { ...emptyModeratorState(), runtime: conversationRuntimeForNewSession(definition.slug, input.conversationRuntime, env),
-      ...(objectiveRuntime ? { conversation: { version: 2 as const, parkedGuideId: null, skippedGuideIds: [], topics: [], activeTopicId: null, discussion: null, reactionPending: false, research: researchPlanForGuide(guide) } } : {}) },
+      ...(objectiveRuntime ? { conversation: { version: 2 as const, closing: null, coveredTopics: [], parkedGuideId: null, skippedGuideIds: [], topics: [], activeTopicId: null, discussion: null, reactionPending: false, research: researchPlanForGuide(guide) } } : {}) },
     activeDiseaseAreas: [],
     primaryDiseaseArea: null,
     queuedQuestionIds: [],
@@ -3210,7 +3210,7 @@ export async function submitMvpCustomGptSurveyTurn(
       state: session.moderatorState.conversation, question: currentQuestionBefore,
       history: session.messages.slice(0, -1).slice(-12).map(({ role, content }) => ({ role, content })),
       message: input.content, resume: contentLooksLikeReturnToSurveyCue(input.content),
-      stop: contentLooksLikeSurveyStop(input.content) || hardTimeboxExpired(session),
+      stop: contentLooksLikeSurveyStop(input.content), timeExpired: remainingSeconds(session) === 0,
       selectGuide: (state, observation) => {
         const credited = new Set(session.answeredQuestionIds);
         if (currentQuestionBefore && observation?.answerStatus === "answered") credited.add(currentQuestionBefore.id);

@@ -32,7 +32,8 @@ describe("new shared dispatch", () => {
     expect(first.state.research?.objectives[0].status).toBe("partial");
     mocks.turn.mockResolvedValueOnce({ observation: { ...observation, request: null, answerStatus: "not_answered", answerEvidence: [], researchSignals: [] }, trace: {}, answer: null });
     const second = await runConversationRuntime({ ...input, state: first.state, question: first.question, message: "I'm not sure" });
-    expect(second.completed).toBe(true);
+    expect(second.completed).toBe(false);
+    expect(second.action).toBe("final_questions");
     expect(second.state.research?.objectives[0].status).toBe("deferred");
     expect(mocks.turn).toHaveBeenCalledTimes(2);
   });

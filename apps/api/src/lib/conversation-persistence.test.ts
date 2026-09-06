@@ -10,6 +10,27 @@ const provider = env.MVP_SOURCE_PROVIDER;
 beforeEach(() => { vi.resetAllMocks(); env.MVP_SOURCE_PROVIDER = "controlled_rag"; });
 afterEach(() => { env.MVP_SOURCE_PROVIDER = provider; resetMvpCustomGptSurveySessions(); });
 describe("replacement persistence boundary", () => {
+  it("persists optional Q&A past the former hard timeout and restores it after reload", async () => {
+    const started = startMvpCustomGptSurvey({ surveySlug: "nubeqa", conversationRuntime: "conversation_v2", guide: ["Which factors matter?"], targetDurationSeconds: 600 });
+    const snapshot = structuredClone(mocks.start.mock.calls[0][0].session);
+    snapshot.startedAt = new Date(Date.now() - 7200_000);
+    mocks.load.mockResolvedValue({ session: snapshot, messages: started.messages, turnCount: 0 });
+    resetMvpCustomGptSurveySessions(); mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation: { answerStatus: "answered", answerEvidence: ["Efficacy"], request: null, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false }, trace: {}, answer: null });
+    const response = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "Efficacy" });
+    const saved = mocks.persist.mock.calls.at(-1)![0].session;
+    expect(response.status).toBe("active");
+    expect(response.remainingSeconds).toBe(0);
+    expect(saved.moderatorState.conversation.closing.reason).toBe("time");
+    expect(saved.completedReason).toBeNull();
+    mocks.load.mockResolvedValue({ session: structuredClone(saved), messages: response.messages, turnCount: 1 });
+    resetMvpCustomGptSurveySessions();
+    mocks.turn.mockResolvedValue({ observation: { answerStatus: "not_answered", answerEvidence: [], request: null, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false, closingResponse: { intent: "finish", evidence: "I'm all set" } }, trace: {}, answer: null });
+    const finished = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "I'm all set" });
+    expect(finished.status).toBe("completed");
+    expect(finished.messages.at(-1)?.content).toContain("A brief recap");
+    expect(mocks.turn.mock.calls.at(-1)![0].closing).toBe(true);
+  });
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("persists %s objectives before consent and skips volunteered completed objectives after reload", async brand => {
     const started = startMvpCustomGptSurvey({ surveySlug: brand, conversationRuntime: "conversation_v2", targetDurationSeconds: 3600 });
     const snapshot = structuredClone(mocks.start.mock.calls[0][0].session);
@@ -27,7 +48,8 @@ describe("replacement persistence boundary", () => {
     ], request: null, priorities: [], familiarity: "high", familiarityEvidence: "I'm familiar", outOfScope: false }, trace: {}, answer: null });
     const response = await submitMvpCustomGptSurveyTurn({ sessionId: started.sessionId, content: "I'm familiar. I see a role in selected patients because our clinic can support monitoring." });
     const saved = mocks.persist.mock.calls.at(-1)![0].session;
-    expect(response.status).toBe("completed");
+    expect(response.status).toBe("active");
+    expect(saved.moderatorState.conversation.closing.reason).toBe("guide");
     expect(saved.answeredQuestionIds).toContain("patient_fit");
     expect(saved.moderatorState.conversation.research.objectives.find((item: { id: string }) => item.id === "patient_fit").status).toBe("covered");
     expect(saved.answerEvidenceByQuestionId.patient_fit).toContain("because our clinic can support monitoring");

@@ -5,6 +5,14 @@ import type { ConversationObservation, ConversationTurnContext } from "@intervie
 const empty: ConversationObservation = { answerStatus: "not_answered", answerEvidence: [], reactionEvidence: [], request: null, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false };
 const context: ConversationTurnContext = { version: 2, brand: "fixture", participantMessage: "That sounds useful. How is it dosed?", question: { id: "reaction", text: "What is your reaction?", kind: "reaction" }, discussionQuery: "Study A", recentTurns: [], topics: [] };
 describe("replacement conversation selection", () => {
+  it("only accepts closing intent during final Q&A and lets a question override it", () => {
+    const message = "No thanks";
+    const closingResponse = { intent: "finish", evidence: message };
+    expect(validateConversationObservation({ ...context, participantMessage: message }, { ...empty, closingResponse }).closingResponse).toBeNull();
+    expect(validateConversationObservation({ ...context, closing: true, participantMessage: message }, { ...empty, closingResponse }).closingResponse?.intent).toBe("finish");
+    expect(validateConversationObservation({ ...context, closing: true, participantMessage: "No thanks, but how is it dosed?" }, { ...empty, closingResponse, request: { text: "Dosing?", evidence: "how is it dosed?" } }).closingResponse).toBeNull();
+    expect(() => validateConversationObservation({ ...context, closing: true, participantMessage: "Yes" }, { ...empty, closingResponse })).toThrow("current-message evidence");
+  });
   it("accepts a simplification request as a response to a clarity check without clinical credit", () => {
     const message = "Can you explain that more simply?";
     const result = validateConversationObservation({ ...context, participantMessage: message, question: { id: "clarity", text: "Does that address your question?", kind: "clarification" } }, { ...empty, answerStatus: "partial", answerEvidence: [message], request: { text: "Explain the monitoring guidance more simply", evidence: message } });

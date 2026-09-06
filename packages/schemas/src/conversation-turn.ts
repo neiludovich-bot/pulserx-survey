@@ -5,6 +5,7 @@ import { researchSignalSchema } from "./research-objectives";
 
 export const conversationTurnContextSchema = z.object({
   version: z.literal(2), brand: z.string(), participantMessage: z.string().min(1).max(12000),
+  closing: z.boolean().optional(),
   researchObjectives: z.array(z.object({ id: z.string(), objective: z.string(), missingCriteria: z.array(z.object({ id: z.string(), description: z.string() }).strict()) }).strict()).max(40).optional(),
   question: z.object({ id: z.string(), text: z.string(), kind: z.enum(["guide", "priorities", "reaction", "clarification", "information_need"]) }).strict().nullable(),
   discussionQuery: z.string().nullable(),
@@ -12,6 +13,7 @@ export const conversationTurnContextSchema = z.object({
   topics: z.array(z.object({ id: z.string(), label: z.string(), status: z.string() }).strict()).max(64),
 }).strict();
 export const conversationObservationSchema = z.object({
+  closingResponse: z.object({ intent: z.enum(["finish", "continue"]), evidence: z.string().min(1).max(12000) }).strict().nullable().optional(),
   researchSignals: z.array(researchSignalSchema).max(16).optional(),
   answerStatus: z.enum(["answered", "partial", "not_answered"]),
   answerEvidence: z.array(z.string().min(1).max(12000)).max(8),
@@ -23,6 +25,7 @@ export const conversationObservationSchema = z.object({
   outOfScope: z.boolean(),
 }).strict();
 export const conversationObservationModelSchema = conversationObservationSchema.omit({ answerEvidence: true, reactionEvidence: true, request: true, priorities: true, familiarity: true, familiarityEvidence: true }).extend({
+  closingResponse: z.object({ intent: z.enum(["finish", "continue"]), evidenceRange: evidenceTokenRangeSchema }).strict().nullable().default(null),
   researchSignals: z.array(researchSignalSchema.omit({ evidence: true }).extend({ evidenceRange: evidenceTokenRangeSchema }).strict()).max(16).default([]),
   answerEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
   reactionEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),

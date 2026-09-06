@@ -4,6 +4,8 @@ import { researchPlanStateSchema } from "./research-objectives";
 export const conversationStateSchema = z.object({
   version: z.literal(2),
   research: researchPlanStateSchema.optional(),
+  closing: z.object({ reason: z.enum(["time", "guide"]) }).strict().nullable().default(null),
+  coveredTopics: z.array(z.string().min(1).max(500)).max(100).default([]),
   parkedGuideId: z.string().nullable(),
   skippedGuideIds: z.array(z.string()).default([]),
   topics: z.array(z.object({

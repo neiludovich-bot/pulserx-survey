@@ -319,17 +319,18 @@ export class OpenAIResponsesGateway {
     const call = await this.runStructuredCall<import("zod").infer<typeof conversationTurnResultSchema>>({
       callType: "single_call_conversation", model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: conversationTurnSystemPrompt.version,
-      schemaName: parsedContext.question?.kind === "priorities" ? "conversation_turn_v5_priorities" : "conversation_turn_v5_response",
+      schemaName: parsedContext.question?.kind === "priorities" ? "conversation_turn_v6_priorities" : "conversation_turn_v6_response",
       schema: conversationTurnResultSchemaForQuestion(parsedContext.question?.kind ?? null, parsedContext.researchObjectives),
       instructions: conversationTurnSystemPrompt.instructions,
       input: conversationTurnInputSchema.parse({ context: { ...parsedContext, participantTokens: participantTokensForModel(parsedContext.participantMessage) }, evidence: { ...parsedEvidence,
         candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
       metadata: { survey_slug: parsedEvidence.surveySlug },
     });
-    const { answerEvidenceRanges, reactionEvidenceRanges, priorities, familiarity, researchSignals = [], ...fields } = call.result.observation;
+    const { answerEvidenceRanges, reactionEvidenceRanges, priorities, familiarity, researchSignals = [], closingResponse, ...fields } = call.result.observation;
     const request = call.result.source?.request;
     const excerpt = (range: import("@interview/schemas").EvidenceTokenRange) => evidenceFromTokenRange(parsedContext.participantMessage, range);
     const observation = validateConversationObservation(parsedContext, { ...fields,
+      closingResponse: closingResponse ? { intent: closingResponse.intent, evidence: excerpt(closingResponse.evidenceRange) } : null,
       researchSignals: researchSignals.map(({ evidenceRange, ...signal }) => ({ ...signal, evidence: excerpt(evidenceRange) })),
       answerEvidence: answerEvidenceRanges.map(excerpt), reactionEvidence: reactionEvidenceRanges.map(excerpt), request: request ? { text: request.text, evidence: excerpt(request.evidenceRange) } : null,
       priorities: priorities.map(({ evidenceRange, ...priority }) => ({ ...priority, evidence: excerpt(evidenceRange) })),

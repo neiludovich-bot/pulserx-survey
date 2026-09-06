@@ -5,11 +5,13 @@ import { getOptionalOpenAIGateway } from "./model-gateway";
 import { retrieveWebsiteCandidates } from "./controlled-rag-service";
 import { websiteCandidatesForModel, websiteAnswerChunks, renderWebsiteAnswer } from "./website-answer-service";
 import { withExplicitSourceAssets } from "./focused-source-evidence";
+import { conversationRecap } from "./conversation-closing";
 
 type Input = {
   brand: string; surveySlug: "nubeqa" | "brukinsa" | "padcev";
   state?: ConversationState; question: MvpGuideQuestion | null;
   history: ConversationTurnContext["recentTurns"]; message: string; resume: boolean; stop: boolean;
+  timeExpired?: boolean;
   selectGuide: (state: ConversationState, observation: ConversationObservation | null) => MvpGuideQuestion | null;
 };
 const syntheticQuestion = (id: string, text: string): MvpGuideQuestion => ({ id, canonicalQuestion: text, module: "Conversation", objective: "Capture the participant's perspective without leading them.", sourceContextRequirement: null, routeKeywords: [], completionSignals: [], adaptiveProbes: [], analyzableOutputs: ["conversation_response"] });
@@ -17,6 +19,7 @@ function questionKind(question: MvpGuideQuestion | null): NonNullable<Conversati
   if (question?.id.startsWith("conversation-reaction:")) return "reaction";
   if (question?.id.startsWith("conversation-clarification:")) return "clarification";
   if (question?.id === "conversation-information-need") return "information_need";
+  if (question?.id === "conversation-final-questions") return "information_need";
   return /\b(priorities|decision drivers|top factors)\b/i.test(`${question?.canonicalQuestion} ${question?.objective}`) ? "priorities" : "guide";
 }
 
@@ -28,7 +31,20 @@ export async function runConversationRuntime(input: Input) {
   const trace: unknown[] = [];
   let action = "end";
   const done = (content: string, question: MvpGuideQuestion | null, references: GroundedReference[] = [], completed = false) => ({ state, observation, trace, action, content, question, references, completed, initialState });
-  if (input.stop) return done("Thank you for sharing your perspective. That completes the interview.", null, [], true);
+  const finish = () => { action = "end"; return done(conversationRecap(state), null, [], true); };
+  const remember = (labels: (string | null)[]) => { state.coveredTopics = [...new Set([...state.coveredTopics, ...labels.filter((label): label is string => Boolean(label)).map(label => label.slice(0, 500))])].slice(0, 100); };
+  function invite(reason: "time" | "guide", text = "", references: GroundedReference[] = []) {
+    const first = !state.closing;
+    state.closing ??= { reason };
+    state.reactionPending = false;
+    action = "final_questions";
+    const preface = first ? reason === "time"
+      ? "We've reached the planned time, but we can keep going with your questions."
+      : "We've reached the end of the planned discussion." : "";
+    const question = syntheticQuestion("conversation-final-questions", "Do you have any other questions? If you're all set, let me know and I'll wrap up with a brief recap.");
+    return done([text, preface, question.canonicalQuestion].filter(Boolean).join("\n\n"), question, references);
+  }
+  if (input.stop) return finish();
 
   async function understand(message: string, question: MvpGuideQuestion | null) {
     const gateway = getOptionalOpenAIGateway();
@@ -37,7 +53,7 @@ export async function runConversationRuntime(input: Input) {
       surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
       sourceTopicContext: state.discussion?.query ?? null, responseMode: "answer_only" });
     if (candidates.some(source => source.surveySlug !== input.surveySlug)) throw new Error("Evidence crossed bot boundaries.");
-    const context: ConversationTurnContext = { version: 2, brand: input.brand, participantMessage: message,
+    const context: ConversationTurnContext = { version: 2, brand: input.brand, participantMessage: message, closing: Boolean(state.closing),
       researchObjectives: state.research?.objectives.filter(objective => objective.status !== "covered").map(objective => ({ id: objective.id, objective: objective.objective,
         missingCriteria: objective.criteria.filter(criterion => !objective.evidence.some(item => item.criterionId === criterion.id)).map(({ id, description }) => ({ id, description })) })),
       question: question ? { id: question.id, text: question.canonicalQuestion, kind: questionKind(question) } : null,
@@ -75,6 +91,28 @@ export async function runConversationRuntime(input: Input) {
       prepared = understood;
       observation = understood.observation;
       if (state.research) state.research = updateResearchCoverage(state.research, observation, input.message);
+      if (observation.answerEvidence.length && input.question && !input.question.id.startsWith("conversation-") && !input.question.id.startsWith("objective-probe:")) remember([input.question.module]);
+    }
+    // The final-Q&A phase has no guide advancement or clinical reaction probes.
+    // A current question always wins over a simultaneous signal to finish.
+    if (state.closing) {
+      if (observation?.request) {
+        if (prepared?.text) {
+          remember(prepared.references.map(reference => reference.title));
+          state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
+        }
+        return invite(state.closing.reason, prepared?.text ?? "I don't have enough information in the available material to answer that reliably. You can rephrase it or ask about another topic.", prepared?.references ?? []);
+      }
+      if (observation?.closingResponse?.intent === "finish") return finish();
+      return invite(state.closing.reason, observation?.closingResponse?.intent === "continue" || input.resume ? "Of course—we can keep going." : "");
+    }
+    // Process the just-submitted response before moving into optional Q&A.
+    if (input.timeExpired) {
+      if (prepared?.text && observation?.request) {
+        remember(prepared.references.map(reference => reference.title));
+        state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
+      }
+      return invite("time", observation?.request ? prepared?.text ?? "I don't have enough information in the available material to answer that reliably." : "", prepared?.references ?? []);
     }
     const selection = selectConversationAction(state, observation, input.resume, Boolean(observation?.reactionEvidence?.length));
     state = selection.state; action = selection.action;
@@ -86,6 +124,7 @@ export async function runConversationRuntime(input: Input) {
       if (!prepared?.text) return done("I don't have enough information in the available material to answer that reliably. Could you narrow the question, or would you like to move on?", input.question);
       const wasDiscussing = Boolean(initialState.discussion);
       state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
+      remember(prepared.references.map(reference => reference.title));
       if (!wasDiscussing || action === "present_topic") state.reactionPending = true;
       if (topic && action === "present_topic") topic.status = "presented";
       const question = syntheticQuestion(`${wasDiscussing && action !== "present_topic" ? "conversation-clarification" : "conversation-reaction"}:${topic?.id ?? "discussion"}`,
@@ -129,7 +168,7 @@ export async function runConversationRuntime(input: Input) {
     }
     const question = input.selectGuide(state, observation);
     state.parkedGuideId = null; state.discussion = null; state.reactionPending = false; state.activeTopicId = null;
-    if (!question) return done("Thank you for sharing your perspective. That completes the interview.", null, [], true);
+    if (!question) return invite("guide");
     const nextObjective = objectiveForQuestion(state.research, question.id);
     const transition = nextObjective && nextObjective.module !== activeObjective?.module ? `${nextObjective.transition} ` : initialState.discussion ? "Let's return to your perspective. " : observation?.answerStatus === "answered" ? "Thank you. " : "";
     // A detour or earlier volunteered answer may already supply half this
@@ -152,6 +191,7 @@ export async function runConversationRuntime(input: Input) {
         : `Briefly explain the clinical information needed to consider this question: ${question.canonicalQuestion}. ${question.sourceContextRequirement}`;
       const result = await present(presentationQuery);
       if (result.text) {
+        remember(result.references.map(reference => reference.title));
         state.discussion = { query: question.canonicalQuestion, lastAnswer: result.text, sourceIds: result.sourceIds };
         return done(`${transition}${result.text}\n\n${question.canonicalQuestion}`, question, result.references);
       }

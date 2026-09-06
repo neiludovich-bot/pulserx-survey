@@ -4,6 +4,8 @@ export function validateConversationObservation(context: ConversationTurnContext
   const value = conversationObservationSchema.parse(output);
   const excerpts = [...value.answerEvidence, ...value.reactionEvidence, ...value.priorities.map(p => p.evidence), ...(value.request ? [value.request.evidence] : []), ...(value.familiarityEvidence ? [value.familiarityEvidence] : [])];
   if (excerpts.some(text => !context.participantMessage.includes(text))) throw new Error("Observation evidence must be an exact current-message excerpt.");
+  if (value.closingResponse && !context.participantMessage.includes(value.closingResponse.evidence)) throw new Error("Closing response requires current-message evidence.");
+  if (!context.closing || value.request) value.closingResponse = null;
   if ((value.answerStatus !== "not_answered") !== Boolean(value.answerEvidence.length)) throw new Error("Answer credit requires evidence and vice versa.");
   if (value.answerEvidence.length && !context.question) throw new Error("No active question may receive answer credit.");
   // Asking for another explanation also answers a clarification check. It
