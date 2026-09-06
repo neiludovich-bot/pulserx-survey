@@ -9,6 +9,15 @@ const plan = () => researchPlanStateSchema.parse({ version: 1, turn: 0, objectiv
 })) });
 const observation = (researchSignals: ConversationObservation["researchSignals"]): ConversationObservation => ({ answerStatus: "answered", answerEvidence: [], reactionEvidence: [], researchSignals, request: null, priorities: [], familiarity: null, familiarityEvidence: null, outOfScope: false });
 describe("objective coverage", () => {
+  it("does not count the same opinion twice as its own reason, regardless of signal order", () => {
+    const state = plan(); state.objectives[0].criteria[0].id = "perspective";
+    const signals = [{ objectiveId: "evidence", criterionId: "reason", evidence: "This breadth seems useful" }, { objectiveId: "evidence", criterionId: "perspective", evidence: "This breadth seems useful" }];
+    for (const values of [signals, [...signals].reverse()]) {
+      const next = updateResearchCoverage(state, observation(values), "This breadth seems useful");
+      expect(next.objectives[0].status).toBe("partial");
+      expect(next.objectives[0].evidence.map(item => item.criterionId)).toEqual(["perspective"]);
+    }
+  });
   it("credits a later module from volunteered evidence and selects only the missing reason", () => {
     const original = plan();
     const next = updateResearchCoverage(original, observation([{ objectiveId: "safety", criterionId: "view", evidence: "Safety seems manageable" }]), "Safety seems manageable");

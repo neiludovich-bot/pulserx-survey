@@ -10,6 +10,13 @@ export function updateResearchCoverage(original: ResearchPlanState, observation:
     if (!message.includes(signal.evidence)) throw new Error("Research evidence must be a current-message excerpt.");
     const request = observation?.request?.evidence;
     if (request && (request.includes(signal.evidence) || signal.evidence.includes(request))) continue;
+    // Naming a feature and reacting to it cannot count twice as its own
+    // explanation. A reason needs a separately identified supporting clause.
+    if (signal.criterionId === "reason") {
+      const perspectives = [...objective.evidence, ...(observation?.researchSignals ?? [])]
+        .filter(item => item.objectiveId === signal.objectiveId && item.criterionId === "perspective");
+      if (perspectives.some(item => item.evidence.trim() === signal.evidence.trim())) continue;
+    }
     if (!objective.evidence.some(item => item.criterionId === signal.criterionId && item.evidence === signal.evidence)) {
       objective.evidence.push({ ...signal, turn: plan.turn });
     }
