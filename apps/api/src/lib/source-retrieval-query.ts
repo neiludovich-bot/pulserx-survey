@@ -7,7 +7,7 @@ const SEARCH_STOP_WORDS = new Set("a an and are as at be can could do does for f
 const SEARCH_ALIASES: Record<string, string> = {
   ddi: "drug interactions", ddis: "drug interactions",
   ae: "adverse events reactions", aes: "adverse events reactions",
-  se: "side effects adverse reactions", ses: "side effects adverse reactions",
+  se: "side effects adverse reactions safety", ses: "side effects adverse reactions safety",
   pfs: "progression free survival", rpfs: "radiographic progression free survival",
   os: "overall survival", mfs: "metastasis free survival",
 };
@@ -16,7 +16,7 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
   // Prefer a supplied expansion over its acronym. No clinical aliases or
   // facts are inferred here; the moderator supplies the resolved question.
   const expanded = query.replace(/\b[A-Z][A-Z0-9]{1,8}\s*\(([^)]+)\)/g, "$1").replace(/\([A-Z][A-Z0-9]{1,8}\)/g, "")
-    .replace(/\bside[ -]effects?\b/gi, "side effects adverse reactions");
+    .replace(/\bside[ -]effects?\b/gi, "side effects adverse reactions safety");
   const terms = expanded.toLowerCase().replace(/\b(ae|ddi|se)['’]s\b/g, "$1s").split(/[^a-z0-9]+/).filter(
     (term) => term.length >= 2 && term !== surveySlug && !SEARCH_STOP_WORDS.has(term),
   );
@@ -29,7 +29,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
   const documentFilter = websiteOnly ? Prisma.sql`AND document.url NOT ILIKE '%.pdf%'` : Prisma.empty;
   const terms = sourceContentSearchTerms(query, surveySlug);
   const normalized = query.toLowerCase().replace(/-/g, " ");
-  const phrases = [...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
+  const phrases = [...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions safety" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
   const phrasePriority = phrases.length ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', ${phrases.map(phrase => `"${phrase}"`).join(" OR ")})) DESC,` : Prisma.empty;
   const contextTerms = sourceContentSearchTerms(context ?? "", surveySlug).slice(0, 12);
   if (!terms.length && !contextTerms.length) return null;
@@ -50,6 +50,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
         ${documentFilter}
         AND to_tsvector('english', chunk.content) @@ search.any_terms
       ORDER BY (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
+               ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.current_terms) DESC,` : Prisma.empty}
                ${phrasePriority}
                ts_rank_cd(to_tsvector('english', chunk.content), search.current_terms) DESC,
                ts_rank_cd(to_tsvector('english', chunk.content), search.context_terms) DESC,
@@ -71,7 +72,8 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       AND document.status = 'ACTIVE'
       ${documentFilter}
       AND to_tsvector('english', chunk.content) @@ search.any_terms
-    ORDER BY ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
+    ORDER BY ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
+             ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,
              document.priority DESC, chunk.position ASC, chunk.id ASC
     LIMIT 80
