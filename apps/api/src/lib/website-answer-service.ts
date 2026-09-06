@@ -1,6 +1,7 @@
 import type { ModeratorEvidenceSelectionInput, ModeratorEvidenceSelectionResult, WebsiteAnswerModelResult } from "@interview/schemas";
 import type { ControlledRagChunk } from "./controlled-rag-source-packs";
 import { getOptionalOpenAIGateway } from "./model-gateway";
+import { sourceAssetAnswerEligible } from "./source-asset-measure";
 
 export type WebsiteAnswerInput = Omit<ModeratorEvidenceSelectionInput, "candidates"> & { candidates: ControlledRagChunk[] };
 
@@ -19,7 +20,7 @@ export function websiteAnswerChunks(candidates: ControlledRagChunk[], result: Mo
       const index = (source.assets ?? []).findIndex((_asset, index) => `${source.id}:asset:${index}` === id);
       if (index < 0) throw new Error("Website response selected an asset from another source.");
       return source.assets![index];
-    });
+    }).filter(asset => sourceAssetAnswerEligible(asset, result.paragraphs.map(paragraph => paragraph.text).join(" ")));
     return { ...source, text: selection.supportExcerpt, evidenceRole: selection.evidenceRole, contribution: selection.contribution, assets };
   });
 }
