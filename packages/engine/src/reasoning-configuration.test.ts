@@ -11,8 +11,8 @@ describe("explicit reasoning configuration", () => {
     const routeInput = { surveySlug: "nubeqa", sourceBrand: "NUBEQA", activeIntentSlug: null, activeIntentLabel: null, activeIntentSteeringRule: null,
       currentQuestionId: "familiarity", currentQuestion: "How familiar are you?", currentQuestionObjective: "Product familiarity", currentQuestionKeywords: [], currentQuestionCompletionSignals: [], sourceConversationActive: false,
       participantMessage: "Not very familiar.", recentInterviewerContext: null, candidateQuestions: [{ id: "factors", question: "What matters most?", objective: "Priorities", module: "Baseline", allowedByIntent: true, alreadyAsked: false, routeKeywords: [], sourceContextRequirement: null }] };
-    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { schemaVersion: 5, sourceRequest: null, answerStatus: "answered", asksSourceQuestion: false, answerEvidence: [routeInput.participantMessage], kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false, suggestedQuestionIds: [], sourceDirective: null, rationale: "Explicit familiarity.", understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidence: [routeInput.participantMessage] } } })
-      .mockResolvedValueOnce({ output_parsed: { sourceRequest: null, priorityMentions: [], reactionStatus: "not_answered", reactionEvidence: [], action: "resume_guide", selectedPriorityId: null, rationale: "Explicit resume." } })
+    const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { schemaVersion: 6, sourceRequest: null, answerStatus: "answered", asksSourceQuestion: false, answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], kind: "planned_answer", topic: null, needsSource: false, isOutOfScope: false, isUnanticipated: false, suggestedQuestionIds: [], sourceDirective: null, rationale: "Explicit familiarity.", understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidenceRanges: [{ startToken: 0, endToken: 2 }] } } })
+      .mockResolvedValueOnce({ output_parsed: { schemaVersion: 4, sourceRequest: null, priorityMentions: [], reactionStatus: "not_answered", reactionEvidenceRanges: [], action: "resume_guide", selectedPriorityId: null, rationale: "Explicit resume." } })
       .mockResolvedValueOnce({ output_parsed: plan });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "gpt-5.4-mini", decisionModel: "gpt-5.4-mini", phrasingModel: "gpt-5.4-mini", reasoningEffort: "low", interpretationReasoningEffort }, undefined, { parse });
     await gateway.analyzeMvpTurnRoute(routeInput);
@@ -36,13 +36,13 @@ describe("explicit reasoning configuration", () => {
       expect(parse.mock.calls[0][0].reasoning).toEqual(model === "gpt-5.4" ? { effort: "low" } : undefined);
     }
   });
-  it.each([undefined, "medium"] as const)("keeps the grounding override separate from the base effort: %s", async (groundingReasoningEffort) => {
+  it.each([{ groundingReasoningEffort: undefined, compositionReasoningEffort: undefined }, { groundingReasoningEffort: "medium", compositionReasoningEffort: undefined }, { groundingReasoningEffort: "medium", compositionReasoningEffort: "medium" }] as const)("keeps composition and grounding overrides separate from the base effort: %j", async ({ groundingReasoningEffort, compositionReasoningEffort }) => {
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { answerBody: "The source describes a study result. [1]", usedSourceIndexes: [1], limitations: [] } })
       .mockResolvedValueOnce({ output_parsed: { version: 1, supported: true, unsupportedClaims: [] } });
-    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "gpt-5.4-mini", decisionModel: "gpt-5.4-mini", phrasingModel: "gpt-5.4-mini", sourceModel: "gpt-5.4", reasoningEffort: "low", groundingReasoningEffort }, undefined, { parse });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "gpt-5.4-mini", decisionModel: "gpt-5.4-mini", phrasingModel: "gpt-5.4-mini", sourceModel: "gpt-5.4", reasoningEffort: "low", groundingReasoningEffort, compositionReasoningEffort }, undefined, { parse });
     await gateway.composeControlledRagAnswer({ surveySlug: "nubeqa", participantMessage: "Explain the study.", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, sources: [{ index: 1, title: "Study", url: null, description: null, text: "The source describes a study result." }] });
     expect(parse).toHaveBeenCalledTimes(2);
-    expect(parse.mock.calls.map(([request]) => request.reasoning)).toEqual([{ effort: "low" }, { effort: groundingReasoningEffort ?? "low" }]);
+    expect(parse.mock.calls.map(([request]) => request.reasoning)).toEqual([{ effort: compositionReasoningEffort ?? "low" }, { effort: groundingReasoningEffort ?? "low" }]);
     for (const [request] of parse.mock.calls) {
       expect(request.text.format.strict).toBe(true);
     }

@@ -15,6 +15,7 @@ type Input = {
 };
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" ? value as Record<string, unknown> : {};
 const validationFailures: Record<string, string> = {
+  "Moderator evidence ranges must identify valid bounded excerpts in the current participant message.": "invalid_evidence_range",
   "Source request evidence must be an exact participant excerpt.": "invalid_request_excerpt",
   "Source requests require an exact excerpt of the current participant message.": "invalid_request_excerpt",
   "Moderator evidence must be an exact participant excerpt.": "invalid_reaction_excerpt",
@@ -30,6 +31,7 @@ const validationFailures: Record<string, string> = {
   "Resuming the guide cannot select a priority.": "invalid_resume_target",
 };
 const plannerFields = new Set(["state", "priorities", "sourceDiscussion", "returnTarget", "pendingQuestion", "query", "status", "failure", "message", "navigationHintShown", "priorityMentions", "sourceRequest", "participantEvidence", "resolvedQuestion", "reactionStatus", "reactionEvidence", "action", "selectedPriorityId", "newPriorities", "label", "sourceQuestion", "existingPriorityId", "kind", "additionEvidence", "rationale"]);
+for (const field of ["schemaVersion", "participantTokens", "index", "text", "participantEvidenceRange", "reactionEvidenceRanges", "additionEvidenceRange", "startToken", "endToken"]) plannerFields.add(field);
 
 export function sanitizeModeratorPlanningFailure(error: unknown) {
   const { stage: _stage, ...safe } = sanitizeSourceFailure(error, "composition");

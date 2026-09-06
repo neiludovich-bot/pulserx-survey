@@ -32,9 +32,13 @@ import {
   decisionResultSchema,
   mvpTurnRouteAnalysisInputSchema,
   mvpTurnRouteAnalysisResultSchema,
-  mvpTurnRouteAnalysisModelResultSchema,
+  mvpTurnRouteAnalysisIndexedInputSchema,
+  mvpTurnRouteAnalysisIndexedModelResultSchema,
+  type MvpTurnRouteAnalysisIndexedModelResult,
   moderatorPlanInputSchema,
-  moderatorPlanModelResultSchema,
+  moderatorPlanTokenModelResultSchema,
+  moderatorPlanTokenInputSchema,
+  type ModeratorPlanTokenModelResult,
   moderatorPhrasingInputSchema,
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionInputSchema,
@@ -46,7 +50,6 @@ import {
   type SourceQuestionPlanInput,
   type SourceQuestionPlan,
   type ModeratorPlanInput,
-  type ModeratorPlanModelResult,
   type ModeratorPhrasingInput,
   type ModeratorPhrasingResult,
   type ModeratorEvidenceSelectionInput,
@@ -61,13 +64,14 @@ import {
   type DecisionInput,
   type DecisionResult,
   type MvpTurnRouteAnalysisInput,
-  type MvpTurnRouteAnalysisResult,
   type OpenAIDebugTrace,
   type PhrasingInput,
   type PhrasingResult
 } from "@interview/schemas";
 import type { CompiledStudy } from "./study-compiler";
-import { normalizeModeratorPlanWithRepair, validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
+import { participantTokensForModel, evidenceFromTokenRange } from "./evidence-ranges";
+import { validateModeratorPhrasing, validateModeratorEvidenceSelection } from "./moderator-planning";
+import { normalizeModeratorPlanTokenResult } from "./moderator-evidence-ranges";
 import { sanitizeSourceFailure, type SourceFailureMetadata } from "./source-failure";
 import {
   buildDecisionCandidates,
@@ -96,6 +100,7 @@ type ModelConfig = {
   reasoningEffort?: "none" | "low" | "medium" | "high";
   groundingReasoningEffort?: "none" | "low" | "medium" | "high";
   interpretationReasoningEffort?: "none" | "low" | "medium" | "high";
+  compositionReasoningEffort?: "none" | "low" | "medium" | "high";
 };
 
 type DebugTraceStore = {
@@ -218,21 +223,26 @@ export class OpenAIResponsesGateway {
   async analyzeMvpTurnRoute(input: MvpTurnRouteAnalysisInput) {
     const parsed = mvpTurnRouteAnalysisInputSchema.parse(input);
 
-    const call = await this.runStructuredCall<MvpTurnRouteAnalysisResult>({
+    const call = await this.runStructuredCall<MvpTurnRouteAnalysisIndexedModelResult>({
       callType: "turn_route",
       model: this.config.analysisModel,
       promptVersion: mvpTurnRouterSystemPrompt.version,
-      schemaName: "mvp_turn_route_analysis_result_v5",
-      schema: mvpTurnRouteAnalysisModelResultSchema,
+      schemaName: "mvp_turn_route_analysis_result_v6",
+      schema: mvpTurnRouteAnalysisIndexedModelResultSchema,
       instructions: mvpTurnRouterSystemPrompt.instructions,
-      input: parsed,
+      input: mvpTurnRouteAnalysisIndexedInputSchema.parse({ ...parsed, participantTokens: participantTokensForModel(parsed.participantMessage) }),
       metadata: {
         survey_slug: parsed.surveySlug,
         intent_slug: parsed.activeIntentSlug ?? "none",
         current_question_id: parsed.currentQuestionId ?? "none"
       }
     });
-    const result = mvpTurnRouteAnalysisResultSchema.parse(mvpTurnRouteAnalysisModelResultSchema.parse(call.result));
+    const { answerEvidenceRanges, sourceRequest, understandingUpdate, ...wire } = mvpTurnRouteAnalysisIndexedModelResultSchema.parse(call.result);
+    const result = mvpTurnRouteAnalysisResultSchema.parse({ ...wire, schemaVersion: 5,
+      answerEvidence: answerEvidenceRanges.map((range) => evidenceFromTokenRange(parsed.participantMessage, range)),
+      sourceRequest: sourceRequest ? { kind: sourceRequest.kind, resolvedQuestion: sourceRequest.resolvedQuestion, participantEvidence: evidenceFromTokenRange(parsed.participantMessage, sourceRequest.participantEvidenceRange) } : null,
+      understandingUpdate: understandingUpdate ? { version: understandingUpdate.version, productFamiliarity: understandingUpdate.productFamiliarity, preferredDepth: understandingUpdate.preferredDepth, participantEvidence: understandingUpdate.participantEvidenceRanges.map((range) => evidenceFromTokenRange(parsed.participantMessage, range)) } : null,
+    });
     if (result.sourceRequest && !parsed.participantMessage.includes(result.sourceRequest.participantEvidence)) {
       throw new Error("Source requests require exact current participant excerpts.");
     }
@@ -391,17 +401,17 @@ export class OpenAIResponsesGateway {
         priorities: parsed.state.priorities.map(({ evidencePacket: _evidencePacket, ...priority }) => priority),
       },
     };
-    const call = await this.runStructuredCall<ModeratorPlanModelResult>({
+    const call = await this.runStructuredCall<ModeratorPlanTokenModelResult>({
       callType: "moderator_plan",
       model: this.config.decisionModel,
       promptVersion: moderatorPlannerSystemPrompt.version,
-      schemaName: "moderator_plan_result_v3",
-      schema: moderatorPlanModelResultSchema,
+      schemaName: "moderator_plan_result_v4",
+      schema: moderatorPlanTokenModelResultSchema,
       instructions: moderatorPlannerSystemPrompt.instructions,
-      input: planningContext,
+      input: moderatorPlanTokenInputSchema.parse({ ...planningContext, schemaVersion: 4, participantTokens: participantTokensForModel(parsed.participantMessage) }),
       metadata: { brand: parsed.brand },
     });
-    return { ...call, result: normalizeModeratorPlanWithRepair(parsed, call.result) };
+    return { ...call, result: normalizeModeratorPlanTokenResult(parsed, call.result) };
   }
 
   async phraseModeratorTurn(input: ModeratorPhrasingInput) {
@@ -452,7 +462,7 @@ export class OpenAIResponsesGateway {
     // Explicit reasoning for interpretation and evidence checks; phrasing keeps
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
-      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : ["turn_route", "moderator_plan"].includes(callType) ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
+      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : ["turn_route", "moderator_plan"].includes(callType) ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
     const effectiveMetadata = { ...metadata, ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const requestPayload = {
       model,

@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({ gateway: null as unknown, source: vi.fn() }));
 vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: () => mocks.gateway }));
 vi.mock("./source-answer-service", () => ({ askSourceProviderForSurveyInterviewerTurn: mocks.source }));
 import { OpenAIResponsesGateway } from "../../../../packages/engine/src/openai-workflows";
+import { tokenizeParticipantMessage } from "../../../../packages/engine/src/evidence-ranges";
 import { moderatorPlanRepairContextSchema } from "../../../../packages/schemas/src/moderator";
 import { runModeratorTurn } from "./mvp-moderator-service";
 
@@ -15,12 +16,14 @@ beforeEach(() => {
 });
 
 describe("typed moderator repair through the live gateway boundary", () => {
-  it.each([true, false])("repairs a paraphrased request with unchanged state and preserves only separate reaction credit (mixed=%s)", async (mixed) => {
+  it.each([true, false])("repairs an invalid request range with unchanged state and preserves only separate reaction credit (mixed=%s)", async (mixed) => {
     const reaction = "It's something I need to track but not terribly concerning.";
     const question = "So someone on those medications is at risk for what adverse reactions";
     const participantMessage = mixed ? `${reaction} ${question}` : question;
-    const candidate = { priorityMentions: [], reactionStatus: "answered", reactionEvidence: [mixed ? reaction : question], sourceRequest: { kind: "question", participantEvidence: "What adverse reactions might those medications cause?", resolvedQuestion: "What adverse reactions are described?" }, action: "answer_source", selectedPriorityId: "ddi", rationale: "Answer the followup separately from the reaction." };
-    const corrected = { ...candidate, sourceRequest: { ...candidate.sourceRequest, participantEvidence: question } };
+    const tokens = tokenizeParticipantMessage(participantMessage);
+    const questionStart = tokens.find((token) => token.start === participantMessage.indexOf(question))!.index;
+    const candidate = { schemaVersion: 4, priorityMentions: [], reactionStatus: "answered", reactionEvidenceRanges: [{ startToken: 0, endToken: mixed ? questionStart - 1 : tokens.length - 1 }], sourceRequest: { kind: "question", participantEvidenceRange: { startToken: questionStart, endToken: 999 }, resolvedQuestion: "What adverse reactions are described?" }, action: "answer_source", selectedPriorityId: "ddi", rationale: "Answer the followup separately from the reaction." };
+    const corrected = { ...candidate, sourceRequest: { ...candidate.sourceRequest, participantEvidenceRange: { startToken: questionStart, endToken: tokens.length - 1 } } };
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: candidate }).mockResolvedValueOnce({ output_parsed: corrected });
     mocks.gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     const state = { version: 1 as const, activePriorityId: "ddi", priorities: [{ id: "ddi", label: "DDI", participantEvidence: "DDI", status: "presented" as const, probeCount: 0, sourceQuestion: "What interactions are described?", reactionEvidence: [], referenceIds: ["source"] }], sourceDiscussion: { query: "What drug-drug interactions are noted?", status: "open" as const, returnTarget: { kind: "priority" as const, id: "ddi" }, navigationHintShown: true } };
@@ -32,10 +35,10 @@ describe("typed moderator repair through the live gateway boundary", () => {
     expect(firstInput.repairContext).toBeUndefined();
     const { repairContext, ...originalInput } = secondInput;
     expect(originalInput).toEqual(firstInput);
-    expect(repairContext).toEqual({ version: 1, candidate, feedback: "invalid_request_excerpt" });
-    expect(parse.mock.calls[1][0].instructions).toContain("exact unchanged contiguous clause copied from the CURRENT participantMessage");
+    expect(repairContext).toEqual({ version: 1, candidate, feedback: "invalid_evidence_range" });
+    expect(parse.mock.calls[1][0].instructions).toContain("choose valid inclusive token indexes");
     expect(state).toEqual(before);
-    expect(result?.decision).toMatchObject({ plannerAttempts: 2, plannerRecovered: true, action: "answer_source", plannerFailures: [{ code: "invalid_request_excerpt" }] });
+    expect(result?.decision).toMatchObject({ plannerAttempts: 2, plannerRecovered: true, action: "answer_source", plannerFailures: [{ code: "invalid_evidence_range" }] });
     expect(result?.state.priorities[0]).toMatchObject({ status: mixed ? "reacted" : "presented", reactionEvidence: mixed ? [reaction] : [], probeCount: 0 });
     expect(mocks.source).toHaveBeenCalledTimes(1);
   });

@@ -3,6 +3,7 @@ import { zodTextFormat } from "openai/helpers/zod";
 import {
   moderatorStateSchema,
   moderatorPlanModelResultSchema,
+  moderatorPlanTokenModelResultSchema,
   moderatorPhrasingResultSchema,
   moderatorEvidenceSelectionResultSchema,
   moderatorEvidenceSelectionModelResultSchema,
@@ -51,6 +52,13 @@ const modelPlan = {
     kind: "initial_priority" as const,
     existingPriorityId: null,
     additionEvidence: null,
+  })),
+};
+const { reactionEvidence: _legacyReactionEvidence, ...indexedPlanBase } = modelPlanBase;
+const indexedModelPlan = {
+  ...indexedPlanBase, schemaVersion: 4, reactionEvidenceRanges: [],
+  priorityMentions: modelPlan.priorityMentions.map(({ participantEvidence: _evidence, additionEvidence: _addition, ...mention }, index) => ({
+    ...mention, participantEvidenceRange: { startToken: index * 2, endToken: index * 2 }, additionEvidenceRange: null,
   })),
 };
 const presentedInput: ModeratorPlanInput = {
@@ -486,7 +494,7 @@ describe("moderator structured gateway", () => {
     const withEvidence = structuredClone(presentedInput);
     withEvidence.state.priorities[0].evidencePacket = evidencePacket;
     withEvidence.state.sourceDiscussion = { query: "What interactions are documented?", evidencePacket };
-    const parse = vi.fn().mockResolvedValue({ output_parsed: { ...modelPlanBase, priorityMentions: [], reactionStatus: "answered", reactionEvidence: ["I would use it"], action: "resume_guide" } });
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { ...indexedModelPlan, priorityMentions: [], reactionStatus: "answered", reactionEvidenceRanges: [{ startToken: 0, endToken: 3 }], action: "resume_guide" } });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
     const planned = await gateway.planModeratorTurn(withEvidence);
     const requestInput = JSON.parse(parse.mock.calls[0][0].input[0].content[0].text);
@@ -498,14 +506,14 @@ describe("moderator structured gateway", () => {
   });
   it("uses separate strict schemas, models, and trace metadata for planning and wording", async () => {
     const parse = vi.fn()
-      .mockResolvedValueOnce({ output_parsed: modelPlan, model: "decision-model", status: "completed" })
+      .mockResolvedValueOnce({ output_parsed: indexedModelPlan, model: "decision-model", status: "completed" })
       .mockResolvedValueOnce({ output_parsed: { text: "How does the PFS information affect your assessment, if at all?" }, model: "phrase-model", status: "completed" });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "analysis-model", decisionModel: "decision-model", phrasingModel: "phrase-model" }, undefined, { parse });
     const planned = await gateway.planModeratorTurn(input);
     const phrased = await gateway.phraseModeratorTurn({ brand: "NUBEQA", action: "reaction", priorityLabel: "PFS", participantMessage: "PFS and DDI", previousPriorityLabel: null });
     expect(planned.trace.callType).toBe("moderator_plan");
     expect(phrased.trace.callType).toBe("moderator_phrasing");
-    expect(parse.mock.calls[0][0]).toMatchObject({ model: "decision-model", text: { format: { type: "json_schema", name: "moderator_plan_result_v3", strict: true } } });
+    expect(parse.mock.calls[0][0]).toMatchObject({ model: "decision-model", text: { format: { type: "json_schema", name: "moderator_plan_result_v4", strict: true } } });
     expect(parse.mock.calls[1][0]).toMatchObject({ model: "phrase-model", text: { format: { name: "moderator_phrasing_result_v1", strict: true } } });
   });
 
@@ -516,7 +524,7 @@ describe("moderator structured gateway", () => {
 
   it("returns a valid model plan even when auxiliary debug-file storage fails", async () => {
     const save = vi.fn().mockRejectedValue(new Error("EACCES: permission denied saving debug trace"));
-    const parse = vi.fn().mockResolvedValue({ output_parsed: modelPlan, model: "decision-model", status: "completed" });
+    const parse = vi.fn().mockResolvedValue({ output_parsed: indexedModelPlan, model: "decision-model", status: "completed" });
     const gateway = new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, { save }, { parse });
     const result = await gateway.planModeratorTurn(input);
     expect(result.result.newPriorities.map((priority) => priority.label)).toEqual(["PFS", "Drug interactions"]);
@@ -527,6 +535,7 @@ describe("moderator structured gateway", () => {
 
   it.each([
     ["moderator_plan_v2", moderatorPlanModelResultSchema],
+    ["moderator_plan_v4", moderatorPlanTokenModelResultSchema],
     ["moderator_phrasing", moderatorPhrasingResultSchema],
     ["moderator_evidence", moderatorEvidenceSelectionModelResultSchema],
     ["moderator_contextual_evidence", moderatorContextualEvidenceSelectionModelResultSchema],

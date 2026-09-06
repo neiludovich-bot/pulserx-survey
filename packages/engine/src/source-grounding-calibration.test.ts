@@ -41,7 +41,9 @@ describe("source-grounding calibration replay contracts", () => {
     expect(reviewer).toContain("Do not reject it solely for omitting boilerplate");
     expect(reviewer).toContain("conditional on coadministration must retain that condition");
     expect(reviewer).toContain("require explicit support, not merely omission");
-    expect(sourceGroundingReviewSystemPrompt.version).toBe("source-grounding-review-v3");
+    expect(reviewer).toContain("does not need an explicit sentence declaring its own omission");
+    expect(reviewer).toContain("Missing details never imply clinical reassurance");
+    expect(sourceGroundingReviewSystemPrompt.version).toBe("source-grounding-review-v4");
     expect(contextualSourceCompositionSystemPrompt.instructions.join("\n")).toContain("Do not call a checklist the label");
     expect(directSourceCompositionSystemPrompt.instructions.join("\n")).not.toContain("Attribute management guidance to the label without");
   });

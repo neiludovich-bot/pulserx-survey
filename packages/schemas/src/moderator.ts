@@ -2,6 +2,7 @@ import { z } from "zod";
 import { sourceRequestSchema } from "./source-request";
 import { sourceQuestionPlanSchema } from "./source-question";
 import { participantUnderstandingSchema, presentationPlanSchema } from "./presentation";
+import { evidenceTokenRangeSchema, participantTokensSchema } from "./evidence-ranges";
 
 const evidenceExcerptSchema = z.string().min(1).max(4000);
 const answerStatusSchema = z.enum(["answered", "partial", "not_answered"]);
@@ -125,15 +126,32 @@ export const moderatorPlanModelResultSchema = moderatorPlanResultSchema.innerTyp
     }).strict()).max(32),
   }).strict();
 
+// Wire-only evidence uses indexes; canonical plans keep exact excerpt strings.
+export const moderatorPlanTokenModelResultSchema = moderatorPlanModelResultSchema
+  .omit({ sourceRequest: true, reactionEvidence: true, priorityMentions: true })
+  .extend({
+    schemaVersion: z.literal(4),
+    sourceRequest: sourceRequestSchema.omit({ participantEvidence: true }).extend({ participantEvidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
+    reactionEvidenceRanges: z.array(evidenceTokenRangeSchema).max(16),
+    priorityMentions: z.array(moderatorPlanModelResultSchema.shape.priorityMentions.element
+      .omit({ participantEvidence: true, additionEvidence: true })
+      .extend({ participantEvidenceRange: evidenceTokenRangeSchema, additionEvidenceRange: evidenceTokenRangeSchema.nullable() }).strict()).max(32),
+  }).strict();
+
 export const moderatorPlanRepairContextSchema = z.object({
   version: z.literal(1),
-  candidate: moderatorPlanModelResultSchema,
-  feedback: z.enum(["invalid_request_excerpt", "invalid_reaction_excerpt", "empty_evidence", "request_action_mismatch", "navigation_credit", "missing_active_priority", "unknown_priority", "lost_source_action", "invalid_presentation_target", "invalid_probe_target", "invalid_resume_target"]),
+  candidate: z.union([moderatorPlanModelResultSchema, moderatorPlanTokenModelResultSchema]),
+  feedback: z.enum(["invalid_evidence_range", "invalid_request_excerpt", "invalid_reaction_excerpt", "empty_evidence", "request_action_mismatch", "navigation_credit", "missing_active_priority", "unknown_priority", "lost_source_action", "invalid_presentation_target", "invalid_probe_target", "invalid_resume_target"]),
 }).strict();
 
 export const moderatorPlanInputSchema = moderatorPlanBaseInputSchema.extend({
   repairContext: moderatorPlanRepairContextSchema.optional(),
 }).strict();
+export const moderatorPlanTokenInputSchema = moderatorPlanInputSchema.extend({
+  schemaVersion: z.literal(4),
+  participantTokens: participantTokensSchema,
+}).strict();
+export type ModeratorPlanTokenModelResult = z.infer<typeof moderatorPlanTokenModelResultSchema>;
 export type ModeratorPlanRepairContext = z.infer<typeof moderatorPlanRepairContextSchema>;
 
 const moderatorPhrasingContextSchema = z.object({

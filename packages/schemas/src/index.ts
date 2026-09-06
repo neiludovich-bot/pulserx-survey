@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { evidenceTokenRangeSchema, participantTokensSchema } from "./evidence-ranges";
+export * from "./evidence-ranges";
 import { sourceRequestSchema } from "./source-request";
 export * from "./source-request";
 import { sourceQuestionPlanSchema, sourceQuestionRecentTurnsSchema } from "./source-question";
@@ -247,6 +249,18 @@ export const mvpTurnRouteAnalysisModelResultSchema = mvpTurnRouteAnalysisResultS
   suggestedQuestionIds: z.array(z.string().min(1)).max(3),
   sourceDirective: z.string().min(1).nullable(),
 }).strict();
+
+export const mvpTurnRouteAnalysisIndexedInputSchema = mvpTurnRouteAnalysisInputSchema.extend({
+  participantTokens: participantTokensSchema,
+}).strict();
+
+export const mvpTurnRouteAnalysisIndexedModelResultSchema = mvpTurnRouteAnalysisModelResultSchema.omit({ answerEvidence: true, sourceRequest: true, understandingUpdate: true }).extend({
+  schemaVersion: z.literal(6),
+  answerEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
+  sourceRequest: sourceRequestSchema.omit({ participantEvidence: true }).extend({ participantEvidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
+  understandingUpdate: participantUnderstandingUpdateSchema.innerType().omit({ participantEvidence: true }).extend({ participantEvidenceRanges: z.array(evidenceTokenRangeSchema).min(1).max(8) }).strict().nullable(),
+}).strict();
+export type MvpTurnRouteAnalysisIndexedModelResult = z.infer<typeof mvpTurnRouteAnalysisIndexedModelResultSchema>;
 
 export const controlledRagContextualCompositionResultSchema = z.object({
   practicalAnswer: z.string().trim().min(1).max(2000),

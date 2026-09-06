@@ -28,6 +28,7 @@ const apiEnvSchema = z.object({
   OPENAI_REASONING_EFFORT: z.enum(["none", "low", "medium", "high"]).default("low"),
   OPENAI_REASONING_EFFORT_GROUNDING: z.enum(["none", "low", "medium", "high"]).default("medium"),
   OPENAI_REASONING_EFFORT_INTERPRETATION: z.enum(["none", "low", "medium", "high"]).default("medium"),
+  OPENAI_REASONING_EFFORT_COMPOSITION: z.enum(["none", "low", "medium", "high"]).default("medium"),
   OPENAI_MODEL_TRANSCRIPTION: z.string().default("gpt-4o-transcribe"),
   OPENAI_MODEL_TTS: z.string().default("gpt-4o-mini-tts"),
   OPENAI_TTS_SPEED: z.coerce.number().min(0.25).max(4).default(1.2),

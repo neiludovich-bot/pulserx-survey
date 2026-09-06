@@ -22,6 +22,8 @@ const routeResult = {
   suggestedQuestionIds: ["factors"], sourceDirective: null, rationale: "The participant states low product familiarity.",
   understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidence: [routeInput.participantMessage] },
 };
+const { answerEvidence: _routeEvidence, understandingUpdate: _understandingUpdate, ...routeFields } = routeResult;
+const routeWireResult = { ...routeFields, schemaVersion: 6, answerEvidenceRanges: [{ startToken: 0, endToken: 4 }], understandingUpdate: { version: 1, productFamiliarity: "low", preferredDepth: null, participantEvidenceRanges: [{ startToken: 0, endToken: 4 }] } };
 function gateway(parse: ReturnType<typeof vi.fn>) {
   return new OpenAIResponsesGateway("test", { analysisModel: "test", decisionModel: "test", phrasingModel: "test" }, undefined, { parse });
 }
@@ -50,19 +52,19 @@ describe("presentation and understanding contracts", () => {
   });
 
   it("captures exact familiarity evidence through a versioned route call without making it a source request", async () => {
-    const parse = vi.fn().mockResolvedValue({ output_parsed: routeResult });
+    const parse = vi.fn().mockResolvedValue({ output_parsed: routeWireResult });
     const result = await gateway(parse).analyzeMvpTurnRoute(routeInput);
     expect(result.result.understandingUpdate).toEqual(routeResult.understandingUpdate);
     expect(result.result.asksSourceQuestion).toBe(false);
-    expect(parse.mock.calls[0][0].text.format.name).toBe("mvp_turn_route_analysis_result_v5");
+    expect(parse.mock.calls[0][0].text.format.name).toBe("mvp_turn_route_analysis_result_v6");
     expect(parse.mock.calls[0][0].text.format.schema.required).toContain("understandingUpdate");
     expect([...parse.mock.calls[0][0].text.format.schema.required].sort()).toEqual(Object.keys(parse.mock.calls[0][0].text.format.schema.properties).sort());
     expect(mvpTurnRouteAnalysisResultSchema.parse({ ...routeResult, schemaVersion: 3, understandingUpdate: undefined }).schemaVersion).toBe(3);
   });
 
   it("rejects an understanding update borrowing evidence not in the current participant turn", async () => {
-    const parse = vi.fn().mockResolvedValue({ output_parsed: { ...routeResult, understandingUpdate: { ...routeResult.understandingUpdate, participantEvidence: ["I have never prescribed it."] } } });
-    await expect(gateway(parse).analyzeMvpTurnRoute(routeInput)).rejects.toThrow("exact current participant excerpts");
+    const parse = vi.fn().mockResolvedValue({ output_parsed: { ...routeWireResult, understandingUpdate: { ...routeWireResult.understandingUpdate, participantEvidenceRanges: [{ startToken: 5, endToken: 8 }] } } });
+    await expect(gateway(parse).analyzeMvpTurnRoute(routeInput)).rejects.toThrow("token range");
   });
 
   it("passes presentation constraints to composition without allowing it to select a research question", async () => {

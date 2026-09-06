@@ -59,10 +59,11 @@ const routeValidationCategories: Record<string, string> = {
   "Route analysis cannot select a source topic belonging to another survey.": "wrong_survey_topic",
 };
 const routeFields = new Set(["schemaVersion", "answerStatus", "asksSourceQuestion", "answerEvidence", "kind", "topic", "needsSource", "isOutOfScope", "isUnanticipated", "suggestedQuestionIds", "sourceDirective", "rationale", "sourceRequest", "participantEvidence", "resolvedQuestion", "understandingUpdate", "version", "productFamiliarity", "preferredDepth", "understanding", "candidateQuestions", "id", "question", "objective", "module", "allowedByIntent", "alreadyAsked", "routeKeywords", "sourceContextRequirement", "surveySlug", "sourceBrand", "activeIntentSlug", "activeIntentLabel", "activeIntentSteeringRule", "currentQuestionId", "currentQuestion", "currentQuestionObjective", "currentQuestionKeywords", "currentQuestionCompletionSignals", "sourceConversationActive", "participantMessage", "recentInterviewerContext"]);
+for (const field of ["schemaVersion", "participantTokens", "index", "text", "participantEvidenceRange", "participantEvidenceRanges", "answerEvidenceRanges", "startToken", "endToken"]) routeFields.add(field);
 export function sanitizeMvpRouteFailure(error: unknown) {
   const { stage: _stage, ...safe } = sanitizeSourceFailure(error, "composition");
   const raw = error !== null && typeof error === "object" ? error as Record<string, unknown> : {};
-  const code = typeof raw.code === "string" && Object.values(routeValidationCategories).includes(raw.code) ? raw.code : typeof raw.message === "string" && Object.prototype.hasOwnProperty.call(routeValidationCategories, raw.message) ? routeValidationCategories[raw.message]! : safe.code === "composition_unavailable" ? "routing_unavailable" : safe.code;
+  const code = typeof raw.code === "string" && (raw.code === "invalid_evidence_range" || Object.values(routeValidationCategories).includes(raw.code)) ? raw.code : typeof raw.message === "string" && Object.prototype.hasOwnProperty.call(routeValidationCategories, raw.message) ? routeValidationCategories[raw.message]! : safe.code === "composition_unavailable" ? "routing_unavailable" : safe.code;
   const rawIssues = Array.isArray(raw.issues) ? raw.issues : [];
   return { ...safe, code, issues: safe.issues.map((issue, index) => {
     const item = rawIssues[index] as { path?: unknown[] } | undefined;
