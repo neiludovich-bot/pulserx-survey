@@ -29,6 +29,24 @@ const contextualPlan: SourceQuestionPlan = {
 describe("focused evidence selection", () => {
   afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
+  it("does not add a second contextual pass to a one-fact presentation", async () => {
+    const candidate = source("nubeqa", "selected");
+    const select = mockSelector({ selections: [{ sourceId: candidate.id, supportExcerpt: candidate.text.split(". ")[0] + ".", assetIds: [], evidenceRole: "contextual" }], rationale: "One complete fact." });
+    const presentationPlan = { version: 1 as const, purpose: "source_answer" as const, depth: "brief" as const, maxFacts: 1, maxTopics: 1, maxWords: 40, askReadiness: false };
+    const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: "Explain the current detail simply", candidates: [candidate], fallbackSourceIds: [], sourceQuestionPlan: contextualPlan, presentationPlan });
+    expect(result.chunks).toHaveLength(1);
+    expect(select).toHaveBeenCalledOnce();
+    expect(select.mock.calls[0][0].presentationPlan).toEqual(presentationPlan);
+  });
+
+  it("fails closed when a one-fact selection returns multiple sources", async () => {
+    const candidates = [source("nubeqa", "first"), source("nubeqa", "second")];
+    const select = mockSelector({ selections: candidates.map((candidate) => ({ sourceId: candidate.id, supportExcerpt: candidate.text, assetIds: [], evidenceRole: "direct" })), rationale: "Too much evidence." });
+    const result = await selectFocusedSourceEvidence({ surveySlug: "nubeqa", query: "Explain more simply", candidates, fallbackSourceIds: ["first"], presentationPlan: { version: 1, purpose: "source_answer", depth: "brief", maxFacts: 1, maxTopics: 1, askReadiness: false } });
+    expect(result).toEqual({ mode: "unavailable", chunks: [] });
+    expect(select).toHaveBeenCalledTimes(2);
+  });
+
   it("removes uncited sources and renumbers markers without changing source ownership", () => {
     const references = ["unused", "used"].map((id) => ({ citationId: id, title: id, url: `https://example.com/${id}`, description: null, assets: [] }));
     expect(alignCitedSourceReferences("The rate was 70.3%. [2]", references)).toEqual({ answer: "The rate was 70.3%. [1]", references: [references[1]] });

@@ -185,6 +185,7 @@ export const moderatorEvidenceSelectionInputSchema = z.object({
   sourceTopicContext: z.string().min(1).max(6000).nullable().default(null),
   priorSourceIds: z.array(z.string().min(1)).max(3).default([]),
   sourceQuestionPlan: sourceQuestionPlanSchema.nullable().optional(),
+  presentationPlan: presentationPlanSchema.optional(),
   candidates: z.array(z.object({
     id: z.string().min(1),
     title: z.string(),

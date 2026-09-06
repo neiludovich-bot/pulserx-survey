@@ -66,6 +66,7 @@ export async function selectFocusedSourceEvidence(input: {
   sourceTopicContext?: string | null;
   priorSourceIds?: string[];
   sourceQuestionPlan?: SourceQuestionPlan | null;
+  presentationPlan?: ModeratorEvidenceSelectionInput["presentationPlan"];
   evidenceFocus?: "all" | "contextual";
 }): Promise<{ chunks: ControlledRagChunk[]; mode: "semantic" | "fallback" | "unavailable" }> {
   const candidates = input.candidates.slice(0, 24);
@@ -74,6 +75,7 @@ export async function selectFocusedSourceEvidence(input: {
     sourceTopicContext: input.sourceTopicContext?.trim().slice(0, 6000) || null,
     priorSourceIds: input.priorSourceIds ?? [],
     sourceQuestionPlan: input.sourceQuestionPlan ?? null,
+    presentationPlan: input.presentationPlan,
     evidenceFocus: input.evidenceFocus ?? "all",
     candidates: candidates.map((chunk) => ({
       id: chunk.id, title: chunk.title, url: chunk.url, description: chunk.description,
@@ -89,7 +91,8 @@ export async function selectFocusedSourceEvidence(input: {
     for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const selection = await gateway.selectModeratorEvidence(selectionInput);
-      if (selection.result.selections.length > 3) throw new Error("Too many selected sources.");
+      const selectionLimit = input.presentationPlan?.maxFacts === 1 ? 1 : 3;
+      if (selection.result.selections.length > selectionLimit) throw new Error("Too many selected sources.");
       const seen = new Set<string>();
       const chunks = selection.result.selections.map(({ sourceId, assetIds, supportExcerpt, evidenceRole }) => {
         const sourceIndex = candidates.findIndex((chunk) => chunk.id === sourceId);
@@ -106,7 +109,7 @@ export async function selectFocusedSourceEvidence(input: {
         });
         return { ...source, text: supportExcerpt, assets, ...(evidenceRole ? { evidenceRole } : {}) };
       });
-      if (input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation") {
+      if (input.presentationPlan?.maxFacts !== 1 && input.evidenceFocus !== "contextual" && input.sourceQuestionPlan?.answerApproach === "contextual_explanation") {
         // The original relation and the useful background are different evidence
         // needs. Always run the focused pass: a contextual label on the first
         // selection alone cannot establish that it contains useful background.
@@ -152,6 +155,8 @@ export async function selectFocusedSourceEvidence(input: {
     return queryTerms.some((term) => content.has(term) || content.has(term.replace(/s$/, "")) ||
       queryInitialisms.has(term) && words.some((_word, index) => words.slice(index, index + term.length).map((word) => word[0]).join("") === term));
   }));
+  // A full heuristic card cannot isolate one complete fact safely.
+  if (input.presentationPlan?.maxFacts === 1) return { chunks: [], mode: "unavailable" };
   const selected = preferred.slice(0, 3);
   return { mode: "fallback", chunks: selected.map((chunk) => ({
     ...chunk, assets: fallbackAssets(chunk, input.query),

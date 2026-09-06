@@ -22,14 +22,14 @@ describe("explicit reasoning configuration", () => {
       expect(parse.mock.calls[0][0].reasoning).toEqual(model === "gpt-5.4" ? { effort: "low" } : undefined);
     }
   });
-  it("uses reasoning for both composition and review while preserving strict formats", async () => {
+  it.each([undefined, "medium"] as const)("keeps the grounding override separate from the base effort: %s", async (groundingReasoningEffort) => {
     const parse = vi.fn().mockResolvedValueOnce({ output_parsed: { answerBody: "The source describes a study result. [1]", usedSourceIndexes: [1], limitations: [] } })
       .mockResolvedValueOnce({ output_parsed: { version: 1, supported: true, unsupportedClaims: [] } });
-    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "gpt-5.4-mini", decisionModel: "gpt-5.4-mini", phrasingModel: "gpt-5.4-mini", sourceModel: "gpt-5.4" }, undefined, { parse });
+    const gateway = new OpenAIResponsesGateway("test", { analysisModel: "gpt-5.4-mini", decisionModel: "gpt-5.4-mini", phrasingModel: "gpt-5.4-mini", sourceModel: "gpt-5.4", reasoningEffort: "low", groundingReasoningEffort }, undefined, { parse });
     await gateway.composeControlledRagAnswer({ surveySlug: "nubeqa", participantMessage: "Explain the study.", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, sources: [{ index: 1, title: "Study", url: null, description: null, text: "The source describes a study result." }] });
     expect(parse).toHaveBeenCalledTimes(2);
+    expect(parse.mock.calls.map(([request]) => request.reasoning)).toEqual([{ effort: "low" }, { effort: groundingReasoningEffort ?? "low" }]);
     for (const [request] of parse.mock.calls) {
-      expect(request.reasoning).toEqual({ effort: "medium" });
       expect(request.text.format.strict).toBe(true);
     }
   });

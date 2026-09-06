@@ -81,6 +81,12 @@ describe("controlled RAG source provider", () => {
     "Say more.",
     "What does that mean?",
   ])("keeps a referential clarification on DDI while the factors question is parked: %s", async (participantMessage) => {
+    if (participantMessage === "Even more simply please.") {
+      const ddi = CONTROLLED_RAG_CHUNKS.find((source) => source.id === "nubeqa-ddi-profile")!;
+      vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({ selectModeratorEvidence: vi.fn().mockResolvedValue({ result: {
+        selections: [{ sourceId: ddi.id, supportExcerpt: ddi.text.split(". ")[0] + ".", assetIds: [], evidenceRole: "direct" }], rationale: "One complete interaction fact.",
+      } }) } as unknown as NonNullable<ReturnType<typeof modelGateway.getOptionalOpenAIGateway>>);
+    }
     const result = await askControlledRagForSurveyInterviewerTurn({
       ...parkedFactorsInput,
       participantMessage,
@@ -117,12 +123,12 @@ describe("controlled RAG source provider", () => {
     expect(result.answer).not.toContain("For nmCRPC, ARAMIS frames");
   });
 
-  it("rephrases retained complementary evidence without retrieving again for even more simply", async () => {
+  it("selects one retained contextual fact without retrieving again for even more simply", async () => {
     vi.stubEnv("NODE_ENV", "production");
     const planSourceQuestion = vi.fn();
-    const selectModeratorEvidence = vi.fn();
+    const selectModeratorEvidence = vi.fn().mockResolvedValue({ result: { selections: [{ sourceId: "synthetic-contextual", supportExcerpt: "Synthetic contextual fact.", assetIds: [], evidenceRole: "contextual" }], rationale: "One useful contextual fact." } });
     const composeControlledRagAnswer = vi.fn().mockResolvedValue({ result: {
-      answerBody: "Synthetic direct fact. [1] Synthetic contextual fact. [2]", usedSourceIndexes: [1, 2], limitations: [],
+      answerBody: "Synthetic contextual fact. [1]", usedSourceIndexes: [1], limitations: [],
     } });
     vi.spyOn(modelGateway, "getOptionalOpenAIGateway").mockReturnValue({
       planSourceQuestion, selectModeratorEvidence, composeControlledRagAnswer,
@@ -138,14 +144,14 @@ describe("controlled RAG source provider", () => {
     });
     expect(result.enabled).toBe(true);
     expect(planSourceQuestion).not.toHaveBeenCalled();
-    expect(selectModeratorEvidence).not.toHaveBeenCalled();
+    expect(selectModeratorEvidence).toHaveBeenCalledOnce();
     expect(composeControlledRagAnswer).toHaveBeenCalledWith(expect.objectContaining({
       participantMessage: "Even more simply please.",
-      sources: expect.arrayContaining([
-        expect.objectContaining({ text: "Synthetic direct fact.", evidenceRole: "direct" }),
+      sources: [
         expect.objectContaining({ text: "Synthetic contextual fact.", evidenceRole: "contextual" }),
-      ]),
+      ],
     }));
+    expect(result.evidencePacket).toEqual({ sources });
   });
 
   it("composes the original clarification with DDI evidence and history, excluding parked questions", async () => {

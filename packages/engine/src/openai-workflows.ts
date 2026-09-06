@@ -94,6 +94,7 @@ type ModelConfig = {
   phrasingModel: string;
   sourceModel?: string;
   reasoningEffort?: "none" | "low" | "medium" | "high";
+  groundingReasoningEffort?: "none" | "low" | "medium" | "high";
 };
 
 type DebugTraceStore = {
@@ -421,12 +422,14 @@ export class OpenAIResponsesGateway {
 
   async selectModeratorEvidence(input: ModeratorEvidenceSelectionInput) {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
+    const baseSchema = parsed.evidenceFocus === "contextual" ? moderatorContextualEvidenceSelectionModelResultSchema : moderatorEvidenceSelectionModelResultSchema;
+    const singleFact = parsed.presentationPlan?.maxFacts === 1;
     const call = await this.runStructuredCall<ModeratorEvidenceSelectionResult>({
       callType: "moderator_evidence",
       model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: moderatorEvidenceSelectorSystemPrompt.version,
-      schemaName: parsed.evidenceFocus === "contextual" ? "moderator_contextual_evidence_selection_result_v1" : "moderator_evidence_selection_result_v3",
-      schema: parsed.evidenceFocus === "contextual" ? moderatorContextualEvidenceSelectionModelResultSchema : moderatorEvidenceSelectionModelResultSchema,
+      schemaName: singleFact ? `moderator_${parsed.evidenceFocus}_single_fact_selection_result_v1` : parsed.evidenceFocus === "contextual" ? "moderator_contextual_evidence_selection_result_v1" : "moderator_evidence_selection_result_v3",
+      schema: singleFact ? baseSchema.extend({ selections: baseSchema.shape.selections.max(1) }) : baseSchema,
       instructions: moderatorEvidenceSelectorSystemPrompt.instructions,
       input: parsed,
       metadata: { survey_slug: parsed.surveySlug },
@@ -448,7 +451,7 @@ export class OpenAIResponsesGateway {
     // Explicit reasoning for interpretation and evidence checks; phrasing keeps
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
-      ? this.config.reasoningEffort ?? "medium" : undefined;
+      ? (callType === "source_grounding_review" ? this.config.groundingReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
     const effectiveMetadata = { ...metadata, ...(reasoningEffort ? { reasoning_effort: reasoningEffort } : {}) };
     const requestPayload = {
       model,

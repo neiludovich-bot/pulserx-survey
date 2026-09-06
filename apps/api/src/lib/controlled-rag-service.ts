@@ -1671,10 +1671,16 @@ export async function askControlledRagForSurveyInterviewerTurn(
     sourceTopicContext: pureClarification ? input.sourceTopicContext : sourceTopicContext };
   let chunks: ControlledRagChunk[];
   let evidenceCard: ClinicalEvidenceCard | null;
+  const narrowRetainedPresentation = pureClarification && retained && input.presentationPlan?.maxFacts === 1;
   if (pureClarification && retained) {
-    // Rephrase exactly the evidence already presented. Never rerun retrieval
-    // or treat the generated interviewer answer as a new factual source.
-    chunks = retained.sources;
+    // Repeated simplification selects one complete fact from original evidence,
+    // rather than asking composition to compress every prior monitoring case.
+    // No retrieval or generated interviewer text can supply new facts here.
+    chunks = narrowRetainedPresentation ? (await selectFocusedSourceEvidence({
+      surveySlug: input.surveySlug, query: retrievalQuery, candidates: retained.sources,
+      sourceTopicContext: input.sourceTopicContext, priorSourceIds: retained.sources.map((source) => source.id),
+      presentationPlan: input.presentationPlan, fallbackSourceIds: [],
+    })).chunks : retained.sources;
     evidenceCard = null;
   } else {
   const retrievalQueries = sourceQuestionPlan?.retrievalQueries ?? [retrievalQuery];
@@ -1713,6 +1719,7 @@ export async function askControlledRagForSurveyInterviewerTurn(
     candidates,
     sourceTopicContext,
     sourceQuestionPlan,
+    presentationPlan: input.presentationPlan,
     priorSourceIds: priorSources.map((source) => source.id),
     fallbackSourceIds: priorSources.length ? priorSources.map((source) => source.id) : preferredFallbackIds.length ? preferredFallbackIds : fallbackMatches.slice(0, 1).map((chunk) => chunk.id),
   });
@@ -1776,7 +1783,9 @@ export async function askControlledRagForSurveyInterviewerTurn(
     citationIds: cited.references.map((reference) => reference.citationId),
     conversationId: null,
     reason: explanationAvailable ? null : "The source explanation could not be verified.",
-    evidencePacket: packet.success ? packet.data : null,
+    // Narrow only this presentation. Preserve the full prior source context for
+    // a subsequent question about a different case within the same discussion.
+    evidencePacket: narrowRetainedPresentation ? retained : packet.success ? packet.data : null,
     sourceQuestionPlan,
     sourceAnswerGrounding: composition.grounding,
     sourceOutcome: composition.outcome,

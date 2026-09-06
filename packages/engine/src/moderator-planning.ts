@@ -225,6 +225,9 @@ export function validateModeratorPhrasing(input: ModeratorPhrasingInput, output:
 export function validateModeratorEvidenceSelection(input: ModeratorEvidenceSelectionInput, output: unknown) {
   const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
   const result = moderatorEvidenceSelectionResultSchema.parse(output);
+  if (parsed.presentationPlan?.maxFacts === 1 && result.selections.length > 1) {
+    throw new Error("A single-fact presentation requires at most one selected source.");
+  }
   const selectedSourceIds = new Set<string>();
   const selectedAssetIds = new Set<string>();
   for (const selection of result.selections) {
