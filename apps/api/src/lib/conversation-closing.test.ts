@@ -10,6 +10,15 @@ const guide = { id: "fit", canonicalQuestion: "Which patients fit?", module: "fi
 beforeEach(() => vi.resetAllMocks());
 
 describe("optional final questions and recap", () => {
+  it("never records farewell language as a research opinion", async () => {
+    const state = emptyConversationState(); state.closing = { reason: "guide" }; state.research = researchPlanForGuide([guide]);
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation: { ...observation, request: null, closingResponse: { intent: "finish", evidence: "No thanks" }, researchSignals: [{ objectiveId: "fit", criterionId: "perspective", evidence: "No thanks" }] }, trace: {}, answer: null });
+    const result = await runConversationRuntime({ brand: "nubeqa", surveySlug: "nubeqa", state, question: guide, history: [], message: "No thanks", resume: false, stop: false, selectGuide: () => null });
+    expect(mocks.turn.mock.calls[0][0].researchObjectives).toEqual([]);
+    expect(result.state.research?.objectives[0].evidence).toEqual([]);
+    expect(result.content).not.toContain("No thanks");
+  });
   it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s open beyond time, answers remaining questions, then recaps", async brand => {
     mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Trial efficacy", url: "https://example.test/study", description: "", text: "A supported fact.", tags: [], assets: [] }]);
     const answer = { selections: [{ sourceId: "a", supportExcerpt: "A supported fact.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported fact.", sourceIds: ["a"] }], unavailableReason: null };

@@ -54,7 +54,7 @@ export async function runConversationRuntime(input: Input) {
       sourceTopicContext: state.discussion?.query ?? null, responseMode: "answer_only" });
     if (candidates.some(source => source.surveySlug !== input.surveySlug)) throw new Error("Evidence crossed bot boundaries.");
     const context: ConversationTurnContext = { version: 2, brand: input.brand, participantMessage: message, closing: Boolean(state.closing),
-      researchObjectives: state.research?.objectives.filter(objective => objective.status !== "covered").map(objective => ({ id: objective.id, objective: objective.objective,
+      researchObjectives: state.closing ? [] : state.research?.objectives.filter(objective => objective.status !== "covered").map(objective => ({ id: objective.id, objective: objective.objective,
         missingCriteria: objective.criteria.filter(criterion => !objective.evidence.some(item => item.criterionId === criterion.id)).map(({ id, description }) => ({ id, description })) })),
       question: question ? { id: question.id, text: question.canonicalQuestion, kind: questionKind(question) } : null,
       discussionQuery: state.discussion?.query ?? null, recentTurns: input.history.slice(-8),
@@ -90,7 +90,7 @@ export async function runConversationRuntime(input: Input) {
       const understood = await understand(input.message, input.question);
       prepared = understood;
       observation = understood.observation;
-      if (state.research) state.research = updateResearchCoverage(state.research, observation, input.message);
+      if (state.research && !state.closing) state.research = updateResearchCoverage(state.research, observation, input.message);
       if (observation.answerEvidence.length && input.question && !input.question.id.startsWith("conversation-") && !input.question.id.startsWith("objective-probe:")) remember([input.question.canonicalQuestion]);
     }
     // The final-Q&A phase has no guide advancement or clinical reaction probes.
