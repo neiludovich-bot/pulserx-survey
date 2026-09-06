@@ -6,8 +6,8 @@ import type {
   MvpCustomGptSurveyMessage,
   MvpCustomGptSurveyResponse,
 } from "@interview/schemas";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { selectAutomaticSourcePanel, selectedSourceFigure, type SourcePanelReference } from "../source-panel-selection";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { selectAutomaticSourcePanel, selectedSourceFigure, selectedSourceSlides, type SourcePanelReference } from "../source-panel-selection";
 import {
   previewMvpCustomGptSource,
   startMvpCustomGptSurvey,
@@ -631,12 +631,20 @@ function renderMessageContent(
 }
 
 function SourcePanel({
-  source,
+  source: initialSource,
+  message,
   onClose,
 }: {
   source: SourcePanelReference;
+  message?: MvpCustomGptSurveyMessage;
   onClose: () => void;
 }) {
+  const slides = useMemo(() => message ? selectedSourceSlides(message) : [], [message]);
+  const [slideIndex, setSlideIndex] = useState(() => Math.max(0, slides.findIndex((slide) => slide.index === initialSource.index)));
+  const [isPaused, setIsPaused] = useState(false);
+  const [isHovered, setIsHovered] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const source = slides[slideIndex] ?? initialSource;
   const label = getReferenceLabel(source.reference, source.index);
   const sourceUrl = source.reference.url;
   const canEmbedSource = sourceUrl ? shouldEmbedSourceUrl(sourceUrl) : false;
@@ -651,6 +659,19 @@ function SourcePanel({
   const [expandedImage, setExpandedImage] =
     useState<ExpandedSourceImage | null>(null);
   const previewPaneRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (slides.length < 2 || isPaused || isHovered || isFocused || expandedImage) return;
+    const timer = window.setInterval(() => {
+      if (!document.hidden) setSlideIndex((index) => (index + 1) % slides.length);
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [slides.length, isPaused, isHovered, isFocused, expandedImage]);
+
+  function moveSlide(direction: number) {
+    setIsPaused(true);
+    setSlideIndex((index) => (index + direction + slides.length) % slides.length);
+  }
 
   useEffect(() => {
     previewPaneRef.current?.scrollTo({ top: 0 });
@@ -726,7 +747,14 @@ function SourcePanel({
 
   return (
     <>
-      <aside className="mvp-source-panel" aria-label="Citation source">
+      <aside className={`mvp-source-panel${slides.length > 1 ? " mvp-source-panel-carousel" : ""}`} aria-label="Citation source"
+        onMouseEnter={() => setIsHovered(true)}
+        onMouseLeave={() => setIsHovered(false)}
+        onFocus={() => setIsFocused(true)}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsFocused(false);
+        }}
+      >
       <header className="mvp-source-panel-header">
         <div>
           <p className="mvp-kicker">Source</p>
@@ -739,6 +767,14 @@ function SourcePanel({
           Close
         </button>
       </header>
+      {slides.length > 1 ? (
+        <div className="mvp-source-carousel-controls" role="group" aria-label="Figure carousel">
+          <button type="button" aria-label="Previous figure" onClick={() => moveSlide(-1)}>Previous</button>
+          <span aria-live={isPaused ? "polite" : "off"}>Figure {slideIndex + 1} of {slides.length}</span>
+          <button type="button" aria-label={isPaused ? "Resume figure rotation" : "Pause figure rotation"} onClick={() => setIsPaused((paused) => !paused)}>{isPaused ? "Play" : "Pause"}</button>
+          <button type="button" aria-label="Next figure" onClick={() => moveSlide(1)}>Next</button>
+        </div>
+      ) : null}
       {sourceUrl ? (
         <>
           {canEmbedSource ? (
@@ -1552,6 +1588,12 @@ export function MvpCustomGptSurveyModal({
             aria-label="Survey response"
             disabled={textDisabled || isChoosingIntent}
             onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" || event.shiftKey || event.nativeEvent.isComposing || event.keyCode === 229) return;
+              event.preventDefault();
+              if (!event.repeat && !textDisabled && !isChoosingIntent && draft.trim()) event.currentTarget.form?.requestSubmit();
+            }}
+            title="Enter to send; Shift+Enter for a new line"
             placeholder={
               isChoosingIntent
                 ? "Choose a focus above to begin"
@@ -1594,7 +1636,9 @@ export function MvpCustomGptSurveyModal({
         ) : null}
       </section>
       {sourcePanel ? (
-        <SourcePanel source={sourcePanel} onClose={handleCloseSourcePanel} />
+        <SourcePanel key={`${sourcePanel.messageId}:${sourcePanel.index}`} source={sourcePanel}
+          message={survey?.messages.find((message) => message.id === sourcePanel.messageId)}
+          onClose={handleCloseSourcePanel} />
       ) : null}
     </main>
   );

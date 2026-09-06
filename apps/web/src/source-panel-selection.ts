@@ -39,3 +39,18 @@ export function selectAutomaticSourcePanel(message: MvpCustomGptSurveyMessage, s
   }
   return null;
 }
+
+/** One slide per selected figure, retaining the citation that owns it. */
+export function selectedSourceSlides(message: MvpCustomGptSurveyMessage): SourcePanelReference[] {
+  const seen = new Set<string>();
+  return message.references.flatMap((reference, index) => {
+    const selected = selectedSourceFigure({ messageId: message.id, index: index + 1, reference });
+    if (!selected?.preview) return [];
+    const preview = selected.preview;
+    return preview.images.flatMap((image) => {
+      if (seen.has(image.url)) return [];
+      seen.add(image.url);
+      return [{ ...selected, preview: { ...preview, images: [image] } }];
+    });
+  });
+}

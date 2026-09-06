@@ -1046,6 +1046,32 @@ ul {
   background: #ffffff;
 }
 
+.mvp-source-panel-carousel {
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+}
+
+.mvp-source-carousel-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+  padding: 0.6rem;
+  border-bottom: 1px solid var(--mvp-stroke);
+  font-size: 0.82rem;
+}
+
+.mvp-source-carousel-controls button {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--mvp-stroke);
+  border-radius: 8px;
+  background: white;
+  color: var(--mvp-primary-dark);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .mvp-source-panel-header h2 {
   min-width: 0;
   margin: 0;
