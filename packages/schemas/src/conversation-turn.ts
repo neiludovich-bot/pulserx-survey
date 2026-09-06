@@ -40,3 +40,14 @@ export const conversationTurnResultSchema = z.object({
 }).strict();
 export type ConversationTurnContext = z.infer<typeof conversationTurnContextSchema>;
 export type ConversationObservation = z.infer<typeof conversationObservationSchema>;
+
+/** The application determines which research fields the current question permits.
+ * Enforce that constraint at generation time, not only after a model response. */
+export function conversationTurnResultSchemaForQuestion(kind: NonNullable<ConversationTurnContext["question"]>["kind"] | null) {
+  if (kind === "priorities") return conversationTurnResultSchema;
+  return conversationTurnResultSchema.extend({
+    observation: conversationTurnResultSchema.shape.observation.extend({
+      priorities: conversationObservationModelSchema.shape.priorities.max(0),
+    }).strict(),
+  }).strict();
+}

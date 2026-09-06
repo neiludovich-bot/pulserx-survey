@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 vi.mock("@interview/schemas", async () => import("../../schemas/src/index"));
 vi.mock("@interview/prompts", async () => import("../../prompts/src/index"));
-import { conversationInterpretationInputSchema, conversationInterpretationResultSchema, conversationObservationModelSchema, type ModeratorEvidenceSelectionInput } from "@interview/schemas";
+import { conversationInterpretationInputSchema, conversationInterpretationResultSchema, conversationObservationModelSchema, conversationTurnResultSchemaForQuestion, type ModeratorEvidenceSelectionInput } from "@interview/schemas";
 import { OpenAIResponsesGateway } from "./openai-workflows";
 import { participantTokensForModel } from "./evidence-ranges";
 
@@ -29,6 +29,30 @@ function fixture(surveySlug: "nubeqa" | "brukinsa" | "padcev") {
 }
 
 describe("single-call conversation boundary", () => {
+  it("allows research priorities only in the priorities generation contract", () => {
+    const output = { observation: { answerStatus: 'answered', answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], reactionEvidenceRanges: [], priorities: [{ label: 'PFS', query: 'Progression-free survival', evidenceRange: { startToken: 0, endToken: 0 } }], familiarity: null, outOfScope: false }, source: null };
+    expect(conversationTurnResultSchemaForQuestion('priorities').safeParse(output).success).toBe(true);
+    for (const kind of ['information_need', 'reaction', 'clarification', 'guide', null] as const) {
+      expect(conversationTurnResultSchemaForQuestion(kind).safeParse(output).success).toBe(false);
+    }
+  });
+  it.each(['nubeqa', 'brukinsa', 'padcev'] as const)('keeps both requested topics after the %s low-familiarity opening', async brand => {
+    const f = fixture(brand);
+    const message = 'PFS and DDI';
+    const text = 'The website describes progression-free survival and drug interactions.';
+    f.evidence.candidates[0].text = text;
+    f.parse.mockResolvedValue({ id: 'information-need', output_parsed: {
+      observation: { answerStatus: 'answered', answerEvidenceRanges: [{ startToken: 0, endToken: 2 }], reactionEvidenceRanges: [], priorities: [], familiarity: null, outOfScope: false },
+      source: { request: { text: 'Explain progression-free survival and drug interactions.', evidenceRange: { startToken: 0, endToken: 2 } }, answer: { ...f.answer, paragraphs: [{ text, sourceIds: ['study'] }] } },
+    } });
+    const result = await f.gateway.conversationTurn({ version: 2, brand, participantMessage: message, question: { id: 'conversation-information-need', kind: 'information_need', text: `What would you most like to understand about ${brand}?` }, discussionQuery: null, recentTurns: [{ role: 'participant', content: 'not very familiar with' }], topics: [] }, f.evidence);
+    expect(f.parse).toHaveBeenCalledOnce();
+    expect(f.parse.mock.calls[0][0].text.format.schema.properties.observation.properties.priorities.maxItems).toBe(0);
+    expect(result.observation.priorities).toEqual([]);
+    expect(result.observation.answerEvidence).toEqual([message]);
+    expect(result.observation.request?.text).toBe('Explain progression-free survival and drug interactions.');
+    expect(result.answer?.paragraphs[0].text).toBe(text);
+  });
   it("requires an atomic familiarity fact instead of independently nullable fields", () => {
     const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], request: null, priorities: [], familiarity: null, outOfScope: false };
     expect(conversationObservationModelSchema.safeParse(observation).success).toBe(true);

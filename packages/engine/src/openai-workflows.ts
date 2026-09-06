@@ -3,7 +3,7 @@ import { join } from "node:path";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { conversationTurnSystemPrompt } from "@interview/prompts";
-import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnContextSchema, conversationWebsiteAnswerSchema, type ConversationTurnContext } from "@interview/schemas";
+import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnResultSchemaForQuestion, conversationTurnContextSchema, conversationWebsiteAnswerSchema, type ConversationTurnContext } from "@interview/schemas";
 import { validateConversationObservation } from "./conversation-runtime";
 import { coalesceConversationSources } from "./conversation-sources";
 import {
@@ -319,7 +319,8 @@ export class OpenAIResponsesGateway {
     const call = await this.runStructuredCall<import("zod").infer<typeof conversationTurnResultSchema>>({
       callType: "single_call_conversation", model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: conversationTurnSystemPrompt.version,
-      schemaName: "conversation_turn_v3", schema: conversationTurnResultSchema,
+      schemaName: parsedContext.question?.kind === "priorities" ? "conversation_turn_v4_priorities" : "conversation_turn_v4_response",
+      schema: conversationTurnResultSchemaForQuestion(parsedContext.question?.kind ?? null),
       instructions: conversationTurnSystemPrompt.instructions,
       input: conversationTurnInputSchema.parse({ context: { ...parsedContext, participantTokens: participantTokensForModel(parsedContext.participantMessage) }, evidence: { ...parsedEvidence,
         candidates: parsedEvidence.candidates.map(({ text, ...candidate }) => ({ ...candidate, spans: indexedSourceSpans(text).map(({ index, text }) => ({ index, text })) })) } }),
