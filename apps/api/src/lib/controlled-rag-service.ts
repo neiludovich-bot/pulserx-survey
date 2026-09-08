@@ -1220,8 +1220,9 @@ function rankAssetsForDisplay(
 
 function rankAssets(assets: ControlledRagAsset[], queryTokens: string[], contextTokens: string[] = [], retainPageCandidates = false) {
   const seen = new Set<string>();
+  const captionCounts = new Map<string, number>();
 
-  return [...assets]
+  const ranked = [...assets]
     .map((asset) => ({ asset, score: scoreAsset(asset, queryTokens) - scoreAsset(asset, []), contextScore: scoreAsset(asset, contextTokens) - scoreAsset(asset, []), base: scoreAsset(asset, []) }))
     .filter(({ score, contextScore }) => retainPageCandidates || score > 0 || contextScore > 0)
     .sort((left, right) => right.score - left.score || right.contextScore - left.contextScore || right.base - left.base)
@@ -1232,8 +1233,16 @@ function rankAssets(assets: ControlledRagAsset[], queryTokens: string[], context
       seen.add(asset.url);
       return true;
     })
-    .slice(0, 8)
-    .map(({ asset }) => asset);
+    .map(({ asset }, index) => {
+      // Repeated responsive captions must not crowd out other trials/endpoints.
+      // Keep variants available after distinct, descriptive figures.
+      const caption = `${asset.title} ${asset.description ?? ""}`.toLowerCase().replace(/\s+/g, " ");
+      const duplicate = caption.length > 60 && captionCounts.has(caption);
+      captionCounts.set(caption, 1);
+      return { asset, index, duplicate };
+    });
+  return (retainPageCandidates ? ranked.sort((a,b)=>Number(a.duplicate)-Number(b.duplicate) || a.index-b.index) : ranked)
+    .slice(0, retainPageCandidates ? 6 : 8).map(({asset})=>asset);
 }
 
 async function databaseChunks(input: ControlledRagSurveyTurnInput) {
@@ -1376,7 +1385,7 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
   const contextAssetTerms = sourceContentSearchTerms(input.sourceTopicContext ?? "", input.surveySlug);
   return [
     ...[...diverse, ...additional].slice(0, Math.min(8, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
-      assets: rankAssets(source.assets ?? [], assetTerms, contextAssetTerms, true).slice(0, 3),
+      assets: rankAssets((source.assets ?? []).filter(sourceAssetDisplayEligible), assetTerms, contextAssetTerms, true),
     })),
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
   ].slice(0, 24).map(source => ({ ...source, assets: source.assets?.filter(asset => sourceAssetDisplayEligible(asset) && sourceAssetMeasureEligible(asset, input.participantMessage)) }));

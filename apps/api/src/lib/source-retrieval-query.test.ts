@@ -49,7 +49,7 @@ describe("source library content retrieval", () => {
     mocks.query.mockResolvedValue(rows.map(row => ({ id: row.id }))); mocks.findMany.mockResolvedValue(rows);
     const library = (await controlledRagTestInternals.retrieveChunks(input)).filter(source => source.id.startsWith('db:'));
     expect(library.map(source => source.id)).toEqual(['db:chunk-0', 'db:chunk-10', 'db:chunk-11', 'db:chunk-1']);
-    expect(library.every(source => (source.assets ?? []).length <= 3)).toBe(true);
+    expect(library.every(source => (source.assets ?? []).length <= 6)).toBe(true);
   });
   it("finds spelled-out website language from mixed reactions and shorthand across bots", () => {
     const message = "The PFS is great, the DDI is something I'll need to keep an eye on but it doesnt sound too complex. What are the AE's to watch out for with DDI";

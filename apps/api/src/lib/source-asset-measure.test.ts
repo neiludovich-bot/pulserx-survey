@@ -7,6 +7,11 @@ describe('figure measure eligibility across bots', () => {
     expect(sourceAssetDisplayEligible({ assetKind: 'TABLE', url: 'https://example.com/figure.svg?v=1' })).toBe(true);
     expect(sourceAssetDisplayEligible({ assetKind: 'PDF', url: 'https://example.com/guide.pdf' })).toBe(true);
   });
+  it('excludes navigation icons even when they inherit clinical alt text', () => {
+    expect(sourceAssetDisplayEligible({assetKind:'IMAGE',url:'https://example.com/swipe-to-scroll.png'})).toBe(false);
+    expect(sourceAssetDisplayEligible({assetKind:'IMAGE',url:'https://example.com/icon-safety.svg'})).toBe(false);
+    expect(sourceAssetDisplayEligible({assetKind:'IMAGE',url:'https://example.com/safety-table.svg'})).toBe(true);
+  });
   const exposure = { title: 'Median durations of exposure to treatment for therapy and comparator' };
   it.each(['NUBEQA', 'BRUKINSA', 'PADCEV'])('does not use exposure duration to illustrate %s side effects', brand => {
     expect(sourceAssetMeasureEligible(exposure, `What are the ${brand} side effects?`)).toBe(false);

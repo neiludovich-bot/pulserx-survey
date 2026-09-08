@@ -2,7 +2,7 @@
 
 The website index is prepared outside the conversation request. Crawling and PDF parsing make no model calls. GPT continues to receive bounded retrieved excerpts and source-owned assets from Postgres through the existing conversation path.
 
-Retrieval prioritizes complete named phrases, samples at most eight library passages with page diversity, and passes up to three matching image candidates per library passage. The existing curated catalog remains available within the overall 24-source bound. This keeps a larger corpus from flooding the model with repeated page assets or incidental endpoint mentions.
+Retrieval prioritizes complete named phrases, samples at most eight library passages with page diversity, and passes up to six distinct-first visual candidates per library passage, retaining page figures for semantic selection even when the question does not repeat their captions. The existing curated catalog remains available within the overall 24-source bound. This keeps a larger corpus from flooding the model with repeated page assets or incidental endpoint mentions.
 
 ## Refresh a bot
 

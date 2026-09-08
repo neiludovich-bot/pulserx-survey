@@ -22,6 +22,8 @@ export function sourceAssetDisplayEligible(asset: { assetKind: string; url: stri
   if (!["CHART", "TABLE", "IMAGE"].includes(asset.assetKind.toUpperCase())) return true;
   try {
     const url = new URL(asset.url);
+    // UI decorations sometimes inherit a clinical alt caption from their container.
+    if (/(?:^|\/)(?:icon[-_]|swipe[-_]to[-_]scroll|logo[-_.])/i.test(url.pathname)) return false;
     return ["https:", "http:"].includes(url.protocol) && /\.(?:png|jpe?g|webp|gif|svg)$/i.test(url.pathname);
   } catch { return false; }
 }
