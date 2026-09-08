@@ -32,6 +32,11 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
 /** Rank the approved content before applying the bounded candidate limit. */
 export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null, websiteOnly = false) {
   const documentFilter = websiteOnly ? Prisma.sql`AND document.url NOT ILIKE '%.pdf%'` : Prisma.empty;
+  // A broad comparison should retrieve comparative findings before a footer
+  // containing an abbreviation glossary or a generic head-to-head heading.
+  const comparisonPriority = isBroadProductComparison(query)
+    ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', 'versus OR vs OR compared') AND chunk.content ~ '[0-9]') DESC,`
+    : Prisma.empty;
   const terms = sourceContentSearchTerms(query, surveySlug);
   const normalized = query.toLowerCase().replace(/-/g, " ");
   const phrases = [...(isBroadProductComparison(query) ? ["head to head"] : []), ...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions safety" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
@@ -56,7 +61,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
         AND to_tsvector('english', chunk.content) @@ search.any_terms
       ORDER BY (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
                ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.current_terms) DESC,` : Prisma.empty}
-               ${phrasePriority}
+               ${comparisonPriority} ${phrasePriority}
                ts_rank_cd(to_tsvector('english', chunk.content), search.current_terms) DESC,
                ts_rank_cd(to_tsvector('english', chunk.content), search.context_terms) DESC,
                document.priority DESC, chunk.position ASC, chunk.id ASC
@@ -78,7 +83,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       ${documentFilter}
       AND to_tsvector('english', chunk.content) @@ search.any_terms
     ORDER BY ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
-             ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
+             ${comparisonPriority} ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,
              document.priority DESC, chunk.position ASC, chunk.id ASC
     LIMIT 80

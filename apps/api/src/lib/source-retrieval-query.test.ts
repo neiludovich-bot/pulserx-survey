@@ -10,6 +10,14 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("prioritizes comparative findings over glossary matches for broad comparisons only", () => {
+    for (const context of [null, "efficacy"]) {
+      const sql = sourceContentSearchSql("What advantages does brukinsa have over other BTK inhibitors?", "brukinsa", context, true)!.sql;
+      expect(sql).toContain("'versus OR vs OR compared'");
+      expect(sql.indexOf("'versus OR vs OR compared'")).toBeLessThan(sql.indexOf("ts_rank_cd(to_tsvector('english', chunk.content)"));
+    }
+    expect(sourceContentSearchSql("What are the side effects?", "brukinsa")!.sql).not.toContain("'versus OR vs OR compared'");
+  });
   it("reserves website evidence even when a label fills the corpus-wide match limit", async () => {
     const ids = Array.from({ length: 80 }, (_, n) => ({ id: `pdf-${n}` }));
     mocks.query.mockResolvedValueOnce(ids).mockResolvedValueOnce([{ id: 'website-chart' }]);
