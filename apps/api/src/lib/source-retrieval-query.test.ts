@@ -10,12 +10,15 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
-  it("keeps a second trial passage from a figure-owning page even when eight pages match", async () => {
-    const document = (n: number) => ({ title: 'Evidence', url: `https://example.com/page-${n}`, description: '', tags: [], assets: n === 0 ? [{title:'Trial B PFS', description:'Trial B PFS curve',url:'https://example.com/pfs.png',assetKind:'IMAGE',tags:[],priority:1}] : [] });
-    const rows = [...Array.from({length:8},(_,n)=>({id:`first-${n}`, content:'Trial A comparative efficacy.', tags:[],sourceDocument:document(n)})), {id:'second-trial',content:'Trial B PFS comparative findings.',tags:[],sourceDocument:document(0)}];
+  it("includes the figure's trial results even when keyword search only finds the introduction and bibliography", async () => {
+    const document = (n: number) => ({ id:`document-${n}`, title: 'Evidence', content: 'Trial A comparative efficacy.\n\nTrial B PFS comparative findings.\n\nThis analysis is exploratory.', url: `https://example.com/page-${n}`, description: '', tags: ['website-index:v1'], assets: n === 0 ? [{title:'Trial B PFS', description:'Trial B PFS curve',url:'https://example.com/pfs.png',assetKind:'IMAGE',tags:[],priority:1}] : [] });
+    const rows = [...Array.from({length:8},(_,n)=>({id:`first-${n}`, content:'Trial A comparative efficacy.', tags:[],sourceDocument:document(n)})), {id:'bibliography',content:'References: Trial B publication.',tags:[],sourceDocument:document(0)}];
     mocks.query.mockResolvedValue(rows.map(row=>({id:row.id}))); mocks.findMany.mockResolvedValue(rows);
     const candidates = await controlledRagTestInternals.retrieveChunks({...input, participantMessage:'What advantages does this product have?'});
-    expect(candidates.find(c=>c.id==='db:second-trial')).toMatchObject({text:'Trial B PFS comparative findings.'});
+    const page = candidates.find(c=>c.id.startsWith('db:page:document-0:'))!;
+    expect(page.text).toContain('Trial B PFS comparative findings.\n\nThis analysis is exploratory.');
+    expect(page.assets?.[0].title).toBe('Trial B PFS');
+    expect(candidates.filter(c=>c.url===page.url)).toHaveLength(1);
     expect(candidates.length).toBeLessThanOrEqual(24);
   });
   it("prioritizes comparative findings over glossary matches for broad comparisons only", () => {

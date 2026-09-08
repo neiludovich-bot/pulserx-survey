@@ -11,7 +11,8 @@ import { prisma } from "./prisma";
 import { stripQuestionSentences } from "./source-answer-sentences";
 import { alignCitedSourceReferences, normalizeSourceCitationMarkers, selectFocusedSourceEvidence, withExplicitSourceAssets } from "./focused-source-evidence";
 import { recoverSelectedSourceExcerpt } from "./source-extractive-recovery";
-import { sourceContentSearchSql, sourceContentSearchTerms } from "./source-retrieval-query";
+import { isBroadProductComparison, sourceContentSearchSql, sourceContentSearchTerms } from "./source-retrieval-query";
+import { websitePageContext } from "./website-page-context";
 import { sourceAssetMeasureEligible, sourceAssetDisplayEligible } from "./source-asset-measure";
 import { planSourceQuestion } from "./source-question-planner";
 import { answerFromWebsite, renderWebsiteAnswer } from "./website-answer-service";
@@ -1280,6 +1281,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
         sourceDocument: {
           select: {
             id: true,
+            content: true,
             title: true,
             description: true,
             url: true,
@@ -1308,9 +1310,12 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
     });
     const matchOrder = new Map(matches.map((match, index) => [match.id, index]));
     return chunks.sort((left, right) => (matchOrder.get(left.id) ?? 80) - (matchOrder.get(right.id) ?? 80)).map(
-      (chunk) =>
-        ({
-          id: `db:${chunk.id}`,
+      (chunk) => {
+        const page = chunk.sourceDocument;
+        const context = page.content && page.tags.includes("website-index:v1") && !/\.pdf(?:#|$)/i.test(page.url ?? "") && page.assets.some(asset => ["IMAGE", "TABLE", "CHART"].includes(asset.assetKind) && sourceAssetDisplayEligible(asset))
+          ? websitePageContext(page.content, chunk.content, isBroadProductComparison(input.participantMessage)) : null;
+        return ({
+          id: context ? `db:page:${page.id}:${context.start}:${context.end}` : `db:${chunk.id}`,
           surveySlug: input.surveySlug,
           title: chunk.sourceDocument.title,
           description: chunk.sourceDocument.description ?? "",
@@ -1318,12 +1323,13 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
           tags: Array.from(
             new Set([...chunk.tags, ...chunk.sourceDocument.tags]),
           ),
-          text: chunk.content,
+          text: context?.text ?? chunk.content,
           assets: chunk.sourceDocument.assets.map((asset) => ({
               ...asset,
               assetKind: asset.assetKind,
             })),
-        }) satisfies ControlledRagChunk,
+        }) satisfies ControlledRagChunk;
+      },
     );
   } catch {
     // A failed library read is different from a successful query with no
@@ -1376,7 +1382,7 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
     // PDF pages retain precise citations but share one document for diversity.
     // Otherwise many pages from one label can displace every website figure.
     if (!documentUrls.has(documentUrl)) { diverse.push(source); documentUrls.add(documentUrl); }
-    else if (count < 2) additional.push(source);
+    else if (count < 2 && !source.id.startsWith("db:page:")) additional.push(source);
   }
   // Current-message relevance takes precedence; history only breaks ties.
   // Keep contextual candidates for anaphoric follow-ups without letting a
@@ -1384,12 +1390,10 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
   const assetTerms = sourceContentSearchTerms(input.participantMessage, input.surveySlug);
   const contextAssetTerms = sourceContentSearchTerms(input.sourceTopicContext ?? "", input.surveySlug);
   return [
-    // Reserve a second passage from figure-owning pages. A single page can
-    // cover several trials; its top passage cannot support every page asset.
-    ...[...diverse.slice(0, 8), ...additional.filter(source =>
-      diverse.slice(0, 8).some(page => page.url === source.url) && source.assets?.some(sourceAssetDisplayEligible)
-    ), ...additional.filter(source => !source.assets?.some(sourceAssetDisplayEligible))]
-      .slice(0, Math.min(16, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
+    // Figure pages already carry a bounded, contiguous source window. Avoid
+    // repeating their catalog and reduce the old duplicate-passage overhead.
+    ...[...diverse, ...additional]
+      .slice(0, Math.min(8, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
       assets: rankAssets((source.assets ?? []).filter(sourceAssetDisplayEligible), assetTerms, contextAssetTerms, true),
     })),
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
