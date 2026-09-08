@@ -12,6 +12,11 @@ const SEARCH_ALIASES: Record<string, string> = {
   os: "overall survival", mfs: "metastasis free survival",
 };
 
+export function isBroadProductComparison(query: string) {
+  return /\b(advantages?|differentiat\w*|compare|comparison|versus|vs)\b/i.test(query)
+    && !/\b(pfs|rpfs|os|mfs|survival|safety|side effects?|adverse|dosing|dose|ddi|interactions?)\b/i.test(query);
+}
+
 export function sourceContentSearchTerms(query: string, surveySlug: string) {
   // Prefer a supplied expansion over its acronym. No clinical aliases or
   // facts are inferred here; the moderator supplies the resolved question.
@@ -21,7 +26,7 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
     (term) => term.length >= 2 && term !== surveySlug && !SEARCH_STOP_WORDS.has(term),
   );
   // Preserve a follow-up at the end of a mixed reaction + question message.
-  return [...new Set(terms.slice(-24).flatMap(term => (SEARCH_ALIASES[term] ?? term).split(" ")))];
+  return [...new Set([...terms.slice(-24).flatMap(term => (SEARCH_ALIASES[term] ?? term).split(" ")), ...(isBroadProductComparison(query) ? ["comparative", "efficacy", "safety", "head", "randomized"] : [])])];
 }
 
 /** Rank the approved content before applying the bounded candidate limit. */
@@ -29,7 +34,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
   const documentFilter = websiteOnly ? Prisma.sql`AND document.url NOT ILIKE '%.pdf%'` : Prisma.empty;
   const terms = sourceContentSearchTerms(query, surveySlug);
   const normalized = query.toLowerCase().replace(/-/g, " ");
-  const phrases = [...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions safety" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
+  const phrases = [...(isBroadProductComparison(query) ? ["head to head"] : []), ...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions safety" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
   const phrasePriority = phrases.length ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', ${phrases.map(phrase => `"${phrase}"`).join(" OR ")})) DESC,` : Prisma.empty;
   const contextTerms = sourceContentSearchTerms(context ?? "", surveySlug).slice(0, 12);
   if (!terms.length && !contextTerms.length) return null;
