@@ -1384,7 +1384,12 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
   const assetTerms = sourceContentSearchTerms(input.participantMessage, input.surveySlug);
   const contextAssetTerms = sourceContentSearchTerms(input.sourceTopicContext ?? "", input.surveySlug);
   return [
-    ...[...diverse, ...additional].slice(0, Math.min(8, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
+    // Reserve a second passage from figure-owning pages. A single page can
+    // cover several trials; its top passage cannot support every page asset.
+    ...[...diverse.slice(0, 8), ...additional.filter(source =>
+      diverse.slice(0, 8).some(page => page.url === source.url) && source.assets?.some(sourceAssetDisplayEligible)
+    ), ...additional.filter(source => !source.assets?.some(sourceAssetDisplayEligible))]
+      .slice(0, Math.min(16, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
       assets: rankAssets((source.assets ?? []).filter(sourceAssetDisplayEligible), assetTerms, contextAssetTerms, true),
     })),
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),
