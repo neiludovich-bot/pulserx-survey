@@ -642,7 +642,6 @@ function SourcePanel({
   const slides = useMemo(() => message ? selectedSourceSlides(message) : [], [message]);
   const [slideIndex, setSlideIndex] = useState(() => Math.max(0, slides.findIndex((slide) => slide.index === initialSource.index)));
   const [isPaused, setIsPaused] = useState(false);
-  const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const source = slides[slideIndex] ?? initialSource;
   const label = getReferenceLabel(source.reference, source.index);
@@ -661,12 +660,12 @@ function SourcePanel({
   const previewPaneRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (slides.length < 2 || isPaused || isHovered || isFocused || expandedImage) return;
+    if (slides.length < 2 || isPaused || isFocused || expandedImage) return;
     const timer = window.setInterval(() => {
       if (!document.hidden) setSlideIndex((index) => (index + 1) % slides.length);
     }, 4000);
     return () => window.clearInterval(timer);
-  }, [slides.length, isPaused, isHovered, isFocused, expandedImage]);
+  }, [slides.length, isPaused, isFocused, expandedImage]);
 
   function moveSlide(direction: number) {
     setIsPaused(true);
@@ -748,9 +747,7 @@ function SourcePanel({
   return (
     <>
       <aside className={`mvp-source-panel${slides.length > 1 ? " mvp-source-panel-carousel" : ""}`} aria-label="Citation source"
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        onFocus={() => setIsFocused(true)}
+        onFocus={(event) => setIsFocused(!event.target.closest('[aria-label="Figure carousel"]'))}
         onBlur={(event) => {
           if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setIsFocused(false);
         }}
@@ -771,7 +768,7 @@ function SourcePanel({
         <div className="mvp-source-carousel-controls" role="group" aria-label="Figure carousel">
           <button type="button" aria-label="Previous figure" onClick={() => moveSlide(-1)}>Previous</button>
           <span aria-live={isPaused ? "polite" : "off"}>Figure {slideIndex + 1} of {slides.length}</span>
-          <button type="button" aria-label={isPaused ? "Resume figure rotation" : "Pause figure rotation"} onClick={() => setIsPaused((paused) => !paused)}>{isPaused ? "Play" : "Pause"}</button>
+          <button type="button" aria-label={isPaused ? "Resume figure rotation" : "Pause figure rotation"} onClick={() => { setIsFocused(false); setIsPaused((paused) => !paused); }}>{isPaused ? "Play" : "Pause"}</button>
           <button type="button" aria-label="Next figure" onClick={() => moveSlide(1)}>Next</button>
         </div>
       ) : null}

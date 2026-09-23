@@ -13,6 +13,15 @@ function message(references: GroundedReference[]): MvpCustomGptSurveyMessage {
 }
 
 describe("automatic source figures", () => {
+  it('counts dated copies of the same chart on the same source page once', () => {
+    const page = 'https://example.test/efficacy/mcspc';
+    const current = 'https://example.test/sites/g/files/new-site/files/2026-08/mcspc-aranote-chart.svg';
+    const prior = 'https://example.test/sites/g/files/old-site/files/2025-06/mcspc-aranote-chart.svg';
+    const slides = selectedSourceSlides(message([reference(page,[asset(current)]),reference(page,[asset(prior)])]));
+    expect(slides).toHaveLength(1);
+    expect(slides[0].preview?.images[0].url).toBe(current);
+    expect(selectedSourceSlides(message([reference(page,[asset(current)]),reference('https://example.test/different-study',[asset(prior)])]))).toHaveLength(2);
+  });
   it("collects figures across citations with their own captions and source links", () => {
     const slides = selectedSourceSlides(message([
       reference("https://example.test/pi.pdf"),

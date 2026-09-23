@@ -43,13 +43,24 @@ export function selectAutomaticSourcePanel(message: MvpCustomGptSurveyMessage, s
 /** One slide per selected figure, retaining the citation that owns it. */
 export function selectedSourceSlides(message: MvpCustomGptSurveyMessage): SourcePanelReference[] {
   const seen = new Set<string>();
+  const revisions = new Set<string>();
   return message.references.flatMap((reference, index) => {
     const selected = selectedSourceFigure({ messageId: message.id, index: index + 1, reference });
     if (!selected?.preview) return [];
     const preview = selected.preview;
     return preview.images.flatMap((image) => {
       if (seen.has(image.url)) return [];
+      // A live page and its catalog card can select dated copies of one
+      // figure. Same owning page + host + descriptive filename identifies
+      // that revision family; unrelated pages and generic files stay distinct.
+      const imageUrl = new URL(image.url);
+      const filename = imageUrl.pathname.split('/').at(-1)!;
+      const pageUrl = new URL(reference.url!);
+      const revision = /\/(?:19|20)\d{2}[-/]\d{2}\//.test(imageUrl.pathname) && filename.length > 12
+        ? `${pageUrl.origin}${pageUrl.pathname.replace(/\/$/, '')}|${imageUrl.hostname}|${filename}` : null;
+      if (revision && revisions.has(revision)) return [];
       seen.add(image.url);
+      if (revision) revisions.add(revision);
       return [{ ...selected, preview: { ...preview, images: [image] } }];
     });
   });
