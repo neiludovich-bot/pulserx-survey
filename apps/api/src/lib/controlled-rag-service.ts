@@ -1313,7 +1313,7 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
       (chunk) => {
         const page = chunk.sourceDocument;
         const context = page.content && page.tags.includes("website-index:v1") && !/\.pdf(?:#|$)/i.test(page.url ?? "") && page.assets.some(asset => ["IMAGE", "TABLE", "CHART"].includes(asset.assetKind) && sourceAssetDisplayEligible(asset))
-          ? websitePageContext(page.content, chunk.content, isBroadProductComparison(input.participantMessage)) : null;
+          ? websitePageContext(page.content, chunk.content, isBroadProductComparison(input.participantMessage), input.participantMessage) : null;
         return ({
           id: context ? `db:page:${page.id}:${context.start}:${context.end}` : `db:${chunk.id}`,
           surveySlug: input.surveySlug,

@@ -2,6 +2,24 @@ import { describe, expect, it } from "vitest";
 import { websitePageContext } from "./website-page-context";
 
 describe("source-owned figure page context", () => {
+  it.each(['What is the PFS data?', 'what is the data on PSF show', 'progression-free survival'])('finds the results instead of a matched glossary for %s', query => {
+    const results = 'Combination treatment nearly doubled mPFS vs chemotherapy.\n\nReduced risk of progression or death (HR=0.45).';
+    const filler = Array.from({length:15},(_,n)=>`Patient characteristic ${n}: ${'x'.repeat(800)}`).join('\n\n');
+    const glossary = 'PFS=progression-free survival; OS=overall survival; ORR=objective response rate; ECOG=performance status.';
+    const content = `${results}\n\n${filler}\n\n${glossary}`;
+    const result = websitePageContext(content, glossary, false, query)!;
+    expect(result.text).toContain(results);
+    expect(result.text).not.toContain(glossary);
+    expect(result.text).toBe(content.slice(result.start,result.end));
+  });
+  it('does not anchor endpoint questions to abbreviation definitions before the findings', () => {
+    const glossary = 'PFS=progression-free survival; OS=overall survival; ORR=objective response rate.';
+    const filler = Array.from({length:12},()=> 'Intro '.repeat(140)).join('\n\n');
+    const results = 'Progression‑free survival was measured in the trial.\n\nThe analysis was exploratory.';
+    const result = websitePageContext(`${glossary}\n\n${filler}\n\n${results}`,glossary,false,'PFS')!;
+    expect(result.text).toContain(results);
+    expect(result.text).not.toContain(glossary);
+  });
   it("keeps original page bytes including qualifications, even if search hit the bibliography", () => {
     const content = 'Study A results.\n\nStudy B results.\n\nExploratory analysis, not a confirmatory comparison.\n\nReferences: Study B.';
     const result = websitePageContext(content, 'References: Study B.', true)!;

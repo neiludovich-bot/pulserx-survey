@@ -8,7 +8,7 @@ const SEARCH_ALIASES: Record<string, string> = {
   ddi: "drug interactions", ddis: "drug interactions",
   ae: "adverse events reactions", aes: "adverse events reactions",
   se: "side effects adverse reactions safety", ses: "side effects adverse reactions safety",
-  pfs: "progression free survival", rpfs: "radiographic progression free survival",
+  pfs: "progression free survival", psf: "progression free survival", mpfs: "progression free survival", rpfs: "radiographic progression free survival",
   os: "overall survival", mfs: "metastasis free survival",
 };
 
