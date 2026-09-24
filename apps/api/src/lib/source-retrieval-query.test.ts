@@ -85,6 +85,17 @@ describe("source library content retrieval", () => {
     expect(sourceContentSearchSql("What about that?", "nubeqa", "DDI")!.values).toContain("drug OR interactions");
   });
 
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"])("retains cited pages for %s visual follow-ups without overriding explicit topic changes", brand => {
+    const prior = ["db:page:previous-document:0:6000", "db:previous-chunk"];
+    expect(sourceContentSearchTerms("I can't see any of the graphics", brand)).toEqual([]);
+    const followup = sourceContentSearchSql("I can't see any of the graphics", brand, "NSCLC PFS", true, prior)!;
+    expect(followup.sql).toContain("document.id IN"); expect(followup.sql).toContain("chunk.id IN");
+    expect(followup.sql.indexOf("document.id IN")).toBeLessThan(followup.sql.indexOf("search.current_terms) DESC"));
+    expect(followup.values).toContain("previous-document"); expect(followup.values).toContain("previous-chunk");
+    const pivot = sourceContentSearchSql("Show me the side effect charts instead", brand, "NSCLC PFS", true, prior)!;
+    expect(pivot.sql).not.toContain("document.id IN"); expect(pivot.values).not.toContain("previous-document");
+    expect(followup.sql).toContain("document.status = 'ACTIVE'"); expect(followup.values.filter(v => v === brand)).toHaveLength(2);
+  });
   it("passes the active discussion into the database search", async () => {
     mocks.query.mockResolvedValue([]);
     await controlledRagTestInternals.databaseChunks({ ...input, participantMessage: "What are the AEs?", sourceTopicContext: "DDI" });

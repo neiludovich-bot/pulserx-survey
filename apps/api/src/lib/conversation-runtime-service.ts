@@ -52,7 +52,7 @@ export async function runConversationRuntime(input: Input) {
     if (!gateway) throw new Error("Conversation model unavailable.");
     const candidates = await retrieveWebsiteCandidates({ surveySlug: input.surveySlug, participantMessage: message,
       surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
-      sourceTopicContext: state.discussion?.query ?? null, responseMode: "answer_only" });
+      sourceTopicContext: state.discussion?.query ?? null, priorSourceIds: state.discussion?.sourceIds ?? [], responseMode: "answer_only" });
     if (candidates.some(source => source.surveySlug !== input.surveySlug)) throw new Error("Evidence crossed bot boundaries.");
     const context: ConversationTurnContext = { version: 2, brand: input.brand, participantMessage: message, closing: Boolean(state.closing),
       researchObjectives: state.closing ? [] : state.research?.objectives.filter(objective => objective.status !== "covered").map(objective => ({ id: objective.id, objective: objective.objective,
@@ -112,7 +112,7 @@ export async function runConversationRuntime(input: Input) {
       if (observation?.request) {
         if (prepared?.text) {
           remember([observation.request.text]);
-          state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
+          if (observation.request.kind !== "visual" || prepared.sourceIds.length || !state.discussion) state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
         }
         return invite(state.closing.reason, prepared?.text ?? "I don't have enough information in the available material to answer that reliably. You can rephrase it or ask about another topic.", prepared?.references ?? []);
       }
@@ -123,7 +123,7 @@ export async function runConversationRuntime(input: Input) {
     if (input.timeExpired) {
       if (prepared?.text && observation?.request) {
         remember([observation.request.text]);
-        state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
+        if (observation.request.kind !== "visual" || prepared.sourceIds.length || !state.discussion) state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
       }
       return invite("time", observation?.request ? prepared?.text ?? "I don't have enough information in the available material to answer that reliably." : "", prepared?.references ?? []);
     }
@@ -136,7 +136,8 @@ export async function runConversationRuntime(input: Input) {
       if (action === "present_topic") prepared = await present(`${input.brand}: ${query}`);
       if (!prepared?.text) return done("I don't have enough information in the available material to answer that reliably. Could you narrow the question, or would you like to move on?", input.question);
       const wasDiscussing = Boolean(initialState.discussion);
-      state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
+      // An unsuccessful request to reopen figures must not erase the cited pages.
+      if (observation?.request?.kind !== "visual" || prepared.sourceIds.length || !state.discussion) state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
       remember([action === "present_topic" ? topic!.label : observation!.request!.text]);
       if (!wasDiscussing || action === "present_topic") state.reactionPending = true;
       if (topic && action === "present_topic") topic.status = "presented";

@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 
-const SEARCH_STOP_WORDS = new Set("a an and are as at be can could do does for from how i in is it me my of on or please show tell that the their there these this to us was we were what when where which with would you your about approved available clinical current describe describes described discuss discusses discussed document documented evidence explain explains explained information known list lists listed material materials mention mentions mentioned note notes noted question regarding report reports reported source sources support supports supported".split(" "));
+const SEARCH_STOP_WORDS = new Set("a an and are as at be can could do does for from how i in is it me my of on or please show tell that the their there these this to us was we were what when where which with would you your about any see seeing graphics graphic images image figures figure charts chart graphs graph display displayed showing visible missing cannot cant again approved available clinical current describe describes described discuss discusses discussed document documented evidence explain explains explained information known list lists listed material materials mention mentions mentioned note notes noted question regarding report reports reported source sources support supports supported".split(" "));
 
 // Search vocabulary only, not clinical facts or an inferred answer. Shared by
 // every bot so ordinary shorthand can find the website's spelled-out wording.
@@ -30,7 +30,7 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
 }
 
 /** Rank the approved content before applying the bounded candidate limit. */
-export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null, websiteOnly = false) {
+export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null, websiteOnly = false, priorSourceIds: string[] = []) {
   const documentFilter = websiteOnly ? Prisma.sql`AND document.source_type <> 'PDF'` : Prisma.empty;
   // Named numbered trials must outrank shared indication words in page URLs.
   // Preserve the exact participant-supplied trial token; do not infer a trial.
@@ -44,6 +44,12 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
     ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', 'versus OR vs OR compared') AND chunk.content ~ '[0-9]') DESC,`
     : Prisma.empty;
   const terms = sourceContentSearchTerms(query, surveySlug);
+  // A UI-only follow-up should retain the cited pages, not search for words
+  // like "graphics" across unrelated indications. Explicit clinical terms win.
+  const priorPages = !terms.length ? priorSourceIds.flatMap(id => /^db:page:([^:]+):\d+:\d+$/.exec(id)?.[1] ?? []).slice(0, 3) : [];
+  const priorChunks = !terms.length ? priorSourceIds.flatMap(id => /^db:([^:]+)$/.exec(id)?.[1] ?? []).slice(0, 3) : [];
+  const anchors = [ ...(priorPages.length ? [Prisma.sql`document.id IN (${Prisma.join(priorPages)})`] : []), ...(priorChunks.length ? [Prisma.sql`chunk.id IN (${Prisma.join(priorChunks)})`] : []) ];
+  const anchorPriority = anchors.length ? Prisma.sql`(${Prisma.join(anchors, " OR ")}) DESC,` : Prisma.empty;
   const normalized = query.toLowerCase().replace(/-/g, " ");
   const phrases = [...(isBroadProductComparison(query) ? ["head to head"] : []), ...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions safety" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
   const phrasePriority = phrases.length ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', ${phrases.map(phrase => `"${phrase}"`).join(" OR ")})) DESC,` : Prisma.empty;
@@ -65,7 +71,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
         AND document.status = 'ACTIVE'
         ${documentFilter}
         AND to_tsvector('english', chunk.content) @@ search.any_terms
-      ORDER BY ${studyPriority} (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
+      ORDER BY ${anchorPriority} ${studyPriority} (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
                ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.current_terms) DESC,` : Prisma.empty}
                ${comparisonPriority} ${phrasePriority}
                ts_rank_cd(to_tsvector('english', chunk.content), search.current_terms) DESC,
@@ -88,7 +94,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       AND document.status = 'ACTIVE'
       ${documentFilter}
       AND to_tsvector('english', chunk.content) @@ search.any_terms
-    ORDER BY ${studyPriority} ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
+    ORDER BY ${anchorPriority} ${studyPriority} ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
              ${comparisonPriority} ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,
              document.priority DESC, chunk.position ASC, chunk.id ASC

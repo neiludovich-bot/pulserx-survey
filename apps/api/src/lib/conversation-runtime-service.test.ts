@@ -116,8 +116,10 @@ describe("new shared dispatch", () => {
   it("explains an unavailable visual without attaching unrelated figures", async () => {
     mocks.retrieve.mockResolvedValue([]);
     mocks.turn.mockResolvedValue({ observation: { ...observation, request: { kind: "visual", text: "Show PFS only", evidence: "Show PFS only" } }, trace: {}, answer: { selections: [], paragraphs: [], unavailableReason: "not_in_sources" } });
-    const result = await runConversationRuntime({ brand: "ENHERTU", surveySlug: "enhertu", question: guide, history: [], message: "Show PFS only", resume: false, stop: false, selectGuide: () => null });
+    const state = emptyConversationState(); state.discussion = { query: "NSCLC PFS", lastAnswer: "The site reports ORR and DOR.", sourceIds: ["prior-page"] };
+    const result = await runConversationRuntime({ brand: "ENHERTU", surveySlug: "enhertu", state, question: guide, history: [], message: "Show PFS only", resume: false, stop: false, selectGuide: () => null });
     expect(result.content).toContain("don't have a matching figure"); expect(result.references).toEqual([]);
+    expect(result.state.discussion).toEqual(state.discussion);
     expect(result.content).not.toContain("What is your reaction");
   });
   it("fails without cascading providers or consuming research state", async () => {

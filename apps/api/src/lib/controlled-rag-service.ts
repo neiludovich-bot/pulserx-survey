@@ -49,6 +49,7 @@ export type ControlledRagSurveyTurnInput = {
   recentTurns?: SourceQuestionPlanInput["recentTurns"];
   sourceQuestionPlan?: SourceQuestionPlan | null;
   sourceTopicContext?: string | null;
+  priorSourceIds?: string[];
   evidencePacket?: ModeratorEvidencePacket | null;
   presentationPlan?: SourceQuestionPlanInput["presentationPlan"];
   responseMode?: "answer_only" | "answer_then_ask";
@@ -1252,13 +1253,13 @@ async function databaseChunks(input: ControlledRagSurveyTurnInput) {
   }
 
   try {
-    const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext);
+    const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, false, input.priorSourceIds);
     if (!searchQuery) return [];
     // Reserve website passages before the corpus-wide limit: a long label can
     // otherwise exclude the page that owns a relevant figure altogether.
     const [allMatches, websiteMatches] = await Promise.all([
       prisma.$queryRaw<Array<{ id: string }>>(searchQuery),
-      prisma.$queryRaw<Array<{ id: string }>>(sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, true)!),
+      prisma.$queryRaw<Array<{ id: string }>>(sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, true, input.priorSourceIds)!),
     ]);
     const matches: Array<{ id: string }> = [];
     const seenMatches = new Set<string>();
