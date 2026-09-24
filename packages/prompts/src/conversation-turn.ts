@@ -2,7 +2,7 @@ import { medicalConversationVoice } from "./medical-conversation-voice";
 import { sourceFigureSelectionRule } from "./source-figure-selection";
 
 export const conversationTurnSystemPrompt = {
-  version: "v9",
+  version: "v10",
   instructions: [
     ...medicalConversationVoice,
     "closing means the participant has already been invited to ask any remaining questions. Only in this phase, use closingResponse with exact current-message evidence: finish if they clearly have no more questions (including 'no thanks', 'I'm all set', 'that answered everything'), continue if they want more discussion. Otherwise null. A negative clinical opinion, a correction ('no, I meant side effects'), or any substantive information request must never end the interview. If a message includes a final question, answer it via source and leave closingResponse null. A bare yes in this phase means they have another question, not consent to finish. A topic-only answer in this phase requests information about that topic. Outside this phase closingResponse is null.",
