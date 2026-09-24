@@ -30,7 +30,7 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
 }
 
 /** Rank the approved content before applying the bounded candidate limit. */
-export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null, websiteOnly = false, priorSourceIds: string[] = []) {
+export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null, websiteOnly = false, priorSourceIds: string[] = [], preferPriorSection = false) {
   const documentFilter = websiteOnly ? Prisma.sql`AND document.source_type <> 'PDF'` : Prisma.empty;
   // Named numbered trials must outrank shared indication words in page URLs.
   // Preserve the exact participant-supplied trial token; do not infer a trial.
@@ -50,6 +50,20 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
   const priorChunks = !terms.length ? priorSourceIds.flatMap(id => /^db:([^:]+)$/.exec(id)?.[1] ?? []).slice(0, 3) : [];
   const anchors = [ ...(priorPages.length ? [Prisma.sql`document.id IN (${Prisma.join(priorPages)})`] : []), ...(priorChunks.length ? [Prisma.sql`chunk.id IN (${Prisma.join(priorChunks)})`] : []) ];
   const anchorPriority = anchors.length ? Prisma.sql`(${Prisma.join(anchors, " OR ")}) DESC,` : Prisma.empty;
+  // In the separate context pool, neighboring pages in the cited website
+  // section preserve the population even when another indication uses the
+  // same biomarker or endpoint. Never apply this preference to fresh results.
+  const sectionPages = preferPriorSection ? priorSourceIds.flatMap(id => /^db:page:([^:]+):\d+:\d+$/.exec(id)?.[1] ?? []).slice(0, 3) : [];
+  const sectionChunks = preferPriorSection ? priorSourceIds.flatMap(id => /^db:([^:]+)$/.exec(id)?.[1] ?? []).slice(0, 3) : [];
+  const sectionOwners = [...(sectionPages.length ? [Prisma.sql`prior.id IN (${Prisma.join(sectionPages)})`] : []),
+    ...(sectionChunks.length ? [Prisma.sql`prior.id IN (SELECT source_document_id FROM source_chunks WHERE id IN (${Prisma.join(sectionChunks)}))`] : [])];
+  const sectionPriority = sectionOwners.length ? Prisma.sql`EXISTS (
+    SELECT 1 FROM source_documents prior
+    WHERE prior.survey_slug = ${surveySlug} AND prior.status = 'ACTIVE' AND prior.source_type <> 'PDF'
+      AND (${Prisma.join(sectionOwners, " OR ")})
+      AND prior.url ~ '^https?://[^/]+/[^/]+/[^/]+/[^/?#]+'
+      AND starts_with(document.url, regexp_replace(split_part(split_part(prior.url, '?', 1), '#', 1), '[^/]+/?$', ''))
+  ) DESC,` : Prisma.empty;
   const normalized = query.toLowerCase().replace(/-/g, " ");
   const phrases = [...(isBroadProductComparison(query) ? ["head to head"] : []), ...new Set(Object.entries(SEARCH_ALIASES).filter(([alias, phrase]) => new RegExp(`\\b${alias}\\b`, "i").test(query) || normalized.includes(phrase)).flatMap(([, phrase]) => phrase === "side effects adverse reactions safety" ? ["side effects", "adverse reactions"] : phrase === "adverse events reactions" ? ["adverse events", "adverse reactions"] : phrase === "drug interactions" ? [phrase, "drug drug interactions"] : [phrase]))];
   const phrasePriority = phrases.length ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', ${phrases.map(phrase => `"${phrase}"`).join(" OR ")})) DESC,` : Prisma.empty;
@@ -71,7 +85,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
         AND document.status = 'ACTIVE'
         ${documentFilter}
         AND to_tsvector('english', chunk.content) @@ search.any_terms
-      ORDER BY ${anchorPriority} ${studyPriority} (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
+      ORDER BY ${anchorPriority} ${sectionPriority} ${studyPriority} (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
                ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.current_terms) DESC,` : Prisma.empty}
                ${comparisonPriority} ${phrasePriority}
                ts_rank_cd(to_tsvector('english', chunk.content), search.current_terms) DESC,
@@ -94,7 +108,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       AND document.status = 'ACTIVE'
       ${documentFilter}
       AND to_tsvector('english', chunk.content) @@ search.any_terms
-    ORDER BY ${anchorPriority} ${studyPriority} ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
+    ORDER BY ${anchorPriority} ${sectionPriority} ${studyPriority} ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
              ${comparisonPriority} ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,
              document.priority DESC, chunk.position ASC, chunk.id ASC

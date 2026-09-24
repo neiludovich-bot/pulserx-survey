@@ -1247,19 +1247,19 @@ function rankAssets(assets: ControlledRagAsset[], queryTokens: string[], context
     .slice(0, retainPageCandidates ? 6 : 8).map(({asset})=>asset);
 }
 
-async function databaseChunks(input: ControlledRagSurveyTurnInput) {
+async function databaseChunks(input: ControlledRagSurveyTurnInput, preferPriorSection = false) {
   if (!process.env.DATABASE_URL) {
     return [];
   }
 
   try {
-    const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, false, input.priorSourceIds);
+    const searchQuery = sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, false, input.priorSourceIds, preferPriorSection);
     if (!searchQuery) return [];
     // Reserve website passages before the corpus-wide limit: a long label can
     // otherwise exclude the page that owns a relevant figure altogether.
     const [allMatches, websiteMatches] = await Promise.all([
       prisma.$queryRaw<Array<{ id: string }>>(searchQuery),
-      prisma.$queryRaw<Array<{ id: string }>>(sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, true, input.priorSourceIds)!),
+      prisma.$queryRaw<Array<{ id: string }>>(sourceContentSearchSql(input.participantMessage, input.surveySlug, input.sourceTopicContext, true, input.priorSourceIds, preferPriorSection)!),
     ]);
     const matches: Array<{ id: string }> = [];
     const seenMatches = new Set<string>();
@@ -1351,8 +1351,7 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
     databaseChunks(input),
     input.sourceTopicContext?.trim() ? databaseChunks({ ...input,
       participantMessage: input.sourceTopicContext, sourceTopicContext: null,
-      priorSourceIds: [],
-    }) : Promise.resolve([]),
+    }, true) : Promise.resolve([]),
   ]);
   const candidateChunks = [
     ...activeDatabaseChunks,

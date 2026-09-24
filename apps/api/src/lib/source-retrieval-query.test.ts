@@ -10,6 +10,17 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("uses cited website sections only in the context pool, with active same-bot ownership", () => {
+    const ids = ["db:page:prior-document:0:100", "db:prior-chunk"];
+    const fresh = sourceContentSearchSql("Breast03 PFS", "enhertu", "NSCLC testing", true, ids)!;
+    const context = sourceContentSearchSql("NSCLC testing", "enhertu", null, true, ids, true)!;
+    expect(fresh.sql).not.toContain("starts_with(document.url");
+    expect(context.sql).toContain("starts_with(document.url");
+    expect(context.sql).toContain("prior.status = 'ACTIVE'");
+    expect(context.sql).toContain("prior.source_type <> 'PDF'");
+    expect(context.values).toEqual(expect.arrayContaining(["enhertu", "prior-document", "prior-chunk"]));
+    expect(context.sql).not.toContain("prior-document");
+  });
   it("reserves antecedent evidence when a short endpoint query fills the primary pool with other settings", async () => {
     const row = (id: string, content: string) => ({ id, content, tags: [], sourceDocument: { id, title: id, content, url: `https://example.com/${id}`, description: "", tags: [], assets: [] } });
     const current = Array.from({ length: 8 }, (_, n) => row(`breast-${n}`, "Breast cancer PFS results."));
