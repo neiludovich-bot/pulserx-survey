@@ -5,7 +5,7 @@ import { sanitizeMvpRouteFailure } from "./mvp-openai-turn-router";
 
 type Input = {
   studyName: string;
-  surveySlug: "nubeqa" | "brukinsa" | "padcev";
+  surveySlug: "nubeqa" | "brukinsa" | "padcev" | "enhertu";
   phase: "before_moderator" | "after_moderator";
   turnSequence: number;
   participantMessage: string;

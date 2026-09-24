@@ -237,7 +237,7 @@ export function buildApp() {
           const slug = result?.surveySlug ?? body.data.surveySlug;
           console.info(JSON.stringify({ event: "survey_turn_timing", callGroupId,
             status: result ? "success" : "failure", elapsedMs: Math.max(0, Math.round(performance.now() - startedAt)),
-            survey_slug: slug && ["nubeqa", "brukinsa", "padcev"].includes(slug) ? slug : null,
+            survey_slug: slug && ["nubeqa", "brukinsa", "padcev", "enhertu"].includes(slug) ? slug : null,
             synthetic: result ? /\bsynthetic\b/i.test(result.studyName) : null,
             turnSequence: result && Number.isSafeInteger(result.turnCount) && result.turnCount > 0 ? result.turnCount * 2 - 1 : null,
           }));

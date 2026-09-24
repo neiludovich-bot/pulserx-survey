@@ -50,7 +50,7 @@ describe("new shared dispatch", () => {
     expect(result.state.research?.objectives[0].status).toBe("covered");
     expect(mocks.turn).toHaveBeenCalledOnce();
   });
-  it.each(["nubeqa", "brukinsa", "padcev"] as const)("presents both %s priorities without treating the selected topic as participant speech", async brand => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("presents both %s priorities without treating the selected topic as participant speech", async brand => {
     mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Study", url: "https://example.test/study", description: "", text: "A supported result.", tags: [], assets: [] }]);
     mocks.present.mockResolvedValue({ traces: [{ presentation: true }], answer: { selections: [{ sourceId: "a", supportExcerpt: "A supported result.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported result.", sourceIds: ["a"] }], unavailableReason: null } });
     mocks.turn.mockResolvedValueOnce({ observation: { ...observation, request: null, answerStatus: "answered", answerEvidence: ["Efficacy and dosing"], reactionEvidence: [], priorities: [{ label: "Efficacy", query: "Efficacy", evidence: "Efficacy" }, { label: "Dosing", query: "Dosing", evidence: "dosing" }] }, trace: {}, answer: null });
@@ -66,7 +66,7 @@ describe("new shared dispatch", () => {
     expect(mocks.present).toHaveBeenLastCalledWith(expect.objectContaining({ query: `${brand}: Dosing`, sourceTopicContext: null }));
     expect(second.state.topics.map(topic => topic.status)).toEqual(["discussed", "presented"]);
   });
-  it.each(["nubeqa", "brukinsa", "padcev"] as const)("answers %s follow-ups in one call and preserves a parked question through resume", async brand => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("answers %s follow-ups in one call and preserves a parked question through resume", async brand => {
     mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Study", url: "https://example.test/study", description: "Study", text: "The result was reported.", tags: [], assets: [] }]);
     mocks.turn.mockResolvedValue({ observation, trace: {}, answer: { selections: [{ sourceId: "a", supportExcerpt: "The result was reported.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "The result was reported.", sourceIds: ["a"] }], unavailableReason: null } });
     const first = await runConversationRuntime({ brand, surveySlug: brand, question: guide, history: [], message: "What is the result?", resume: false, stop: false, selectGuide: () => guide });

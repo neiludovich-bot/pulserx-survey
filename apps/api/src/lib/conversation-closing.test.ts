@@ -19,7 +19,7 @@ describe("optional final questions and recap", () => {
     expect(result.state.research?.objectives[0].evidence).toEqual([]);
     expect(result.content).not.toContain("No thanks");
   });
-  it.each(["nubeqa", "brukinsa", "padcev"] as const)("keeps %s open beyond time, answers remaining questions, then recaps", async brand => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("keeps %s open beyond time, answers remaining questions, then recaps", async brand => {
     mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Trial efficacy", url: "https://example.test/study", description: "", text: "A supported fact.", tags: [], assets: [] }]);
     const answer = { selections: [{ sourceId: "a", supportExcerpt: "A supported fact.", assetIds: [], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported fact.", sourceIds: ["a"] }], unavailableReason: null };
     mocks.turn.mockResolvedValue({ observation, trace: {}, answer });

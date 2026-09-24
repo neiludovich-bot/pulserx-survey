@@ -15,7 +15,7 @@ export const moderatorEvidencePacketSchema = z.object({
     evidenceRole: moderatorEvidenceRoleSchema.optional(),
     contribution: moderatorEvidenceContributionSchema.optional(),
     id: z.string().min(1),
-    surveySlug: z.enum(["brukinsa", "padcev", "nubeqa"]),
+    surveySlug: z.enum(["brukinsa", "padcev", "nubeqa", "enhertu"]),
     title: z.string().min(1),
     url: z.union([z.string().url(), z.literal("")]),
     description: z.string(),
@@ -204,7 +204,7 @@ export const moderatorPhrasingResultSchema = z.object({
 }).strict();
 
 export const moderatorEvidenceSelectionInputSchema = z.object({
-  surveySlug: z.enum(["nubeqa", "brukinsa", "padcev"]),
+  surveySlug: z.enum(["nubeqa", "brukinsa", "padcev", "enhertu"]),
   query: z.string().min(1).max(4000),
   evidenceFocus: z.enum(["all", "contextual"]).default("all"),
   sourceTopicContext: z.string().min(1).max(6000).nullable().default(null),

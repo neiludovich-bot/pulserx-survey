@@ -6,6 +6,6 @@ export function conversationRuntimeForNewSession(
   requested: MvpCustomGptSurveyStartRequest["conversationRuntime"],
   environment: { NODE_ENV: string; MVP_CONVERSATION_RUNTIME?: "current" | "conversation_v2" },
 ) {
-  if (!["nubeqa", "brukinsa", "padcev"].includes(surveySlug)) return "current" as const;
+  if (!["nubeqa", "brukinsa", "padcev", "enhertu"].includes(surveySlug)) return "current" as const;
   return requested ?? environment.MVP_CONVERSATION_RUNTIME ?? (environment.NODE_ENV === "production" ? "conversation_v2" : "current");
 }

@@ -7,7 +7,7 @@ export const sourceQuestionRecentTurnsSchema = z.array(z.object({
 }).strict()).max(24);
 
 export const sourceQuestionPlanInputSchema = z.object({
-  surveySlug: z.enum(["nubeqa", "brukinsa", "padcev"]),
+  surveySlug: z.enum(["nubeqa", "brukinsa", "padcev", "enhertu"]),
   brand: z.string().min(1).max(100).optional(),
   participantMessage: z.string().min(1).max(12000),
   sourceTopicContext: z.string().min(1).max(6000).nullable(),

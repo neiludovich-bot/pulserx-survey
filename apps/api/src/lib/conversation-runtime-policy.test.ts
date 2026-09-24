@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { conversationRuntimeForNewSession } from "./conversation-runtime-policy";
 
 describe("new-session runtime rollout", () => {
-  it.each(["nubeqa", "brukinsa", "padcev"])("uses the shared runtime for new production %s sessions", slug => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"])("uses the shared runtime for new production %s sessions", slug => {
     expect(conversationRuntimeForNewSession(slug, undefined, { NODE_ENV: "production" })).toBe("conversation_v2");
   });
   it("preserves an explicit rollback and opt-in evaluation", () => {

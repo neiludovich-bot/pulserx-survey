@@ -12,7 +12,7 @@ import { sanitizeModeratorPlanningFailure } from "./synthetic-moderator-diagnost
 import { prioritySourceLabel, prioritySourceQuestion } from "./mvp-priority-source-scope";
 
 export const emptyModeratorState = (): ModeratorState => moderatorStateSchema.parse({ version: 1, priorities: [], activePriorityId: null });
-type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev"; projectId?: string | null; surveyContext: string; interpretation?: import("@interview/schemas").ConversationInterpretationResult; preparedSourceAnswer?: import("./source-answer-service").SourceAnswerProviderResult };
+type Input = ModeratorPlanInput & { surveySlug: "nubeqa" | "brukinsa" | "padcev" | "enhertu"; projectId?: string | null; surveyContext: string; interpretation?: import("@interview/schemas").ConversationInterpretationResult; preparedSourceAnswer?: import("./source-answer-service").SourceAnswerProviderResult };
 const normalized = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
 export async function runModeratorTurn(input: Input) {

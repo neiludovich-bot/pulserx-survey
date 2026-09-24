@@ -1,6 +1,6 @@
 export type ControlledRagChunk = {
   id: string;
-  surveySlug: "brukinsa" | "padcev" | "nubeqa";
+  surveySlug: "brukinsa" | "padcev" | "nubeqa" | "enhertu";
   title: string;
   url: string;
   description: string;

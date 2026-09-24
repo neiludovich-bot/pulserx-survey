@@ -6,7 +6,7 @@ import type { CustomGptReference } from "./customgpt-service";
 import { withExplicitSourceAssets } from "./focused-source-evidence";
 
 export type SourceAnswerProviderInput = {
-  surveySlug: "brukinsa" | "padcev" | "nubeqa";
+  surveySlug: "brukinsa" | "padcev" | "nubeqa" | "enhertu";
   projectId?: string | null;
   conversationId?: string | null;
   participantMessage: string;

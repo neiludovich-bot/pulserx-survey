@@ -39,7 +39,7 @@ type ClinicalEvidenceCard = {
 };
 
 export type ControlledRagSurveyTurnInput = {
-  surveySlug: "brukinsa" | "padcev" | "nubeqa";
+  surveySlug: "brukinsa" | "padcev" | "nubeqa" | "enhertu";
   participantMessage: string;
   surveyContext: string;
   currentQuestion: string | null;

@@ -8,7 +8,7 @@ import { withExplicitSourceAssets } from "./focused-source-evidence";
 import { conversationRecap } from "./conversation-closing";
 
 type Input = {
-  brand: string; surveySlug: "nubeqa" | "brukinsa" | "padcev";
+  brand: string; surveySlug: "nubeqa" | "brukinsa" | "padcev" | "enhertu";
   state?: ConversationState; question: MvpGuideQuestion | null;
   history: ConversationTurnContext["recentTurns"]; message: string; resume: boolean; stop: boolean;
   timeExpired?: boolean;

@@ -50,6 +50,7 @@ import {
 import { DATA_MVP_GUIDE } from "./mvp-data-guide";
 import { NUBEQA_HCP_MVP_GUIDE } from "./mvp-nubeqa-guide";
 import { NUBEQA_SURVEY_INTENTS } from "./mvp-nubeqa-intents";
+import { ENHERTU_HCP_GUIDE, ENHERTU_SURVEY_INTENTS, enhertuGuideForIntent } from "./mvp-enhertu-guide";
 import { PADCEV_HCP_MVP_GUIDE } from "./mvp-padcev-guide";
 import {
   loadMvpSurveySessionSnapshot,
@@ -128,6 +129,11 @@ type MvpSurveySession = {
 const sessions = new Map<string, MvpSurveySession>();
 
 const SURVEY_DEFINITIONS: Record<MvpSurveySlug, MvpSurveyDefinition> = {
+  enhertu: {
+    slug: "enhertu", defaultStudyName: "ENHERTU HCP discussion", sourceBrand: "ENHERTU",
+    guide: ENHERTU_HCP_GUIDE, intents: ENHERTU_SURVEY_INTENTS,
+    projectIdEnvName: "ENHERTU_WEBSITE_INDEX", defaultProjectId: () => null,
+  },
   brukinsa: {
     slug: "brukinsa",
     defaultStudyName: "BRUKINSA HCP MVP",
@@ -173,6 +179,7 @@ Object.values(SURVEY_DEFINITIONS).forEach(validateMvpSurveyDefinition);
 
 function surveyDefinitionForSlug(slug?: string): MvpSurveyDefinition {
   const normalized = slug?.toLowerCase();
+  if (normalized === "enhertu") return SURVEY_DEFINITIONS.enhertu;
 
   if (normalized === "padcev") {
     return SURVEY_DEFINITIONS.padcev;
@@ -3098,9 +3105,11 @@ export function resetMvpCustomGptSurveySessions() {
 export function startMvpCustomGptSurvey(input: MvpCustomGptSurveyStartRequest) {
   const definition = surveyDefinitionForSlug(input.surveySlug);
   const surveyIntent = surveyIntentForSlug(definition, input.surveyIntentSlug);
-  const selectedGuide = input.guide?.length
+  const baseGuide = input.guide?.length
     ? guideFromQuestionStrings(input.guide)
     : guideForIntent(definition, surveyIntent);
+  const selectedGuide = definition.slug === "enhertu" && !input.guide?.length
+    ? enhertuGuideForIntent(baseGuide, surveyIntent?.slug) : baseGuide;
   const objectiveRuntime = !input.guide?.length && definition.slug !== "data" && conversationRuntimeForNewSession(definition.slug, input.conversationRuntime, env) === "conversation_v2";
   const guide = objectiveRuntime ? objectiveOrientedGuide(selectedGuide, definition.sourceBrand) : selectedGuide;
   const firstQuestion = guide[0] ?? definition.guide[0];
@@ -3797,7 +3806,7 @@ export async function submitMvpCustomGptSurveyTurn(
   } else {
     try {
       const sourceTurn = sourceResponseMode === "answer_only" && participantAnalysis?.preparedSourceAnswer ? participantAnalysis.preparedSourceAnswer : await askSourceProviderForSurveyInterviewerTurn({
-        surveySlug: sourceSurveySlug as "brukinsa" | "padcev" | "nubeqa",
+        surveySlug: sourceSurveySlug as "brukinsa" | "padcev" | "nubeqa" | "enhertu",
         projectId: session.projectId,
         participantMessage: sourceRequestContent,
         sourceQuestionPlan: participantAnalysis?.conversationInterpretation?.sourceQuestionPlan,

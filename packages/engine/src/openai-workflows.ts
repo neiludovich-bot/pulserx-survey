@@ -175,7 +175,7 @@ function logModelCallTiming(input: {
   try {
     console.info(JSON.stringify({ event: "model_call_timing", callType: input.callType, model: input.model,
       callGroupId: getModelCallTimingContext()?.callGroupId ?? null,
-      schemaName: input.schemaName, survey_slug: candidateSlug && ["nubeqa", "brukinsa", "padcev"].includes(candidateSlug) ? candidateSlug : null,
+      schemaName: input.schemaName, survey_slug: candidateSlug && ["nubeqa", "brukinsa", "padcev", "enhertu"].includes(candidateSlug) ? candidateSlug : null,
       status: input.response?.output_parsed === undefined ? "failure" : "success", elapsedMs: input.elapsedMs,
       reasoningEffort: input.reasoningEffort ?? null, inputTokens: counter(usage?.input_tokens),
       outputTokens: counter(usage?.output_tokens), reasoningTokens: counter(usage?.output_tokens_details?.reasoning_tokens),

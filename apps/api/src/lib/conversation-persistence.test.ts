@@ -31,7 +31,7 @@ describe("replacement persistence boundary", () => {
     expect(finished.messages.at(-1)?.content).toContain("A brief recap");
     expect(mocks.turn.mock.calls.at(-1)![0].closing).toBe(true);
   });
-  it.each(["nubeqa", "brukinsa", "padcev"] as const)("persists %s objectives before consent and skips volunteered completed objectives after reload", async brand => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("persists %s objectives before consent and skips volunteered completed objectives after reload", async brand => {
     const started = startMvpCustomGptSurvey({ surveySlug: brand, conversationRuntime: "conversation_v2", targetDurationSeconds: 3600 });
     const snapshot = structuredClone(mocks.start.mock.calls[0][0].session);
     expect(snapshot.moderatorState.conversation.research.version).toBe(1);
@@ -55,7 +55,7 @@ describe("replacement persistence boundary", () => {
     expect(saved.answerEvidenceByQuestionId.patient_fit).toContain("because our clinic can support monitoring");
     expect(mocks.turn).toHaveBeenCalledOnce();
   });
-  it.each(["nubeqa", "brukinsa", "padcev"] as const)("rehydrates %s discussion and resumes without re-answering it", async brand => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("rehydrates %s discussion and resumes without re-answering it", async brand => {
     const started = startMvpCustomGptSurvey({ surveySlug: brand, conversationRuntime: "conversation_v2", guide: ["Which factors matter?", "How does access affect your view?"], targetDurationSeconds: 3600 });
     const snapshot = mocks.start.mock.calls[0][0].session;
     mocks.load.mockResolvedValue({ session: snapshot, messages: started.messages, turnCount: 0 });

@@ -50,7 +50,7 @@ export async function download(slug: WebsiteIndexSnapshot["surveySlug"], value: 
 /** Offline crawl: no model calls. Failed/empty/scanned pages remain explicit. */
 export async function indexMedicalWebsite(slug: WebsiteIndexSnapshot["surveySlug"], configuredProfile?: WebsiteProfile) {
   const seed = WEBSITE_PROFILES[slug as keyof typeof WEBSITE_PROFILES];
-  const profile = configuredProfile ?? (seed ? { rootUrl: seed.rootUrl, hosts: [...seed.hosts], documentHosts: [...seed.documentHosts] } : undefined);
+  const profile: WebsiteProfile | undefined = configuredProfile ?? (seed ? { rootUrl: seed.rootUrl, hosts: [...seed.hosts], documentHosts: [...seed.documentHosts], documentUrls: "documentUrls" in seed ? [...seed.documentUrls] : undefined } : undefined);
   if (!profile) throw new Error("Configure an approved website before indexing");
   const snapshot: WebsiteIndexSnapshot = { version: 1, surveySlug: slug, rootUrl: profile.rootUrl, fetchedAt: new Date().toISOString(), pages: [], issues: [], discoveredUrls: [], truncated: false };
   const queue: Array<{ url: string; from: string }> = [{ url: profile.rootUrl, from: profile.rootUrl }];
