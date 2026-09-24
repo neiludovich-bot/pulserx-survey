@@ -102,6 +102,24 @@ describe("new shared dispatch", () => {
     expect(result.state).toEqual(state);
     expect(result.content).not.toContain("99");
   });
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("handles %s missing-graphics reports as figure requests and preserves the interview", async brand => {
+    const state = emptyConversationState(); state.parkedGuideId = "fit"; state.reactionPending = true;
+    state.discussion = { query: "Study A result", lastAnswer: "A supported result.", sourceIds: ["a"] };
+    const asset = { title: "Study A result", url: "https://example.test/figure.png", description: "A supported result.", assetKind: "IMAGE", tags: [], priority: 1 };
+    mocks.retrieve.mockResolvedValue([{ id: "a", surveySlug: brand, title: "Study A", url: "https://example.test/a", description: "", text: "A supported result.", tags: [], assets: [asset] }]);
+    mocks.turn.mockResolvedValue({ observation: { ...observation, request: { kind: "visual", text: "Show the result figure", evidence: "I cannot see any graphics" } }, trace: {}, answer: { selections: [{ sourceId: "a", supportExcerpt: "A supported result.", assetIds: ["a:asset:0"], evidenceRole: "direct", contribution: "answer" }], paragraphs: [{ text: "A supported result.", sourceIds: ["a"] }], unavailableReason: null } });
+    const result = await runConversationRuntime({ brand, surveySlug: brand, state, question: guide, history: [], message: "I cannot see any graphics", resume: false, stop: false, selectGuide: () => null });
+    expect(result.action).toBe("answer_request"); expect(result.references[0].assets).toContainEqual(asset);
+    expect(result.state.parkedGuideId).toBe("fit"); expect(result.content).not.toContain("your perspective");
+    expect(result.content).not.toContain("What is your reaction"); expect(mocks.turn).toHaveBeenCalledOnce(); expect(mocks.present).not.toHaveBeenCalled();
+  });
+  it("explains an unavailable visual without attaching unrelated figures", async () => {
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation: { ...observation, request: { kind: "visual", text: "Show PFS only", evidence: "Show PFS only" } }, trace: {}, answer: { selections: [], paragraphs: [], unavailableReason: "not_in_sources" } });
+    const result = await runConversationRuntime({ brand: "ENHERTU", surveySlug: "enhertu", question: guide, history: [], message: "Show PFS only", resume: false, stop: false, selectGuide: () => null });
+    expect(result.content).toContain("don't have a matching figure"); expect(result.references).toEqual([]);
+    expect(result.content).not.toContain("What is your reaction");
+  });
   it("fails without cascading providers or consuming research state", async () => {
     mocks.retrieve.mockResolvedValue([]); mocks.turn.mockRejectedValue(new Error("invalid evidence"));
     const state = emptyConversationState(); state.parkedGuideId = "fit";

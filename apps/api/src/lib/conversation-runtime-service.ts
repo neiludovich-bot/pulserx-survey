@@ -5,6 +5,7 @@ import { getOptionalOpenAIGateway } from "./model-gateway";
 import { retrieveWebsiteCandidates } from "./controlled-rag-service";
 import { websiteCandidatesForModel, websiteAnswerChunks, renderWebsiteAnswer } from "./website-answer-service";
 import { withExplicitSourceAssets } from "./focused-source-evidence";
+import { sourceAssetDisplayEligible } from "./source-asset-measure";
 import { conversationRecap } from "./conversation-closing";
 
 type Input = {
@@ -65,7 +66,11 @@ export async function runConversationRuntime(input: Input) {
     trace.push(call.trace);
     if (call.repairTrace) trace.push(call.repairTrace);
     const chunks = call.answer ? websiteAnswerChunks(candidates, call.answer) : [];
-    return { ...call, text: call.answer && !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null,
+    let text = call.answer && !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null;
+    const visualRequest = call.observation.request?.kind === "visual";
+    const hasFigures = chunks.some(chunk => chunk.assets?.some(asset => ["IMAGE", "CHART", "TABLE"].includes(asset.assetKind) && sourceAssetDisplayEligible(asset)));
+    if (visualRequest && !hasFigures) text = [text, "I don't have a matching figure to display for that request in the available website material."].filter(Boolean).join("\n\n");
+    return { ...call, text,
       references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };
   }
 
@@ -136,7 +141,7 @@ export async function runConversationRuntime(input: Input) {
       if (!wasDiscussing || action === "present_topic") state.reactionPending = true;
       if (topic && action === "present_topic") topic.status = "presented";
       const question = syntheticQuestion(`${wasDiscussing && action !== "present_topic" ? "conversation-clarification" : "conversation-reaction"}:${topic?.id ?? "discussion"}`,
-        action === "present_topic" ? `What, if anything, stands out to you about ${topic!.label}?` : wasDiscussing ? "Does that address what you wanted to clarify?" : "What is your reaction to that?");
+        observation?.request?.kind === "visual" ? "What else would you like to explore, or shall we return to the interview?" : action === "present_topic" ? `What, if anything, stands out to you about ${topic!.label}?` : wasDiscussing ? "Does that address what you wanted to clarify?" : "What is your reaction to that?");
       const transition = action === "present_topic" && initialState.topics.some(t => t.status === "presented" || t.status === "discussed") ? `Turning to ${topic!.label}:\n\n` : "";
       return done(`${transition}${prepared.text}\n\n${question.canonicalQuestion}`, question, prepared.references);
     }

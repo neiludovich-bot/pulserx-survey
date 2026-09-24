@@ -53,6 +53,18 @@ describe("single-call conversation boundary", () => {
     expect(result.observation.request?.text).toBe('Explain progression-free survival and drug interactions.');
     expect(result.answer?.paragraphs[0].text).toBe(text);
   });
+  it("preserves a visual request and its selected figure without granting clinical-reaction credit", async () => {
+    const f = fixture("nubeqa"); const message = "I cannot see any graphics";
+    f.evidence.candidates[0].assets = [{ id: "figure", title: "Study A result", description: "Study A reported 12 months", url: "https://example.test/a.png", assetKind: "IMAGE", tags: [] }];
+    f.parse.mockResolvedValue({ output_parsed: {
+      observation: { answerStatus: "answered", answerEvidenceRanges: [{ startToken: 0, endToken: 4 }], reactionEvidenceRanges: [{ startToken: 0, endToken: 4 }], priorities: [], familiarity: null, outOfScope: false },
+      source: { request: { kind: "visual", text: "Show the Study A result figure", evidenceRange: { startToken: 0, endToken: 4 } }, answer: { ...f.answer, selections: [{ ...f.answer.selections[0], assetIds: ["figure"] }] } },
+    } });
+    const result = await f.gateway.conversationTurn({ version: 2, brand: "nubeqa", participantMessage: message, question: { id: "reaction", kind: "reaction", text: "What is your reaction?" }, discussionQuery: "Study A", recentTurns: [], topics: [] }, f.evidence);
+    expect(f.parse).toHaveBeenCalledOnce(); expect(result.observation.request?.kind).toBe("visual");
+    expect(result.observation.answerStatus).toBe("not_answered"); expect(result.observation.reactionEvidence).toEqual([]);
+    expect(result.answer?.selections[0].assetIds).toEqual(["figure"]);
+  });
   it("requires an atomic familiarity fact instead of independently nullable fields", () => {
     const observation = { answerStatus: "not_answered", answerEvidenceRanges: [], reactionEvidenceRanges: [], request: null, priorities: [], familiarity: null, outOfScope: false };
     expect(conversationObservationModelSchema.safeParse(observation).success).toBe(true);

@@ -18,7 +18,7 @@ export const conversationObservationSchema = z.object({
   answerStatus: z.enum(["answered", "partial", "not_answered"]),
   answerEvidence: z.array(z.string().min(1).max(12000)).max(8),
   reactionEvidence: z.array(z.string().min(1).max(12000)).max(8).default([]),
-  request: z.object({ text: z.string().min(1).max(4000), evidence: z.string().min(1).max(12000) }).strict().nullable(),
+  request: z.object({ kind: z.enum(["information", "visual"]).default("information"), text: z.string().min(1).max(4000), evidence: z.string().min(1).max(12000) }).strict().nullable(),
   priorities: z.array(z.object({ label: z.string().min(1).max(200), query: z.string().min(1).max(4000), evidence: z.string().min(1).max(12000) }).strict()).max(16),
   familiarity: z.enum(["low", "moderate", "high"]).nullable(),
   familiarityEvidence: z.string().nullable(),
@@ -29,7 +29,7 @@ export const conversationObservationModelSchema = conversationObservationSchema.
   researchSignals: z.array(researchSignalSchema.omit({ evidence: true }).extend({ evidenceRange: evidenceTokenRangeSchema }).strict()).max(16).default([]),
   answerEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
   reactionEvidenceRanges: z.array(evidenceTokenRangeSchema).max(8),
-  request: z.object({ text: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
+  request: z.object({ kind: z.enum(["information", "visual"]).default("information"), text: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict().nullable(),
   priorities: z.array(z.object({ label: z.string().min(1).max(200), query: z.string().min(1).max(4000), evidenceRange: evidenceTokenRangeSchema }).strict()).max(16),
   // One nullable fact prevents a familiarity value without its evidence (or
   // evidence without a value). Persisted observation fields remain unchanged.

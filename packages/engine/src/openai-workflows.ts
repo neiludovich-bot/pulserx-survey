@@ -319,7 +319,7 @@ export class OpenAIResponsesGateway {
     const call = await this.runStructuredCall<import("zod").infer<typeof conversationTurnResultSchema>>({
       callType: "single_call_conversation", model: this.config.sourceModel ?? this.config.analysisModel,
       promptVersion: conversationTurnSystemPrompt.version,
-      schemaName: parsedContext.question?.kind === "priorities" ? "conversation_turn_v6_priorities" : "conversation_turn_v6_response",
+      schemaName: parsedContext.question?.kind === "priorities" ? "conversation_turn_v7_priorities" : "conversation_turn_v7_response",
       schema: conversationTurnResultSchemaForQuestion(parsedContext.question?.kind ?? null, parsedContext.researchObjectives),
       instructions: conversationTurnSystemPrompt.instructions,
       input: conversationTurnInputSchema.parse({ context: { ...parsedContext, participantTokens: participantTokensForModel(parsedContext.participantMessage) }, evidence: { ...parsedEvidence,
@@ -332,7 +332,7 @@ export class OpenAIResponsesGateway {
     const observation = validateConversationObservation(parsedContext, { ...fields,
       closingResponse: closingResponse ? { intent: closingResponse.intent, evidence: excerpt(closingResponse.evidenceRange) } : null,
       researchSignals: researchSignals.map(({ evidenceRange, ...signal }) => ({ ...signal, evidence: excerpt(evidenceRange) })),
-      answerEvidence: answerEvidenceRanges.map(excerpt), reactionEvidence: reactionEvidenceRanges.map(excerpt), request: request ? { text: request.text, evidence: excerpt(request.evidenceRange) } : null,
+      answerEvidence: answerEvidenceRanges.map(excerpt), reactionEvidence: reactionEvidenceRanges.map(excerpt), request: request ? { kind: request.kind, text: request.text, evidence: excerpt(request.evidenceRange) } : null,
       priorities: priorities.map(({ evidenceRange, ...priority }) => ({ ...priority, evidence: excerpt(evidenceRange) })),
       familiarity: familiarity?.level ?? null,
       familiarityEvidence: familiarity ? excerpt(familiarity.evidenceRange) : null,
