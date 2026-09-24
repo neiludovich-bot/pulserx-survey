@@ -21,6 +21,7 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
   // Prefer a supplied expansion over its acronym. No clinical aliases or
   // facts are inferred here; the moderator supplies the resolved question.
   const expanded = query.replace(/\b[A-Z][A-Z0-9]{1,8}\s*\(([^)]+)\)/g, "$1").replace(/\([A-Z][A-Z0-9]{1,8}\)/g, "")
+    .replace(/\bnon[ -]small[ -]cell lung cancer\b/gi, "NSCLC non small cell lung cancer")
     .replace(/\bside[ -]effects?\b/gi, "side effects adverse reactions safety");
   const terms = expanded.toLowerCase().replace(/\b(ae|ddi|se)['’]s\b/g, "$1s").split(/[^a-z0-9]+/).filter(
     (term) => term.length >= 2 && term !== surveySlug && !SEARCH_STOP_WORDS.has(term),
@@ -44,6 +45,12 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
     ? Prisma.sql`(to_tsvector('english', chunk.content) @@ websearch_to_tsquery('english', 'versus OR vs OR compared') AND chunk.content ~ '[0-9]') DESC,`
     : Prisma.empty;
   const terms = sourceContentSearchTerms(query, surveySlug);
+  // A clinical section such as /nsclc/ or /gastric/ is stronger contextual
+  // evidence than a biomarker shared by many compound indication URLs.
+  // This only ranks the context pool; explicit new requests keep their order.
+  const contextPathPriority = preferPriorSection && terms.length ? Prisma.sql`
+    (string_to_array(lower(regexp_replace(split_part(document.url, '?', 1), '^https?://[^/]+', '')), '/')
+      && ARRAY[${Prisma.join(terms)}]::text[]) DESC,` : Prisma.empty;
   // A UI-only follow-up should retain the cited pages, not search for words
   // like "graphics" across unrelated indications. Explicit clinical terms win.
   const priorPages = !terms.length ? priorSourceIds.flatMap(id => /^db:page:([^:]+):\d+:\d+$/.exec(id)?.[1] ?? []).slice(0, 3) : [];
@@ -85,7 +92,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
         AND document.status = 'ACTIVE'
         ${documentFilter}
         AND to_tsvector('english', chunk.content) @@ search.any_terms
-      ORDER BY ${anchorPriority} ${sectionPriority} ${studyPriority} (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
+      ORDER BY ${anchorPriority} ${sectionPriority} ${contextPathPriority} ${studyPriority} (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
                ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.current_terms) DESC,` : Prisma.empty}
                ${comparisonPriority} ${phrasePriority}
                ts_rank_cd(to_tsvector('english', chunk.content), search.current_terms) DESC,
@@ -108,7 +115,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       AND document.status = 'ACTIVE'
       ${documentFilter}
       AND to_tsvector('english', chunk.content) @@ search.any_terms
-    ORDER BY ${anchorPriority} ${sectionPriority} ${studyPriority} ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
+    ORDER BY ${anchorPriority} ${sectionPriority} ${contextPathPriority} ${studyPriority} ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
              ${comparisonPriority} ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,
              document.priority DESC, chunk.position ASC, chunk.id ASC

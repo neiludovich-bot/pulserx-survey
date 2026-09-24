@@ -9,6 +9,22 @@ const observation = { answerStatus: "not_answered", answerEvidence: [], request:
 const guide = { id: "fit", canonicalQuestion: "Which patients fit?", module: "fit", objective: "fit", sourceContextRequirement: null, routeKeywords: [], completionSignals: [], adaptiveProbes: [], analyzableOutputs: [] };
 beforeEach(() => { vi.resetAllMocks(); });
 describe("new shared dispatch", () => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("passes the opening %s question to retrieval before any discussion or research evidence exists", async brand => {
+    const opening = { ...guide, id: "primary_disease_focus", canonicalQuestion: "What would you most like to understand in HER2-mutant non-small cell lung cancer?" };
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation, trace: {}, answer: { selections: [], paragraphs: [], unavailableReason: "not_in_sources" } });
+    await runConversationRuntime({ brand, surveySlug: brand, question: opening, history: [], message: "what does the PFS data show", resume: false, stop: false, selectGuide: () => guide });
+    expect(mocks.retrieve).toHaveBeenCalledWith(expect.objectContaining({ participantMessage: "what does the PFS data show", sourceTopicContext: opening.canonicalQuestion, priorSourceIds: [] }));
+    expect(mocks.turn).toHaveBeenCalledWith(expect.objectContaining({ discussionQuery: opening.canonicalQuestion }), expect.objectContaining({ sourceTopicContext: opening.canonicalQuestion }));
+    expect(mocks.turn).toHaveBeenCalledOnce();
+  });
+  it("keeps the current clinical request separate from inherited opening scope", async () => {
+    const state = emptyConversationState(); state.discussion = { query: "NSCLC testing", lastAnswer: "Prior answer", sourceIds: ["prior"] };
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation, trace: {}, answer: { selections: [], paragraphs: [], unavailableReason: "not_in_sources" } });
+    await runConversationRuntime({ brand: "ENHERTU", surveySlug: "enhertu", state, question: guide, history: [], message: "Switch to gastric cancer PFS", resume: false, stop: false, selectGuide: () => guide });
+    expect(mocks.retrieve).toHaveBeenCalledWith(expect.objectContaining({ participantMessage: "Switch to gastric cancer PFS", sourceTopicContext: "NSCLC testing" }));
+  });
   it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("keeps a clear unanswered %s question in context without requesting a narrower question or reaction", async brand => {
     mocks.retrieve.mockResolvedValue([]);
     mocks.turn.mockResolvedValue({ observation: { ...observation, request: { kind: "information", text: "PFS in the previously discussed population", evidence: "what is the PFS" } }, trace: {}, answer: { selections: [], paragraphs: [], unavailableReason: "not_in_sources" } });

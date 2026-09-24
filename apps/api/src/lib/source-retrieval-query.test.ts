@@ -10,6 +10,14 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("finds an abbreviated website section from a spelled-out opening setting without requiring prior sources", () => {
+    const opening = "What would you most like to understand about ENHERTU in HER2-mutant non-small cell lung cancer?";
+    expect(sourceContentSearchTerms(opening, "enhertu")).toContain("nsclc");
+    const contextual = sourceContentSearchSql(opening, "enhertu", null, true, [], true)!;
+    expect(contextual.sql).toContain("string_to_array");
+    expect(contextual.values).toContain("nsclc");
+    expect(sourceContentSearchSql("gastric PFS", "enhertu", opening, true)!.sql).not.toContain("string_to_array");
+  });
   it("uses cited website sections only in the context pool, with active same-bot ownership", () => {
     const ids = ["db:page:prior-document:0:100", "db:prior-chunk"];
     const fresh = sourceContentSearchSql("Breast03 PFS", "enhertu", "NSCLC testing", true, ids)!;

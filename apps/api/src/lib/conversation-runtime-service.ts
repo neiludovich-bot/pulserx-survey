@@ -50,7 +50,9 @@ export async function runConversationRuntime(input: Input) {
   async function understand(message: string, question: MvpGuideQuestion | null) {
     const gateway = getOptionalOpenAIGateway();
     if (!gateway) throw new Error("Conversation model unavailable.");
-    const clinicalContext = state.discussion?.query ?? clinicalSettingContext();
+    // Before the first evidence answer there is no discussion or participant
+    // focus evidence yet. The active interview question still supplies scope.
+    const clinicalContext = state.discussion?.query ?? clinicalSettingContext() ?? question?.canonicalQuestion ?? null;
     const candidates = await retrieveWebsiteCandidates({ surveySlug: input.surveySlug, participantMessage: message,
       surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
       sourceTopicContext: clinicalContext, priorSourceIds: state.discussion?.sourceIds ?? [], responseMode: "answer_only" });
