@@ -9,6 +9,28 @@ const observation = { answerStatus: "not_answered", answerEvidence: [], request:
 const guide = { id: "fit", canonicalQuestion: "Which patients fit?", module: "fit", objective: "fit", sourceContextRequirement: null, routeKeywords: [], completionSignals: [], adaptiveProbes: [], analyzableOutputs: [] };
 beforeEach(() => { vi.resetAllMocks(); });
 describe("new shared dispatch", () => {
+  it.each(["nubeqa", "brukinsa", "padcev", "enhertu"] as const)("keeps a clear unanswered %s question in context without requesting a narrower question or reaction", async brand => {
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation: { ...observation, request: { kind: "information", text: "PFS in the previously discussed population", evidence: "what is the PFS" } }, trace: {}, answer: { selections: [], paragraphs: [], unavailableReason: "not_in_sources" } });
+    const state = emptyConversationState(); state.reactionPending = true;
+    state.discussion = { query: "Identify the study population", lastAnswer: "Prior supported answer", sourceIds: ["prior-page"] };
+    const result = await runConversationRuntime({ brand, surveySlug: brand, state, question: guide, history: [], message: "what is the PFS", resume: false, stop: false, selectGuide: () => guide });
+    expect(result.content).toContain("don't have a supported answer");
+    expect(result.content).not.toMatch(/narrow|rephrase|reaction/i);
+    expect(result.state.discussion?.query).toBe("PFS in the previously discussed population");
+    expect(result.state.discussion?.sourceIds).toEqual(["prior-page"]);
+    expect(result.state.reactionPending).toBe(false);
+    expect(result.state.coveredTopics).toEqual([]);
+    expect(result.question?.id).toBe("conversation-clarification:evidence-gap");
+    expect(mocks.turn).toHaveBeenCalledOnce();
+  });
+  it("asks for clarification only when the validated answer identifies ambiguity", async () => {
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.turn.mockResolvedValue({ observation, trace: {}, answer: { selections: [], paragraphs: [], unavailableReason: "ambiguous_request" } });
+    const result = await runConversationRuntime({ brand: "ENHERTU", surveySlug: "enhertu", question: guide, history: [], message: "What is the result?", resume: false, stop: false, selectGuide: () => guide });
+    expect(result.content).toBe("Which setting or specific result would you like to focus on?");
+    expect(result.content).not.toContain("don't have");
+  });
   it("uses concise objective context instead of inherited presentation instructions", async () => {
     const next = { ...guide, sourceContextRequirement: "Before asking, catalogue every study endpoint." };
     const state = emptyConversationState(); state.research = researchPlanForGuide([next]);

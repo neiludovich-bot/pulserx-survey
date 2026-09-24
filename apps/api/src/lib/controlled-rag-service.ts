@@ -1344,7 +1344,16 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
   const queryTokenGroups = retrievalTokenGroups(input);
   const displayTopic = displayTopicForTurn(input);
   const focusedEvidenceId = focusedNubeqaEvidenceId(input);
-  const activeDatabaseChunks = await databaseChunks(input);
+  // Search the current request and its antecedent independently. A short
+  // follow-up such as "what is the PFS?" otherwise lets other populations
+  // exhaust the candidate limit before the model can resolve its context.
+  const [activeDatabaseChunks, contextualChunks] = await Promise.all([
+    databaseChunks(input),
+    input.sourceTopicContext?.trim() ? databaseChunks({ ...input,
+      participantMessage: input.sourceTopicContext, sourceTopicContext: null,
+      priorSourceIds: [],
+    }) : Promise.resolve([]),
+  ]);
   const candidateChunks = [
     ...activeDatabaseChunks,
     ...CONTROLLED_RAG_CHUNKS.filter(
@@ -1390,11 +1399,19 @@ export async function retrieveWebsiteCandidates(input: ControlledRagSurveyTurnIn
   // long prior request outweigh a short explicit topic correction.
   const assetTerms = sourceContentSearchTerms(input.participantMessage, input.surveySlug);
   const contextAssetTerms = sourceContentSearchTerms(input.sourceTopicContext ?? "", input.surveySlug);
+  const selectedLibrary = [...diverse, ...additional].slice(0, Math.min(8, Math.max(0, 24 - curatedIds.size)));
+  const selectedDocuments = new Set(selectedLibrary.map(source => (source.url || source.id).replace(/#page=\d+$/i, "")));
+  let contextCount = 0;
+  for (const source of contextualChunks) {
+    const document = (source.url || source.id).replace(/#page=\d+$/i, "");
+    if (selectedDocuments.has(document)) continue;
+    if (contextCount >= 4 || selectedLibrary.length >= 24 - curatedIds.size) break;
+    selectedLibrary.push(source); selectedDocuments.add(document); contextCount++;
+  }
   return [
     // Figure pages already carry a bounded, contiguous source window. Avoid
     // repeating their catalog and reduce the old duplicate-passage overhead.
-    ...[...diverse, ...additional]
-      .slice(0, Math.min(8, Math.max(0, 24 - curatedIds.size))).map(source => ({ ...source,
+    ...selectedLibrary.map(source => ({ ...source,
       assets: rankAssets((source.assets ?? []).filter(sourceAssetDisplayEligible), assetTerms, contextAssetTerms, true),
     })),
     ...rankedCandidates.filter((chunk) => curatedIds.has(chunk.id)),

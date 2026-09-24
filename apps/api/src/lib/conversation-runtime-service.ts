@@ -50,18 +50,19 @@ export async function runConversationRuntime(input: Input) {
   async function understand(message: string, question: MvpGuideQuestion | null) {
     const gateway = getOptionalOpenAIGateway();
     if (!gateway) throw new Error("Conversation model unavailable.");
+    const clinicalContext = state.discussion?.query ?? clinicalSettingContext();
     const candidates = await retrieveWebsiteCandidates({ surveySlug: input.surveySlug, participantMessage: message,
       surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
-      sourceTopicContext: state.discussion?.query ?? null, priorSourceIds: state.discussion?.sourceIds ?? [], responseMode: "answer_only" });
+      sourceTopicContext: clinicalContext, priorSourceIds: state.discussion?.sourceIds ?? [], responseMode: "answer_only" });
     if (candidates.some(source => source.surveySlug !== input.surveySlug)) throw new Error("Evidence crossed bot boundaries.");
     const context: ConversationTurnContext = { version: 2, brand: input.brand, participantMessage: message, closing: Boolean(state.closing),
       researchObjectives: state.closing ? [] : state.research?.objectives.filter(objective => objective.status !== "covered").map(objective => ({ id: objective.id, objective: objective.objective,
         missingCriteria: objective.criteria.filter(criterion => !objective.evidence.some(item => item.criterionId === criterion.id)).map(({ id, description }) => ({ id, description })) })),
       question: question ? { id: question.id, text: question.canonicalQuestion, kind: questionKind(question) } : null,
-      discussionQuery: state.discussion?.query ?? null, recentTurns: input.history.slice(-8),
+      discussionQuery: clinicalContext, recentTurns: input.history.slice(-8),
       topics: state.topics.map(({ id, label, status }) => ({ id, label, status })) };
     const call = await gateway.conversationTurn(context, { surveySlug: input.surveySlug, query: message.slice(0, 4000),
-      candidates: websiteCandidatesForModel(candidates), sourceTopicContext: state.discussion?.query ?? null,
+      candidates: websiteCandidatesForModel(candidates), sourceTopicContext: clinicalContext,
       priorSourceIds: state.discussion?.sourceIds ?? [], sourceQuestionPlan: null, evidenceFocus: "all" });
     trace.push(call.trace);
     if (call.repairTrace) trace.push(call.repairTrace);
@@ -70,7 +71,7 @@ export async function runConversationRuntime(input: Input) {
     const visualRequest = call.observation.request?.kind === "visual";
     const hasFigures = chunks.some(chunk => chunk.assets?.some(asset => ["IMAGE", "CHART", "TABLE"].includes(asset.assetKind) && sourceAssetDisplayEligible(asset)));
     if (visualRequest && !hasFigures) text = [text, "I don't have a matching figure to display for that request in the available website material."].filter(Boolean).join("\n\n");
-    return { ...call, text,
+    return { ...call, text, unavailableReason: call.answer?.unavailableReason ?? null,
       references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };
   }
 
@@ -93,12 +94,21 @@ export async function runConversationRuntime(input: Input) {
       candidates: websiteCandidatesForModel(candidates), sourceTopicContext: clinicalContext, priorSourceIds: [], sourceQuestionPlan: null, evidenceFocus: "all" });
     trace.push(...call.traces);
     const chunks = websiteAnswerChunks(candidates, call.answer);
-    return { text: !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null,
+    return { text: !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null, unavailableReason: call.answer.unavailableReason,
       references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };
   }
 
   try {
     let prepared: Awaited<ReturnType<typeof present>> | null = null;
+    const missingEvidence = () => prepared?.unavailableReason === "ambiguous_request"
+      ? "Which setting or specific result would you like to focus on?"
+      : "I don't have a supported answer to that specific question in the website information available to me.";
+    const retainUnansweredRequest = (query: string) => {
+      // Remember the resolved clinical question, but do not count a missing
+      // answer as presented evidence or ask for a clinical reaction to it.
+      state.discussion = { query, lastAnswer: missingEvidence(), sourceIds: state.discussion?.sourceIds ?? [] };
+      state.reactionPending = false;
+    };
     if (!input.resume) {
       const understood = await understand(input.message, input.question);
       prepared = understood;
@@ -114,7 +124,8 @@ export async function runConversationRuntime(input: Input) {
           remember([observation.request.text]);
           if (observation.request.kind !== "visual" || prepared.sourceIds.length || !state.discussion) state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
         }
-        return invite(state.closing.reason, prepared?.text ?? "I don't have enough information in the available material to answer that reliably. You can rephrase it or ask about another topic.", prepared?.references ?? []);
+        if (!prepared?.text) retainUnansweredRequest(observation.request.text);
+        return invite(state.closing.reason, prepared?.text ?? missingEvidence(), prepared?.references ?? []);
       }
       if (observation?.closingResponse?.intent === "finish") return finish();
       return invite(state.closing.reason, observation?.closingResponse?.intent === "continue" || input.resume ? "Of course—we can keep going." : "");
@@ -125,7 +136,8 @@ export async function runConversationRuntime(input: Input) {
         remember([observation.request.text]);
         if (observation.request.kind !== "visual" || prepared.sourceIds.length || !state.discussion) state.discussion = { query: observation.request.text, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };
       }
-      return invite("time", observation?.request ? prepared?.text ?? "I don't have enough information in the available material to answer that reliably." : "", prepared?.references ?? []);
+      if (observation?.request && !prepared?.text) retainUnansweredRequest(observation.request.text);
+      return invite("time", observation?.request ? prepared?.text ?? missingEvidence() : "", prepared?.references ?? []);
     }
     const selection = selectConversationAction(state, observation, input.resume, Boolean(observation?.reactionEvidence?.length));
     state = selection.state; action = selection.action;
@@ -134,7 +146,12 @@ export async function runConversationRuntime(input: Input) {
       const topic = state.topics.find(t => t.id === state.activeTopicId);
       const query = action === "present_topic" ? topic!.query : observation!.request!.text;
       if (action === "present_topic") prepared = await present(`${input.brand}: ${query}`);
-      if (!prepared?.text) return done("I don't have enough information in the available material to answer that reliably. Could you narrow the question, or would you like to move on?", input.question);
+      if (!prepared?.text) {
+        retainUnansweredRequest(query);
+        const ambiguous = prepared?.unavailableReason === "ambiguous_request";
+        const question = syntheticQuestion("conversation-clarification:evidence-gap", ambiguous ? missingEvidence() : "Would you like to explore related information, or return to the interview?");
+        return done(ambiguous ? question.canonicalQuestion : `${missingEvidence()}\n\n${question.canonicalQuestion}`, question);
+      }
       const wasDiscussing = Boolean(initialState.discussion);
       // An unsuccessful request to reopen figures must not erase the cited pages.
       if (observation?.request?.kind !== "visual" || prepared.sourceIds.length || !state.discussion) state.discussion = { query, lastAnswer: prepared.text, sourceIds: prepared.sourceIds };

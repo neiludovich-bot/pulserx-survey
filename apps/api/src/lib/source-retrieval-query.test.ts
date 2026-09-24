@@ -10,6 +10,19 @@ vi.mock("./model-gateway", () => ({ getOptionalOpenAIGateway: vi.fn(() => null) 
 const input = { surveySlug: "brukinsa" as const, participantMessage: "What approved evidence about DDI (drug-drug interactions) is available for BRUKINSA?", surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" as const };
 
 describe("source library content retrieval", () => {
+  it("reserves antecedent evidence when a short endpoint query fills the primary pool with other settings", async () => {
+    const row = (id: string, content: string) => ({ id, content, tags: [], sourceDocument: { id, title: id, content, url: `https://example.com/${id}`, description: "", tags: [], assets: [] } });
+    const current = Array.from({ length: 8 }, (_, n) => row(`breast-${n}`, "Breast cancer PFS results."));
+    const contextual = [row("nsclc-testing", "HER2-mutant NSCLC testing."), row("nsclc-efficacy", "HER2-mutant NSCLC response and duration of response.")];
+    mocks.query.mockResolvedValueOnce(current.map(({ id }) => ({ id }))).mockResolvedValueOnce(current.map(({ id }) => ({ id })))
+      .mockResolvedValueOnce(contextual.map(({ id }) => ({ id }))).mockResolvedValueOnce(contextual.map(({ id }) => ({ id })));
+    mocks.findMany.mockImplementation(async ({ where }) => [...current, ...contextual].filter(row => where.id.in.includes(row.id)));
+    const candidates = await controlledRagTestInternals.retrieveChunks({ ...input, surveySlug: "enhertu", participantMessage: "what is the PFS", sourceTopicContext: "HER2-mutant NSCLC testing" });
+    expect(candidates.slice(0, 8).map(c => c.id)).toEqual(current.map(c => `db:${c.id}`));
+    expect(candidates.map(c => c.id)).toContain("db:nsclc-efficacy");
+    expect(candidates.length).toBeLessThanOrEqual(24);
+    expect(mocks.query).toHaveBeenCalledTimes(4);
+  });
   it("includes the figure's trial results even when keyword search only finds the introduction and bibliography", async () => {
     const document = (n: number) => ({ id:`document-${n}`, title: 'Evidence', content: 'Trial A comparative efficacy.\n\nTrial B PFS comparative findings.\n\nThis analysis is exploratory.', url: `https://example.com/page-${n}`, description: '', tags: ['website-index:v1'], assets: n === 0 ? [{title:'Trial B PFS', description:'Trial B PFS curve',url:'https://example.com/pfs.png',assetKind:'IMAGE',tags:[],priority:1}] : [] });
     const rows = [...Array.from({length:8},(_,n)=>({id:`first-${n}`, content:'Trial A comparative efficacy.', tags:[],sourceDocument:document(n)})), {id:'bibliography',content:'References: Trial B publication.',tags:[],sourceDocument:document(0)}];
