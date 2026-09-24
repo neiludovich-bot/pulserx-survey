@@ -8,6 +8,14 @@ import { AdminGate } from "./AdminGate";
 
 const SURVEY_CARDS = [
   {
+    slug: "enhertu",
+    name: "ENHERTU HCP",
+    mode: "Adaptive clinical survey",
+    description:
+      "Adaptive ENHERTU interview with clinician-selected cancer setting, evidence, safety, and practical use.",
+    liveHref: "/surveys/enhertu/",
+  },
+  {
     slug: "data",
     name: "Data Survey",
     mode: "Fixed question flow",

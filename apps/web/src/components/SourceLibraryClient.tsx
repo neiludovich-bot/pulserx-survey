@@ -18,6 +18,7 @@ const SURVEY_OPTIONS = [
   { slug: "padcev", brand: "PADCEV" },
   { slug: "brukinsa", brand: "BRUKINSA" },
   { slug: "nubeqa", brand: "NUBEQA" },
+  { slug: "enhertu", brand: "ENHERTU" },
   { slug: "data", brand: "DATA" },
 ];
 

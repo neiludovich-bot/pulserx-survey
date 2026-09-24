@@ -12,6 +12,16 @@ if (!fs.existsSync(nextOutput)) {
 
 const staticRoutes = [
   {
+    label: "/surveys/enhertu/",
+    sourceParts: ["surveys", "enhertu.html"],
+    targetParts: ["surveys", "enhertu"],
+  },
+  {
+    label: "/admin/surveys/enhertu/",
+    sourceParts: ["admin", "surveys", "enhertu.html"],
+    targetParts: ["admin", "surveys", "enhertu"],
+  },
+  {
     label: "/mvp/customgpt-survey/",
     sourceParts: ["mvp", "customgpt-survey.html"],
     targetParts: ["mvp", "customgpt-survey"],
@@ -147,6 +157,7 @@ fs.writeFileSync(
   <a href="/surveys/padcev/">Open PADCEV Survey</a>
   <a href="/surveys/brukinsa/">Open BRUKINSA Survey</a>
   <a href="/surveys/nubeqa/">Open NUBEQA Survey</a>
+  <a href="/surveys/enhertu/">Open ENHERTU Survey</a>
 </main>`,
 );
 

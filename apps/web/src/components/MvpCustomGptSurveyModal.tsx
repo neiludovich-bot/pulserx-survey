@@ -189,6 +189,10 @@ function openSourceUrlInNewTab(url: string) {
 }
 
 function completionFollowUpUrl(surveySlug: string) {
+  if (surveySlug === "enhertu") {
+    return "https://www.enhertuhcp.com/en/support-and-resources/request-a-contact";
+  }
+
   if (surveySlug === "padcev") {
     return "https://www.padcevhcp.com/contact-us";
   }
@@ -871,7 +875,7 @@ function MessageBubble({
 }
 
 type MvpCustomGptSurveyModalProps = {
-  surveySlug?: "brukinsa" | "padcev" | "data" | "nubeqa";
+  surveySlug?: "brukinsa" | "padcev" | "data" | "nubeqa" | "enhertu";
   studyName?: string;
   targetDurationSeconds?: number;
 };
@@ -971,6 +975,39 @@ const NUBEQA_INTENT_OPTIONS: SurveyIntentOption[] = [
   },
 ];
 
+const ENHERTU_INTENT_OPTIONS: SurveyIntentOption[] = [
+  {
+    slug: "general-enhertu-reaction",
+    label: "General ENHERTU Reaction",
+    description: "Choose a cancer setting, then explore evidence, safety, and patient fit.",
+  },
+  {
+    slug: "breast-cancer-evidence",
+    label: "Breast Cancer Evidence",
+    description: "Clarify early or metastatic disease, HER2 status, and treatment line before reviewing evidence.",
+  },
+  {
+    slug: "lung-cancer-evidence",
+    label: "Lung Cancer Evidence",
+    description: "Focus on lung cancer evidence and the relevant patient setting.",
+  },
+  {
+    slug: "gastric-cancer-evidence",
+    label: "Gastric Cancer Evidence",
+    description: "Focus on gastric or gastroesophageal junction cancer evidence and patient fit.",
+  },
+  {
+    slug: "solid-tumor-evidence",
+    label: "Other Solid Tumor Evidence",
+    description: "Clarify tumor type and HER2 status to explore the relevant evidence.",
+  },
+  {
+    slug: "safety-dosing-practicality",
+    label: "Safety, Dosing & Practicality",
+    description: "Focus on safety, monitoring, dosing, and practical use for your selected setting.",
+  },
+];
+
 const DATA_INTENT_OPTIONS: SurveyIntentOption[] = [];
 
 export function MvpCustomGptSurveyModal({
@@ -985,9 +1022,11 @@ export function MvpCustomGptSurveyModal({
         ? DATA_INTENT_OPTIONS
         : surveySlug === "nubeqa"
           ? NUBEQA_INTENT_OPTIONS
-          : surveySlug === "brukinsa"
-            ? BRUKINSA_INTENT_OPTIONS
-            : [];
+          : surveySlug === "enhertu"
+            ? ENHERTU_INTENT_OPTIONS
+            : surveySlug === "brukinsa"
+              ? BRUKINSA_INTENT_OPTIONS
+              : [];
   const [selectedIntentSlug, setSelectedIntentSlug] = useState<string | null>(
     null,
   );

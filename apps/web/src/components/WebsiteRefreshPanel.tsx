@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
-import { WEBSITE_PROFILES, websiteRefreshSettingsSchema, type WebsiteRefreshState } from "@interview/schemas";
+import { WEBSITE_PROFILES, websiteRefreshSettingsSchema, type WebsiteRefreshState } from "@interview/schemas";
 import { getWebsiteRefreshes, saveWebsiteRefreshSettings, refreshSurveyWebsite } from "../api";
 
 export function WebsiteRefreshPanel() {
@@ -33,7 +33,8 @@ export function WebsiteRefreshPanel() {
     event.preventDefault(); setBusy(true); setError(null); setMessage(null);
     try {
       const split = (value: string) => value.split(",").map(h => h.trim().toLowerCase()).filter(Boolean);
-      const input = websiteRefreshSettingsSchema.parse({ surveySlug: slug.trim(), profile: { rootUrl: root.trim(), hosts: split(hosts), documentHosts: split(documents) }, intervalHours, enabled });
+      const profile = websites.find(w => w.surveySlug === slug.trim())?.profile ?? WEBSITE_PROFILES[slug.trim() as keyof typeof WEBSITE_PROFILES];
+      const input = websiteRefreshSettingsSchema.parse({ surveySlug: slug.trim(), profile: { rootUrl: root.trim(), hosts: split(hosts), documentHosts: split(documents), documentUrls: profile && "documentUrls" in profile ? profile.documentUrls : undefined }, intervalHours, enabled });
       await saveWebsiteRefreshSettings(input); await reload(); setMessage("Website saved. Initial refresh queued; text, images and tables are included automatically.");
     } catch (e) { setError(e instanceof Error ? e.message : "Unable to save website"); } finally { setBusy(false); }
   }

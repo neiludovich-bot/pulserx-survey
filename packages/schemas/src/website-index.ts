@@ -27,6 +27,7 @@ export const websiteIndexSnapshotSchema = z.object({
 export type WebsiteIndexSnapshot = z.infer<typeof websiteIndexSnapshotSchema>;
 
 export const WEBSITE_PROFILES = {
+  enhertu: { rootUrl: "https://www.enhertuhcp.com/en", hosts: ["www.enhertuhcp.com", "enhertuhcp.com"], documentHosts: ["daiichisankyo.us", "www.daiichisankyo.us", "dsi.com", "www.dsi.com"], documentUrls: ["https://daiichisankyo.us/prescribing-information-portlet/getPIContent?inline=true&productName=Enhertu", "https://dsi.com/prescribing-information-portlet/getPIContent?inline=true&productName=Enhertu", "https://daiichisankyo.us/prescribing-information-portlet/getPIContent?inline=true&productName=Enhertu_Med", "https://dsi.com/prescribing-information-portlet/getPIContent?inline=true&productName=Enhertu_Med"] },
   nubeqa: { rootUrl: "https://www.nubeqahcp.com/", hosts: ["www.nubeqahcp.com", "nubeqahcp.com"], documentHosts: ["labeling.bayerhealthcare.com"] },
   brukinsa: { rootUrl: "https://www.brukinsahcp.com/", hosts: ["www.brukinsahcp.com", "brukinsahcp.com"], documentHosts: ["www.brukinsa.com", "brukinsa.com"] },
   padcev: { rootUrl: "https://www.padcevhcp.com/", hosts: ["www.padcevhcp.com", "padcevhcp.com"], documentHosts: ["astellas.us", "www.astellas.us"] },
@@ -37,9 +38,11 @@ export function allowedWebsiteIndexUrl(slug: WebsiteIndexSnapshot["surveySlug"],
   try {
     const url = new URL(value); const profile = configuredProfile ?? WEBSITE_PROFILES[slug as keyof typeof WEBSITE_PROFILES];
     if (!profile) return false;
-    return url.protocol === "https:" && !url.username && !url.password && !url.port && !url.search &&
-      ((profile.hosts as readonly string[]).includes(url.hostname) ||
-       (document && /\.pdf$/i.test(url.pathname) && (profile.documentHosts as readonly string[]).includes(url.hostname)));
+    const documentKey = (value: string) => { const parsed = new URL(value); parsed.hash = ""; parsed.searchParams.sort(); return parsed.href; };
+    const exactDocument = document && "documentUrls" in profile && profile.documentUrls?.some(approved => documentKey(approved) === documentKey(url.href));
+    return url.protocol === "https:" && !url.username && !url.password && !url.port &&
+      (exactDocument || (!url.search && ((profile.hosts as readonly string[]).includes(url.hostname) ||
+       (document && /\.pdf$/i.test(url.pathname) && (profile.documentHosts as readonly string[]).includes(url.hostname))))) === true;
   } catch { return false; }
 }
 
@@ -47,6 +50,7 @@ export const websiteProfileSchema = z.object({
   rootUrl: z.string().url().refine(value => { const u = new URL(value); return u.protocol === "https:" && !u.port && !u.username && !u.password && !u.search && !u.hash; }, "Use a public HTTPS website URL"),
   hosts: z.array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/)).min(1).max(10),
   documentHosts: z.array(z.string().regex(/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,}$/)).max(10),
+  documentUrls: z.array(z.string().url().refine(value => { const u = new URL(value); return u.protocol === "https:" && !u.port && !u.username && !u.password && !u.hash; })).max(20).optional(),
 }).strict().refine(p => p.hosts.includes(new URL(p.rootUrl).hostname), "Root hostname must be approved");
 export type WebsiteProfile = z.infer<typeof websiteProfileSchema>;
 export const websiteRefreshSettingsSchema = z.object({
@@ -58,7 +62,7 @@ export const websiteRefreshSettingsSchema = z.object({
 export const websiteRefreshStateSchema = websiteRefreshSettingsSchema.extend({
   version: z.literal(1), nextRunAt: z.string().datetime(),
   status: z.enum(["queued", "running", "completed", "failed"]),
-  runId: z.string().nullable(), leaseUntil: z.string().datetime().nullable(),
+  runId: z.string().nullable(), leaseUntil: z.string().datetime().nullable(), heartbeatAt: z.string().datetime().nullable().default(null),
   lastStartedAt: z.string().datetime().nullable(), lastFinishedAt: z.string().datetime().nullable(),
   lastError: z.string().nullable(), lastReportId: z.string().nullable(),
   summary: z.object({ pages: z.number().int(), images: z.number().int(), tables: z.number().int(), issueCount: z.number().int(), truncated: z.boolean(), issues: z.array(z.object({ url: z.string(), reason: z.string() }).strict()).max(20) }).strict().nullable().default(null),

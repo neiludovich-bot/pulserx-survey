@@ -24,6 +24,11 @@ const IMPORT_PRESETS: Record<
     targetMinutes: 10,
     label: "BRUKINSA",
   },
+  enhertu: {
+    name: "ENHERTU HCP Survey",
+    targetMinutes: 10,
+    label: "ENHERTU",
+  },
   nubeqa: {
     name: "NUBEQA HCP Survey",
     targetMinutes: 10,
