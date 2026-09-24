@@ -81,6 +81,27 @@ describe("new shared dispatch", () => {
     expect(resumed.content).not.toContain("The result was reported.");
     expect(resumed.state.discussion).toBeNull();
   });
+  it("retains the chosen clinical setting for a later evidence module outside recent history", async () => {
+    const focus = { ...guide, id: "primary_disease_focus", canonicalQuestion: "Which setting?", objective: "Identify the chosen cancer setting." };
+    const clinical = { ...guide, id: "clinical_evidence", canonicalQuestion: "What stands out in these results?", sourceContextRequirement: "Present evidence in the chosen setting." };
+    const state = emptyConversationState(); state.research = researchPlanForGuide([focus, clinical]);
+    state.research.objectives[0].evidence = [{ objectiveId: focus.id, criterionId: "perspective", evidence: "HER2-mutant metastatic NSCLC after prior therapy", turn: 1 }];
+    state.research.objectives[0].status = "covered";
+    mocks.retrieve.mockResolvedValue([]);
+    mocks.present.mockResolvedValue({ traces: [], answer: { selections: [], paragraphs: [], unavailableReason: "not_in_sources" } });
+    await runConversationRuntime({ brand: "ENHERTU", surveySlug: "enhertu", state, question: focus, history: [], message: "continue", resume: true, stop: false, selectGuide: () => clinical });
+    expect(mocks.present).toHaveBeenCalledWith(expect.objectContaining({ sourceTopicContext: expect.stringContaining("HER2-mutant metastatic NSCLC after prior therapy") }));
+    expect(mocks.retrieve).toHaveBeenCalledWith(expect.objectContaining({ sourceTopicContext: expect.stringContaining("HER2-mutant metastatic NSCLC after prior therapy") }));
+  });
+  it("records validated numerical rejection details without advancing the research state", async () => {
+    const validationDetail = { paragraph: "A result of 99 months.", unsupportedNumbers: ["99"], sourceIds: ["a"] };
+    mocks.retrieve.mockResolvedValue([]); mocks.turn.mockRejectedValue(Object.assign(new Error("Website answer validation: unsupported_number"), { websiteAnswerRepairDetail: validationDetail }));
+    const state = emptyConversationState();
+    const result = await runConversationRuntime({ brand: "ENHERTU", surveySlug: "enhertu", state, question: guide, history: [], message: "What result?", resume: false, stop: false, selectGuide: () => guide });
+    expect(result.trace).toContainEqual({ failure: "Website answer validation: unsupported_number", validationDetail });
+    expect(result.state).toEqual(state);
+    expect(result.content).not.toContain("99");
+  });
   it("fails without cascading providers or consuming research state", async () => {
     mocks.retrieve.mockResolvedValue([]); mocks.turn.mockRejectedValue(new Error("invalid evidence"));
     const state = emptyConversationState(); state.parkedGuideId = "fit";

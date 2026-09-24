@@ -69,15 +69,23 @@ export async function runConversationRuntime(input: Input) {
       references: chunks.map(chunk => withExplicitSourceAssets({ citationId: `rag:${chunk.id}`, title: chunk.title, url: chunk.url || null, description: chunk.description || null, assets: chunk.assets ?? [] })), sourceIds: chunks.map(s => s.id) };
   }
 
+  function clinicalSettingContext() {
+    // Reuse validated, durable participant evidence after early turns leave the history window.
+    const evidence = state.research?.objectives.filter(objective => objective.questionIds.some(id => ["primary_disease_focus", "disease_focus", "disease_area"].includes(id)))
+      .flatMap(objective => objective.evidence).sort((a, b) => a.turn - b.turn).map(signal => signal.evidence) ?? [];
+    return evidence.length ? "Participant's chosen clinical setting (context, not medical evidence): " + [...new Set(evidence)].join("; ").slice(-3000) : null;
+  }
+
   async function present(query: string) {
+    const clinicalContext = clinicalSettingContext();
     const gateway = getOptionalOpenAIGateway();
     if (!gateway) throw new Error("Conversation model unavailable.");
     const candidates = await retrieveWebsiteCandidates({ surveySlug: input.surveySlug, participantMessage: query,
       surveyContext: "", currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null,
-      sourceTopicContext: null, responseMode: "answer_only" });
+      sourceTopicContext: clinicalContext, responseMode: "answer_only" });
     if (candidates.some(source => source.surveySlug !== input.surveySlug)) throw new Error("Evidence crossed bot boundaries.");
     const call = await gateway.presentConversationEvidence({ surveySlug: input.surveySlug, query: query.slice(0, 4000),
-      candidates: websiteCandidatesForModel(candidates), sourceTopicContext: null, priorSourceIds: [], sourceQuestionPlan: null, evidenceFocus: "all" });
+      candidates: websiteCandidatesForModel(candidates), sourceTopicContext: clinicalContext, priorSourceIds: [], sourceQuestionPlan: null, evidenceFocus: "all" });
     trace.push(...call.traces);
     const chunks = websiteAnswerChunks(candidates, call.answer);
     return { text: !call.answer.unavailableReason ? renderWebsiteAnswer(call.answer.paragraphs, chunks) : null,
