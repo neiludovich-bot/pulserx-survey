@@ -31,7 +31,13 @@ export function sourceContentSearchTerms(query: string, surveySlug: string) {
 
 /** Rank the approved content before applying the bounded candidate limit. */
 export function sourceContentSearchSql(query: string, surveySlug: string, context?: string | null, websiteOnly = false) {
-  const documentFilter = websiteOnly ? Prisma.sql`AND document.url NOT ILIKE '%.pdf%'` : Prisma.empty;
+  const documentFilter = websiteOnly ? Prisma.sql`AND document.source_type <> 'PDF'` : Prisma.empty;
+  // Named numbered trials must outrank shared indication words in page URLs.
+  // Preserve the exact participant-supplied trial token; do not infer a trial.
+  const studies = [...new Set(query.match(/\b[a-z]{2,}-[a-z]*\d{1,3}\b/gi) ?? [])].slice(0, 3);
+  const studyPriority = studies.length
+    ? Prisma.sql`(${Prisma.join(studies.map(study => Prisma.sql`chunk.content ILIKE ${`%${study}%`}`), " OR ")}) DESC,`
+    : Prisma.empty;
   // A broad comparison should retrieve comparative findings before a footer
   // containing an abbreviation glossary or a generic head-to-head heading.
   const comparisonPriority = isBroadProductComparison(query)
@@ -59,7 +65,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
         AND document.status = 'ACTIVE'
         ${documentFilter}
         AND to_tsvector('english', chunk.content) @@ search.any_terms
-      ORDER BY (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
+      ORDER BY ${studyPriority} (to_tsvector('english', chunk.content) @@ search.current_terms) DESC,
                ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.current_terms) DESC,` : Prisma.empty}
                ${comparisonPriority} ${phrasePriority}
                ts_rank_cd(to_tsvector('english', chunk.content), search.current_terms) DESC,
@@ -82,7 +88,7 @@ export function sourceContentSearchSql(query: string, surveySlug: string, contex
       AND document.status = 'ACTIVE'
       ${documentFilter}
       AND to_tsvector('english', chunk.content) @@ search.any_terms
-    ORDER BY ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
+    ORDER BY ${studyPriority} ${websiteOnly ? Prisma.sql`ts_rank_cd(to_tsvector('english', regexp_replace(coalesce(document.url, ''), '[^a-zA-Z0-9]+', ' ', 'g')), search.any_terms) DESC,` : Prisma.empty}
              ${comparisonPriority} ${phrasePriority} (to_tsvector('english', chunk.content) @@ search.all_terms) DESC,
              ts_rank_cd(to_tsvector('english', chunk.content), search.any_terms) DESC,
              document.priority DESC, chunk.position ASC, chunk.id ASC

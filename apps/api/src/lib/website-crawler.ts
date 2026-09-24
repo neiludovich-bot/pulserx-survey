@@ -26,8 +26,17 @@ export function extractWebsiteHtml(html: string, url: string) {
     return [{ title: alt.slice(0, 240), description: (caption || alt).slice(0, 1000), url: assetUrl, assetKind: "IMAGE" as const }];
   }).filter((asset, i, all) => all.findIndex(other => other.url === asset.url) === i).slice(0, 24);
   const blocks: string[] = [];
-  root.find("h1,h2,h3,h4,h5,p,li,tr").each((_i, el) => {
+  const figureLabels = new Set<string>();
+  root.find("h1,h2,h3,h4,h5,p,li,tr,img").each((_i, el) => {
     const node = $(el);
+    if (node.is("img")) {
+      const label = clean(node.attr("alt") ?? "");
+      if (assets.some(asset => asset.title === label.slice(0, 240)) && !figureLabels.has(label)) {
+        blocks.push(`Figure alternative text (provided by the website): ${label}`);
+        figureLabels.add(label);
+      }
+      return;
+    }
     if (node.parents("tr").length || (node.is("li") && node.find("p,li").length)) return;
     const text = node.is("tr") ? node.find("th,td").toArray().map(cell => clean($(cell).text())).join(" | ") : clean(node.text());
     if (text) blocks.push(text);
