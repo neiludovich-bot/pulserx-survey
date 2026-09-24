@@ -34,7 +34,7 @@ export function normalizeSourceEvidenceSpanSelection(input: ModeratorEvidenceSel
     const last = spans[range.endSpan];
     if (!first || !last || range.startSpan > range.endSpan) throw new Error("Evidence span range is outside its source or reversed.");
     const supportExcerpt = source.text.slice(first.start, last.end);
-    if (supportExcerpt.length > 1500) throw new Error("Evidence span range exceeds the 1500-character excerpt bound.");
+    if (supportExcerpt.length > 6000) throw new Error("Evidence span range exceeds the 6000-character excerpt bound.");
     return { ...selection, supportExcerpt };
   }) };
   return validateModeratorEvidenceSelection(input, result);

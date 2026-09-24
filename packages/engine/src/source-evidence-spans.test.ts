@@ -27,7 +27,7 @@ describe("indexed source evidence spans", () => {
     expect(() => normalizeSourceEvidenceSpanSelection(input, { ...output, selections: [{ ...selection, supportSpanRange }] })).toThrow();
   });
   it("fails closed for overlong complete sentences and does not silently clip them", () => {
-    expect(() => normalizeSourceEvidenceSpanSelection({ ...input, candidates: [{ ...input.candidates[0], text: `Do not ${"word ".repeat(350)}coadminister X.` }] }, { ...output, selections: [{ ...selection, supportSpanRange: { startSpan: 0, endSpan: 0 } }] })).toThrow("1500-character");
+    expect(() => normalizeSourceEvidenceSpanSelection({ ...input, candidates: [{ ...input.candidates[0], text: `Do not ${"word ".repeat(1300)}coadminister X.` }] }, { ...output, selections: [{ ...selection, supportSpanRange: { startSpan: 0, endSpan: 0 } }] })).toThrow("6000-character");
   });
   it("retains source/asset ownership, duplicate, contextual-role and single-fact restrictions", () => {
     expect(() => normalizeSourceEvidenceSpanSelection(input, { ...output, selections: [{ ...selection, sourceId: "missing" }] })).toThrow("submitted source");

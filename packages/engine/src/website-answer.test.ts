@@ -41,6 +41,19 @@ describe("one-pass website answers", () => {
   it("rejects source IDs in a paragraph that were not selected", () => {
     expect(() => validateWebsiteAnswer(input, { ...output, paragraphs: [{ text: "A result.", sourceIds: ["unknown"] }] })).toThrow();
   });
+  it("supports separated endpoints from one page while rejecting numbers outside the selected range", () => {
+    const text = "Study A in population X reported PFS of 28.8 versus 6.8 months. " + "The trial maintained the same population and comparator. ".repeat(40) + "Overall survival was 52.6 versus 42.7 months.";
+    const evidence = { ...input, query: "What PFS and OS results were reported?", candidates: [{ ...input.candidates[0], text }] };
+    const answer = { ...output, selections: [{ ...output.selections[0], supportSpanRange: { startSpan: 0, endSpan: 41 } }], paragraphs: [{ text: "Study A reported PFS of 28.8 versus 6.8 months and overall survival of 52.6 versus 42.7 months in population X.", sourceIds: ["study-a"] }] };
+    expect(validateWebsiteAnswer(evidence, answer).selections[0].supportExcerpt).toBe(text);
+    expect(() => validateWebsiteAnswer(evidence, { ...answer, selections: [{ ...answer.selections[0], supportSpanRange: { startSpan: 0, endSpan: 1 } }] })).toThrow("unsupported_number");
+  });
+  it("does not turn approximate source wording into unsupported numerical precision", () => {
+    const evidence = { ...input, candidates: [{ ...input.candidates[0], text: "About half of patients responded in Study A." }] };
+    const answer = { ...output, selections: [{ ...output.selections[0], supportSpanRange: { startSpan: 0, endSpan: 0 } }] };
+    expect(() => validateWebsiteAnswer(evidence, { ...answer, paragraphs: [{ text: "50% of patients responded.", sourceIds: ["study-a"] }] })).toThrow("unsupported_number");
+    expect(() => validateWebsiteAnswer(evidence, { ...answer, paragraphs: [{ text: "About half of patients responded in Study A.", sourceIds: ["study-a"] }] })).not.toThrow();
+  });
   it("rejects a fabricated numerical value", () => {
     expect(() => validateWebsiteAnswer(input, { ...output, paragraphs: [{ ...output.paragraphs[0], text: "Study A reported 24 months." }] })).toThrow("unsupported_number");
   });

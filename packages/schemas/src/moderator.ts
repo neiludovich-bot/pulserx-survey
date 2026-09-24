@@ -237,7 +237,7 @@ export const moderatorEvidenceSelectionInputSchema = z.object({
 
 const moderatorEvidenceSelectionSchema = z.object({
     sourceId: z.string().min(1),
-    supportExcerpt: z.string().min(1).max(1500),
+    supportExcerpt: z.string().min(1).max(6000),
     assetIds: z.array(z.string().min(1)).max(6),
     evidenceRole: moderatorEvidenceRoleSchema.default("direct"),
     // Older internal selections omit this and are treated as answer evidence.

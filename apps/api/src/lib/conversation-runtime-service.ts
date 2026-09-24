@@ -1,5 +1,5 @@
 import { emptyConversationState, selectConversationAction, updateResearchCoverage, objectiveForQuestion, selectObjectiveFollowUp } from "@interview/engine";
-import { conversationStateSchema, type ConversationState, type ConversationTurnContext, type ConversationObservation, type GroundedReference } from "@interview/schemas";
+import { websiteAnswerRepairDetailSchema, conversationStateSchema, type ConversationState, type ConversationTurnContext, type ConversationObservation, type GroundedReference } from "@interview/schemas";
 import type { MvpGuideQuestion } from "./mvp-brukinsa-guide";
 import { getOptionalOpenAIGateway } from "./model-gateway";
 import { retrieveWebsiteCandidates } from "./controlled-rag-service";
@@ -200,7 +200,8 @@ export async function runConversationRuntime(input: Input) {
     return done(`${transition}${question.canonicalQuestion}`, question);
   } catch (error) {
     state = initialState; observation = null; action = "unavailable";
-    trace.push({ failure: error instanceof Error ? error.message : "Conversation validation failed." });
+    const detail = websiteAnswerRepairDetailSchema.safeParse(error && typeof error === "object" && "websiteAnswerRepairDetail" in error ? error.websiteAnswerRepairDetail : null);
+    trace.push({ failure: error instanceof Error ? error.message : "Conversation validation failed.", ...(detail.success ? { validationDetail: detail.data } : {}) });
     console.warn(JSON.stringify({ event: "conversation_v2_failure", surveySlug: input.surveySlug, message: error instanceof Error ? error.message : "Unknown failure" }));
     return done("I couldn't complete that response. Please try again, or say continue to move on.", input.question);
   }

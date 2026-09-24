@@ -642,7 +642,7 @@ export class OpenAIResponsesGateway {
         const feedback = error && typeof error === "object" && "websiteAnswerFeedback" in error ? error.websiteAnswerFeedback : null;
         repairFeedback = feedback === "unsupported_number" || feedback === "too_verbose" || feedback === "unrequested_endpoint" ? feedback : "invalid_output";
         repairDetail = websiteAnswerRepairDetail(error);
-        const selectionErrors = ["Evidence span selection must use a submitted source ID.", "Evidence span range is outside its source or reversed.", "Evidence span range exceeds the 1500-character excerpt bound.", "A single-fact presentation requires at most one selected source.", "Selected assets must be unique and belong to their selected source.", "Evidence selection must use distinct submitted source IDs."];
+        const selectionErrors = ["Evidence span selection must use a submitted source ID.", "Evidence span range is outside its source or reversed.", "Evidence span range exceeds the 6000-character excerpt bound.", "A single-fact presentation requires at most one selected source.", "Selected assets must be unique and belong to their selected source.", "Evidence selection must use distinct submitted source IDs."];
         console.warn(JSON.stringify({ event: "website_answer_validation", callGroupId: getModelCallTimingContext()?.callGroupId ?? null,
           survey_slug: parsed.surveySlug, attempt, feedback: repairFeedback,
           selectionErrorIndex: error instanceof Error ? selectionErrors.indexOf(error.message) : -1,
