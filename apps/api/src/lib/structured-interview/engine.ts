@@ -74,8 +74,20 @@ export function progress(state: InterviewState) {
   return { answered: Object.keys(state.answers).length, total: state.order.length, position: Math.min(state.index + 1, state.order.length) };
 }
 
+/** Section lead (when the section changes) plus the question's own intro. */
+export function narrationFor(survey: StructuredSurvey, state: InterviewState) {
+  const question = currentQuestion(survey, state);
+  if (!question) return null;
+  const previousId = state.order[state.index - 1];
+  const previous = previousId ? questionById(survey, previousId) : null;
+  const lead = previous && previous.section !== question.section ? survey.sectionLeads[question.section] : undefined;
+  return [lead, question.intro].filter(Boolean).join(" ") || null;
+}
+
 export type QuestionView = {
-  id: string; section: string; prompt: string; kind: "single" | "multi"; maxSelect: number | null;
+  id: string; section: string; prompt: string;
+  /** What the interviewer says before the question: a section lead and/or the question's intro. */
+  narration: string | null; kind: "single" | "multi"; maxSelect: number | null;
   options: Array<{ id: string; label: string; exclusive: boolean }>;
   card: EvidenceCard | null;
 };
@@ -84,7 +96,7 @@ export function questionView(survey: StructuredSurvey, state: InterviewState): Q
   const question = currentQuestion(survey, state);
   if (!question) return null;
   return {
-    id: question.id, section: question.section, prompt: question.prompt, kind: question.kind,
+    id: question.id, section: question.section, prompt: question.prompt, narration: narrationFor(survey, state), kind: question.kind,
     maxSelect: question.kind === "multi" ? question.maxSelect ?? null : null,
     options: orderedOptions(question, state).map(o => ({ id: o.id, label: o.label, exclusive: Boolean(o.exclusive) })),
     card: question.card ?? null,

@@ -6,7 +6,7 @@ import { answerFromWebsite, renderWebsiteAnswer } from "../website-answer-servic
 import { withExplicitSourceAssets } from "../focused-source-evidence";
 import { synthesizeSpeech } from "../voice-service";
 import {
-  canAnswerDetour, createInterview, currentQuestion, isFinished, markClarifying, parkedQuestions, progress, questionView,
+  canAnswerDetour, createInterview, narrationFor, currentQuestion, isFinished, markClarifying, parkedQuestions, progress, questionView,
   recordAnswer, recordDetour, recordFollowUp, SelectionError, skipOpenDetour, stopInterview, type QuestionView,
 } from "./engine";
 import { STRUCTURED_SURVEYS } from "./nubeqa";
@@ -69,14 +69,18 @@ function promptFor(survey: StructuredSurvey, state: InterviewState, returning = 
 }
 
 /** Interviewer messages that introduce whatever the participant is now being asked. */
-function promptMessages(survey: StructuredSurvey, state: InterviewState): InterviewMessage[] {
+function promptMessages(survey: StructuredSurvey, state: InterviewState, returning = false): InterviewMessage[] {
   if (state.phase === "declined") return [message({ role: "interviewer", kind: "closing", content: survey.declined, questionId: null })];
   if (state.phase === "complete") return [message({ role: "interviewer", kind: "closing", content: state.endReason === "stopped" ? survey.stopped : survey.closing, questionId: null })];
   if ((state.phase === "follow_up" || state.phase === "detour_open") && state.pendingFollowUp) {
     return [message({ role: "interviewer", kind: "follow_up", content: state.pendingFollowUp.prompt, questionId: state.pendingFollowUp.questionId })];
   }
   const question = currentQuestion(survey, state)!;
-  const content = state.clarifying ? `So I record this accurately, which of these is closest? ${question.prompt}` : question.prompt;
+  // The narration is said once; a re-ask after a side question or a clarification goes straight to the question.
+  const narration = state.clarifying || returning ? null : narrationFor(survey, state);
+  const content = state.clarifying ? `So I record this accurately, which of these is closest? ${question.prompt}`
+    : returning ? `Back to where we were: ${question.prompt.charAt(0).toLowerCase()}${question.prompt.slice(1)}`
+    : [narration, question.prompt].filter(Boolean).join("\n\n");
   return [message({ role: "interviewer", kind: "question", content, questionId: question.id,
     payload: question.card ? { cardId: question.card.id, cardTitle: question.card.title } : undefined })];
 }
@@ -254,7 +258,7 @@ export async function submitStructuredTurn(input: StructuredTurnRequest): Promis
     const moved = state.index !== before || isFinished(state) || state.phase === "follow_up" || state.phase === "detour_open";
     if (!isFinished(state) && state.index !== before) added.push(...await answerParked(survey, state));
     if (moved || state.clarifying || returning) {
-      const intro = promptMessages(survey, state);
+      const intro = promptMessages(survey, state, returning);
       // A follow-up already shown before a detour is re-asked as-is.
       added.push(...intro);
     }

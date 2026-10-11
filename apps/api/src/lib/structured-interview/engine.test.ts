@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canAnswerDetour, createInterview, currentQuestion, followUpFor, orderedOptions, recordAnswer, recordDetour, recordFollowUp,
-  markClarifying, questionById, SelectionError, skipOpenDetour,
+  markClarifying, questionById, questionView, SelectionError, skipOpenDetour,
 } from "./engine";
 import { NUBEQA_STRUCTURED_SURVEY as survey } from "./nubeqa";
 import { interviewsToCsv, summarize } from "./results";
@@ -77,6 +77,16 @@ describe("structured interview engine", () => {
     expect(followUpFor(q, ["os", "other"], false)).toBe("What else matters most to you?");
     expect(followUpFor(q, ["os", "ddi"], false)).toBeNull();
     expect(followUpFor(q, ["os"], false)).toBe("What makes that the deciding factor for you?");
+  });
+
+  it("narrates each trial and leads into new sections once", () => {
+    const state = runToCard("narration");
+    const view = questionView(survey, state)!;
+    expect(view.narration!.startsWith("Now let's look at the evidence.")).toBe(true);
+    expect(view.narration!.includes(questionById(survey, view.id).intro!)).toBe(true);
+    tap(state, ["no_change"], "As expected");
+    const next = questionView(survey, state)!;
+    expect(next.narration).toBe(questionById(survey, next.id).intro ?? null);
   });
 
   it("validates selections", () => {

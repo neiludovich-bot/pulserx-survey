@@ -49,6 +49,8 @@ export type StructuredQuestion = {
   /** Order options to match the rotated order of the questions they reference. */
   optionsFollowRotation?: boolean;
   card?: EvidenceCard;
+  /** What the interviewer says before asking: plain spoken sentences, pre-approved, never generated. */
+  intro?: string;
   /** Question-level follow-up, used when the chosen option has none. */
   followUp?: string;
   /** Ask the follow-up only when exactly this many options were chosen bare (multi). */
@@ -72,6 +74,8 @@ export type StructuredSurvey = {
   /** Shown when the participant ends early. */
   stopped: string;
   questions: StructuredQuestion[];
+  /** Said when the interview moves into a new section. */
+  sectionLeads: Record<string, string>;
   /** Question ids shown in a random order per participant (a rotation block). */
   rotationBlocks: string[][];
   /** Detours answered per question before further ones are parked for the end. */

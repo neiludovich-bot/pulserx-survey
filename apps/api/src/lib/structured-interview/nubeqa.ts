@@ -27,6 +27,13 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
   stopped: "Understood, we'll stop here. Thank you for your time; the answers you gave have been saved. You can close this window.",
   maxDetoursPerQuestion: 1,
   rotationBlocks: [["c1_aranote", "c2_arasens", "c3_aramis"]],
+  sectionLeads: {
+    "About you": "Great, thank you. To start, a little about you.",
+    "What matters to you": "Before we look at any data, I'd like to understand what drives your choices.",
+    "The evidence": "Now let's look at the evidence. I'll walk you through three studies, and for each one I'd like your honest reaction.",
+    "Using it in practice": "Thanks. Next, a couple of questions about using it day to day.",
+    "Overall": "We're nearly done.",
+  },
   questions: [
     {
       id: "a0_consent", section: "Introduction", kind: "single", exportLabel: "Consent",
@@ -79,7 +86,8 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "c1_aranote", section: "The evidence", kind: "single", exportLabel: "ARANOTE reaction",
-      prompt: "Which comes closest to your reaction?",
+      intro: "The ARANOTE study enrolled 669 men with metastatic castration-sensitive prostate cancer who were not receiving docetaxel. Adding NUBEQA to ADT reduced the risk of radiographic progression or death by 46% compared with placebo plus ADT, a hazard ratio of 0.54. At two years, 70% were alive without radiographic progression, versus 52% with placebo.",
+      prompt: "Which of these comes closest to your reaction?",
       options: reactionOptions("in mCSPC without docetaxel"),
       card: {
         id: "aranote", title: "ARANOTE", subtitle: "mCSPC · NUBEQA + ADT vs placebo + ADT (no docetaxel)",
@@ -95,7 +103,8 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "c2_arasens", section: "The evidence", kind: "single", exportLabel: "ARASENS reaction",
-      prompt: "Which comes closest to your reaction?",
+      intro: "The ARASENS study looked at men with metastatic castration-sensitive prostate cancer who were also receiving docetaxel. Adding NUBEQA to docetaxel and ADT reduced the risk of death by nearly a third compared with docetaxel and ADT alone, a hazard ratio of 0.68. At four years, 63% of patients were alive with the NUBEQA combination, versus 50% without it.",
+      prompt: "Which of these comes closest to your reaction?",
       options: reactionOptions("with docetaxel in mCSPC"),
       card: {
         id: "arasens", title: "ARASENS", subtitle: "mCSPC · NUBEQA + ADT + docetaxel vs placebo + ADT + docetaxel",
@@ -111,7 +120,8 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "c3_aramis", section: "The evidence", kind: "single", exportLabel: "ARAMIS reaction",
-      prompt: "Which comes closest to your reaction?",
+      intro: "The ARAMIS study enrolled men with non-metastatic castration-resistant prostate cancer. Adding NUBEQA to ADT extended median metastasis-free survival to 40.4 months, versus 18.4 months with placebo plus ADT, and reduced the risk of death by 31%, a hazard ratio of 0.69.",
+      prompt: "Which of these comes closest to your reaction?",
       options: reactionOptions("in nmCRPC"),
       card: {
         id: "aramis", title: "ARAMIS", subtitle: "nmCRPC · NUBEQA + ADT vs placebo + ADT",
@@ -130,7 +140,8 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "c4_most_relevant", section: "The evidence", kind: "single", optionsFollowRotation: true, exportLabel: "Most relevant trial",
-      prompt: "Which of the three trials is most relevant to your practice?",
+      intro: "You've now seen all three studies.",
+      prompt: "Which of them is most relevant to your practice?",
       options: [
         { id: "aranote", label: "ARANOTE (mCSPC, no docetaxel)", ref: "c1_aranote" },
         { id: "arasens", label: "ARASENS (mCSPC, with docetaxel)", ref: "c2_arasens" },
@@ -141,6 +152,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "d1_practicality", section: "Using it in practice", kind: "single", shuffleOptions: true, exportLabel: "Biggest practical concern",
+      intro: "NUBEQA is taken as two 300 mg tablets twice a day with food, alongside ADT. The dose is reduced for severe renal impairment, moderate hepatic impairment, or significant side effects, and some drug combinations need care.",
       prompt: "What, if anything, most affects your comfort using NUBEQA day to day?",
       followUp: "How would that change which patients you'd use it in?",
       card: {
