@@ -8,7 +8,7 @@ export type EvidenceCard = {
 };
 
 export type QuestionView = {
-  id: string; section: string; prompt: string; kind: "single" | "multi"; maxSelect: number | null;
+  id: string; section: string; prompt: string; narration?: string | null; kind: "single" | "multi"; maxSelect: number | null;
   options: Array<{ id: string; label: string; exclusive: boolean }>;
   card: EvidenceCard | null;
 };

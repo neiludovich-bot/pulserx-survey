@@ -432,7 +432,12 @@ export function StructuredInterview({ surveySlug }: Props) {
               <>
                 {prompt.returning && <p className={styles.returning}>Back to where we were</p>}
                 {prompt.question.card && <div className={styles.inlineOnly}><EvidencePlate card={prompt.question.card} /></div>}
-                {prompt.question.card && <p className={styles.panelHint}>The {prompt.question.card.title} evidence is shown on the right.</p>}
+                {!prompt.returning && !prompt.clarifying && prompt.question.narration && (
+                  <div className={styles.narration}>
+                    {prompt.question.narration.split(/\n{2,}/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+                  </div>
+                )}
+                {prompt.question.card && <p className={styles.panelHint}>The {prompt.question.card.title} results are shown on the right.</p>}
                 <h2 className={styles.prompt}>{prompt.clarifying ? `So I record this accurately, which of these is closest? ${prompt.question.prompt}` : prompt.question.prompt}</h2>
                 {prompt.question.kind === "multi" && prompt.question.maxSelect && (
                   <p className={styles.hint}>{selected.length} of up to {prompt.question.maxSelect} selected</p>

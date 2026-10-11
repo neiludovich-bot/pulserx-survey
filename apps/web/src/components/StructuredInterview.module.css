@@ -579,3 +579,13 @@
   line-height: 1.5;
   max-width: 70ch;
 }
+
+/* The interviewer's spoken lead-in before a question */
+.narration {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 1.0625rem;
+  line-height: 1.6;
+  max-width: 62ch;
+}
