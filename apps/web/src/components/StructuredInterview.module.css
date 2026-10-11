@@ -743,3 +743,14 @@
   margin-top: 8px;
   padding-top: 6px;
 }
+
+@media (min-width: 1000px) {
+  .layout[data-panel="on"] .panel {
+    padding: 12px 0;
+    max-height: calc(100vh - 80px);
+  }
+
+  .panel .plateFigures img {
+    max-height: 40vh;
+  }
+}
