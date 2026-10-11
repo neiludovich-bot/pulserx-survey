@@ -28,6 +28,7 @@ describe("figure library", () => {
   it("matches figures by trial and topic, not by stray substrings", () => {
     expect(matchFigures("What were the ARASENS results for time to castration resistance?")[0]!.id).toBe("arasens-crpc");
     expect(matchFigures("What are the most common side effects in ARAMIS?").map(f => f.id)).toContain("aramis-ae");
+    expect(matchFigures("What are the most common side effects in ARAMIS?", 5).every(f => f.trial === "aramis" || f.trial === null)).toBe(true);
     expect(matchFigures("Does it interact with warfarin?").map(f => f.id)).toContain("ddi-anticoagulants");
     expect(matchFigures("How do I dose it?").map(f => f.trial)).not.toContain("arasens");
     expect(matchFigures("Thanks, that makes sense")).toHaveLength(0);

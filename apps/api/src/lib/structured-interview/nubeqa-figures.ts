@@ -87,7 +87,9 @@ export function matchFigures(text: string, limit = 2, exclude: string[] = []): L
     .map(figure => {
       // Specific topics ("castration resistance", "pain") outweigh generic words ("results", "data").
       const topic = figure.topics.filter(has).reduce((sum, word) => sum + (T.efficacy.includes(word) ? 0.5 : 2), 0);
-      const trialFit = figure.trial === null ? 0.5 : trials.length === 0 ? 0.25 : trials.includes(figure.trial) ? 1 : -2;
+      // A named trial rules out the other trials' figures entirely.
+      if (figure.trial && trials.length && !trials.includes(figure.trial)) return { figure, score: 0 };
+      const trialFit = figure.trial === null ? 0.5 : trials.length === 0 ? 0.25 : 1;
       return { figure, score: topic > 0 ? topic + trialFit : 0 };
     })
     .filter(item => item.score > 0.5)

@@ -171,7 +171,7 @@ function detourPayload(survey: StructuredSurvey, question: string, result: Detou
     .filter(asset => ["IMAGE", "CHART", "TABLE"].includes(asset.assetKind.toUpperCase()) && /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(asset.url)).length;
   // Only add library figures when there is an answer to illustrate, and only for the brand that has a library.
   const figures = result.text && survey.slug === "nubeqa"
-    ? matchFigures(`${question} ${result.text}`, Math.max(0, 3 - imageCount), cited).map(({ url, alt, caption }) => ({ url, alt, caption }))
+    ? matchFigures(question, Math.max(0, 3 - imageCount), cited).map(({ url, alt, caption }) => ({ url, alt, caption }))
     : [];
   if (!result.references.length && !figures.length) return undefined;
   return { ...(result.references.length ? { references: result.references } : {}), ...(figures.length ? { figures } : {}) };
