@@ -81,7 +81,10 @@ export function narrationFor(survey: StructuredSurvey, state: InterviewState) {
   const previousId = state.order[state.index - 1];
   const previous = previousId ? questionById(survey, previousId) : null;
   const lead = previous && previous.section !== question.section ? survey.sectionLeads[question.section] : undefined;
-  return [lead, question.intro].filter(Boolean).join(" ") || null;
+  // Within a section, a short rotating acknowledgment keeps it sounding like a conversation.
+  const acknowledgment = !lead && previous && state.answers[previous.id] && survey.acknowledgments.length
+    ? survey.acknowledgments[state.index % survey.acknowledgments.length] : undefined;
+  return [lead ?? acknowledgment, question.intro].filter(Boolean).join(" ") || null;
 }
 
 export type QuestionView = {

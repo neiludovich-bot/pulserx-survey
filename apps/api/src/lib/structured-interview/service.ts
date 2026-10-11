@@ -10,6 +10,7 @@ import {
   recordAnswer, recordDetour, recordFollowUp, SelectionError, skipOpenDetour, stopInterview, type QuestionView,
 } from "./engine";
 import { STRUCTURED_SURVEYS } from "./nubeqa";
+import { matchFigures } from "./nubeqa-figures";
 import { loadInterview, saveInterview, type InterviewMessage, type StoredInterview } from "./store";
 import type { AnswerSource, InterviewState, ReplyInterpretation, StructuredSurvey } from "./types";
 
@@ -160,7 +161,20 @@ async function handleDetour(survey: StructuredSurvey, state: InterviewState, que
   const content = result.text
     ?? `I couldn't find a supported answer to that on the ${survey.brand} prescribing site, so I won't speculate. Your question has been recorded for the research team.`;
   return [message({ role: "interviewer", kind: "detour_answer", questionId, content,
-    payload: result.references.length ? { references: result.references } : undefined })];
+    payload: detourPayload(survey, question, result) })];
+}
+
+/** References plus the site's own figures that match the question, so answers show evidence. */
+function detourPayload(survey: StructuredSurvey, question: string, result: DetourResult) {
+  const cited = result.references.flatMap(reference => reference.assets.map(asset => asset.url));
+  const imageCount = result.references.flatMap(reference => reference.assets)
+    .filter(asset => ["IMAGE", "CHART", "TABLE"].includes(asset.assetKind.toUpperCase()) && /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(asset.url)).length;
+  // Only add library figures when there is an answer to illustrate, and only for the brand that has a library.
+  const figures = result.text && survey.slug === "nubeqa"
+    ? matchFigures(`${question} ${result.text}`, Math.max(0, 3 - imageCount), cited).map(({ url, alt, caption }) => ({ url, alt, caption }))
+    : [];
+  if (!result.references.length && !figures.length) return undefined;
+  return { ...(result.references.length ? { references: result.references } : {}), ...(figures.length ? { figures } : {}) };
 }
 
 /** Before the closing question, answer anything parked earlier. */
@@ -172,7 +186,7 @@ async function answerParked(survey: StructuredSurvey, state: InterviewState): Pr
     parked.answered = Boolean(result.text); parked.answer = result.text; parked.sourceIds = result.sourceIds;
     out.push(message({ role: "interviewer", kind: "detour_answer", questionId: parked.questionId,
       content: `Earlier you asked: "${parked.question}"\n\n${result.text ?? "I couldn't find a supported answer to that on the prescribing site. It has been recorded for the research team."}`,
-      payload: result.references.length ? { references: result.references } : undefined }));
+      payload: detourPayload(survey, parked.question, result) }));
   }
   return out;
 }

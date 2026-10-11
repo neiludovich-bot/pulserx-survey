@@ -5,6 +5,7 @@ import {
 } from "./engine";
 import { NUBEQA_STRUCTURED_SURVEY as survey } from "./nubeqa";
 import { interviewsToCsv, summarize } from "./results";
+import { matchFigures } from "./nubeqa-figures";
 
 const t = (seconds = 0) => new Date(Date.UTC(2026, 9, 11, 14, 0, seconds));
 const tap = (state: ReturnType<typeof createInterview>, optionIds: string[], verbatim: string | null = null) =>
@@ -22,6 +23,23 @@ function runThrough(sessionId: string) {
   }
   return state;
 }
+
+describe("figure library", () => {
+  it("matches figures by trial and topic, not by stray substrings", () => {
+    expect(matchFigures("What were the ARASENS results for time to castration resistance?")[0]!.id).toBe("arasens-crpc");
+    expect(matchFigures("What are the most common side effects in ARAMIS?").map(f => f.id)).toContain("aramis-ae");
+    expect(matchFigures("Does it interact with warfarin?").map(f => f.id)).toContain("ddi-anticoagulants");
+    expect(matchFigures("How do I dose it?").map(f => f.trial)).not.toContain("arasens");
+    expect(matchFigures("Thanks, that makes sense")).toHaveLength(0);
+  });
+
+  it("every evidence card shows several figures with captions", () => {
+    for (const q of survey.questions.filter(q => q.card && q.id.startsWith("c"))) {
+      expect(q.card!.figures.length).toBeGreaterThan(3);
+      for (const figure of q.card!.figures) expect(Boolean(figure.caption)).toBe(true);
+    }
+  });
+});
 
 describe("structured interview engine", () => {
   it("has unique ids and every rotation id exists", () => {
@@ -86,7 +104,9 @@ describe("structured interview engine", () => {
     expect(view.narration!.includes(questionById(survey, view.id).intro!)).toBe(true);
     tap(state, ["no_change"], "As expected");
     const next = questionView(survey, state)!;
-    expect(next.narration).toBe(questionById(survey, next.id).intro ?? null);
+    const intro = questionById(survey, next.id).intro;
+    expect(survey.acknowledgments.some(ack => next.narration!.startsWith(ack))).toBe(true);
+    expect(intro ? next.narration!.endsWith(intro) : true).toBe(true);
   });
 
   it("validates selections", () => {
@@ -105,10 +125,12 @@ describe("structured interview engine", () => {
     expect(state.answers.d2_patient_fit!.optionIds).toEqual(["none"]);
   });
 
-  it("allows one detour per question, then parks further ones", () => {
+  it("answers a few side questions per question, then parks further ones", () => {
     const state = createInterview(survey, "detour", t());
-    expect(canAnswerDetour(survey, state)).toBe(true);
-    recordDetour(state, { question: "What was ARANOTE's comparator?", answer: "Placebo plus ADT.", sourceIds: ["s1"], parked: false, now: t(3) });
+    for (let i = 0; i < survey.maxDetoursPerQuestion; i++) {
+      expect(canAnswerDetour(survey, state)).toBe(true);
+      recordDetour(state, { question: `Question ${i}?`, answer: i === 1 ? null : "Answer.", sourceIds: [], parked: false, now: t(3) });
+    }
     expect(canAnswerDetour(survey, state)).toBe(false);
     expect(state.index).toBe(0);
     expect(state.phase).toBe("question");

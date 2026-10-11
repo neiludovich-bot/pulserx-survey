@@ -20,7 +20,7 @@ export type StructuredOption = {
   ref?: string;
 };
 
-export type EvidenceFigure = { url: string; alt: string };
+export type EvidenceFigure = { url: string; alt: string; caption?: string };
 
 export type EvidenceCard = {
   id: string;
@@ -80,6 +80,8 @@ export type StructuredSurvey = {
   rotationBlocks: string[][];
   /** Detours answered per question before further ones are parked for the end. */
   maxDetoursPerQuestion: number;
+  /** Short, neutral acknowledgments said before the next question; rotated for variety. */
+  acknowledgments: string[];
 };
 
 export type AnswerSource = "tap" | "text" | "voice";

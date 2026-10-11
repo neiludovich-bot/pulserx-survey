@@ -1,9 +1,11 @@
-import type { StructuredOption, StructuredSurvey } from "./types";
+import { figureById } from "./nubeqa-figures";
+import type { EvidenceFigure, StructuredOption, StructuredSurvey } from "./types";
+
+const figures = (...ids: string[]): EvidenceFigure[] => ids.map(id => { const { url, alt, caption } = figureById(id); return { url, alt, caption }; });
 
 // Figures and numbers verified 2026-10-11 against nubeqahcp.com (efficacy and
 // dosing pages). Card wording is pending Bayer medical/legal/regulatory review.
 const HCP = "https://www.nubeqahcp.com";
-const FILES = `${HCP}/sites/g/files/vrxlpx57896/files`;
 
 /** One balanced reaction scale reused after every evidence card. */
 export function reactionOptions(setting: string): StructuredOption[] {
@@ -25,7 +27,8 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
   closing: "Thank you. That's everything we needed, and your responses have been recorded. You can close this window.",
   declined: "No problem. Thank you for your time. You can close this window.",
   stopped: "Understood, we'll stop here. Thank you for your time; the answers you gave have been saved. You can close this window.",
-  maxDetoursPerQuestion: 1,
+  maxDetoursPerQuestion: 3,
+  acknowledgments: ["Thank you.", "Got it.", "Thanks, that's helpful.", "Understood.", "Thanks for that."],
   rotationBlocks: [["c1_aranote", "c2_arasens", "c3_aramis"]],
   sectionLeads: {
     "About you": "Great, thank you. To start, a little about you.",
@@ -92,7 +95,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
       card: {
         id: "aranote", title: "ARANOTE", subtitle: "mCSPC · NUBEQA + ADT vs placebo + ADT (no docetaxel)",
         body: "Primary endpoint: radiographic progression-free survival (rPFS). HR 0.54 (95% CI 0.41–0.71; P<0.0001), a 46% reduction in the risk of radiographic progression or death.",
-        figures: [{ url: `${FILES}/2026-08/mcspc-aranote-chart.svg`, alt: "ARANOTE: risk of radiographic progression or death, NUBEQA + ADT vs ADT alone" }],
+        figures: figures("aranote-rpfs", "aranote-design", "aranote-duration", "aranote-ae", "aranote-discontinuation"),
         context: [
           "Design: randomized 2:1, double-blind, phase III; 669 patients (446 NUBEQA, 223 placebo), all on ADT.",
           "Median rPFS was not reached with NUBEQA vs 25 months with placebo; median follow-up was about 25 months.",
@@ -109,7 +112,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
       card: {
         id: "arasens", title: "ARASENS", subtitle: "mCSPC · NUBEQA + ADT + docetaxel vs placebo + ADT + docetaxel",
         body: "Primary endpoint: overall survival. HR 0.68 (95% CI 0.57–0.80; P<0.0001). Docetaxel 75 mg/m² every 21 days for 6 cycles in both arms.",
-        figures: [{ url: `${FILES}/2026-08/mhspc-chart.svg`, alt: "ARASENS: risk of death, NUBEQA + docetaxel + ADT vs docetaxel + ADT" }],
+        figures: figures("arasens-os", "arasens-4yr", "arasens-crpc", "arasens-secondary", "arasens-design", "arasens-ae"),
         context: [
           "Design: double-blind phase III; docetaxel was started within 6 weeks of NUBEQA or placebo, with ADT in both arms.",
           "At 4 years, 63% were alive with the NUBEQA combination vs 50% with docetaxel and ADT (landmark analysis).",
@@ -126,10 +129,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
       card: {
         id: "aramis", title: "ARAMIS", subtitle: "nmCRPC · NUBEQA + ADT vs placebo + ADT",
         body: "Primary endpoint: metastasis-free survival, median 40.4 vs 18.4 months, HR 0.41 (95% CI 0.34–0.50; P<0.0001). Overall survival: HR 0.69 (95% CI 0.53–0.88; P=0.003).",
-        figures: [
-          { url: `${FILES}/2025-06/mfs-adt-alone.svg`, alt: "ARAMIS: probability of metastasis-free survival, NUBEQA + ADT vs ADT alone" },
-          { url: `${FILES}/2025-06/nubeqa-adt-survival.svg`, alt: "ARAMIS: risk of death, NUBEQA + ADT vs ADT alone" },
-        ],
+        figures: figures("aramis-mfs", "aramis-os", "aramis-pain", "aramis-chemo", "aramis-design", "aramis-ae"),
         context: [
           "Design: double-blind, placebo-controlled, international; 955 NUBEQA vs 554 placebo, all on ADT.",
           "Time to pain progression: HR 0.65 (95% CI 0.53–0.79). Time to cytotoxic chemotherapy: HR 0.58 (95% CI 0.44–0.76).",
@@ -158,7 +158,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
       card: {
         id: "dosing", title: "Dosing at a glance", subtitle: "All approved settings",
         body: "600 mg (two 300 mg tablets) twice daily with food, with a GnRH agonist or antagonist. Reduce to 300 mg twice daily for severe renal impairment (eGFR 15–29, not on dialysis), moderate hepatic impairment (Child-Pugh B), or Grade ≥3 toxicity. Avoid combined P-gp and strong or moderate CYP3A4 inducers; NUBEQA inhibits BCRP.",
-        figures: [], context: [], sourceUrl: `${HCP}/dosing`, sourceLabel: "nubeqahcp.com · Dosing",
+        figures: figures("dosing-regimens", "ddi-overview", "ddi-anticoagulants"), context: [], sourceUrl: `${HCP}/dosing`, sourceLabel: "nubeqahcp.com · Dosing",
       },
       options: [
         { id: "ddi", label: "Drug interactions" },
