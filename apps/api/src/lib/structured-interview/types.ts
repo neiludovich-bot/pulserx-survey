@@ -67,6 +67,8 @@ export type StructuredSurvey = {
   welcome: string;
   closing: string;
   declined: string;
+  /** Shown when the participant ends early. */
+  stopped: string;
   questions: StructuredQuestion[];
   /** Question ids shown in a random order per participant (a rotation block). */
   rotationBlocks: string[][];

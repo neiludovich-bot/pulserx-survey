@@ -24,6 +24,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
   welcome: "Thank you for joining. This takes about 10 minutes. Tap an answer, or type or speak in your own words. You can ask me a question about NUBEQA at any point, and I'll answer from the official prescribing site before we continue.",
   closing: "Thank you. That's everything we needed, and your responses have been recorded. You can close this window.",
   declined: "No problem. Thank you for your time. You can close this window.",
+  stopped: "Understood, we'll stop here. Thank you for your time; the answers you gave have been saved. You can close this window.",
   maxDetoursPerQuestion: 1,
   rotationBlocks: [["c1_aranote", "c2_arasens", "c3_aramis"]],
   questions: [

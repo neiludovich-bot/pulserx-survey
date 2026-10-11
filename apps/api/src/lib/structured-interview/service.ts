@@ -71,7 +71,7 @@ function promptFor(survey: StructuredSurvey, state: InterviewState, returning = 
 /** Interviewer messages that introduce whatever the participant is now being asked. */
 function promptMessages(survey: StructuredSurvey, state: InterviewState): InterviewMessage[] {
   if (state.phase === "declined") return [message({ role: "interviewer", kind: "closing", content: survey.declined, questionId: null })];
-  if (state.phase === "complete") return [message({ role: "interviewer", kind: "closing", content: survey.closing, questionId: null })];
+  if (state.phase === "complete") return [message({ role: "interviewer", kind: "closing", content: state.endReason === "stopped" ? survey.stopped : survey.closing, questionId: null })];
   if ((state.phase === "follow_up" || state.phase === "detour_open") && state.pendingFollowUp) {
     return [message({ role: "interviewer", kind: "follow_up", content: state.pendingFollowUp.prompt, questionId: state.pendingFollowUp.questionId })];
   }
