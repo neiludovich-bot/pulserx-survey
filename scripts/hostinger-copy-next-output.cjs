@@ -47,6 +47,26 @@ const staticRoutes = [
     targetParts: ["surveys", "nubeqa"],
   },
   {
+    label: "/surveys/nubeqa/classic/",
+    sourceParts: ["surveys", "nubeqa", "classic.html"],
+    targetParts: ["surveys", "nubeqa", "classic"],
+  },
+  {
+    label: "/admin/surveys/nubeqa/results/",
+    sourceParts: ["admin", "surveys", "nubeqa", "results.html"],
+    targetParts: ["admin", "surveys", "nubeqa", "results"],
+  },
+  {
+    label: "/training/nubeqa/",
+    sourceParts: ["training", "nubeqa.html"],
+    targetParts: ["training", "nubeqa"],
+  },
+  {
+    label: "/admin/training/nubeqa/",
+    sourceParts: ["admin", "training", "nubeqa.html"],
+    targetParts: ["admin", "training", "nubeqa"],
+  },
+  {
     label: "/admin/",
     sourceParts: ["admin.html"],
     targetParts: ["admin"],
