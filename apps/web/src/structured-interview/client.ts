@@ -2,7 +2,7 @@ import { webEnv } from "../env";
 
 export type EvidenceCard = {
   id: string; title: string; subtitle: string; body: string;
-  figures: Array<{ url: string; alt: string }>;
+  figures: Array<{ url: string; alt: string; caption?: string }>;
   context?: string[];
   sourceUrl: string; sourceLabel: string;
 };
@@ -23,7 +23,7 @@ export type InterviewMessage = {
   content: string;
   questionId: string | null;
   createdAt: string;
-  payload?: { references?: Reference[]; source?: string; optionIds?: string[]; cardId?: string; cardTitle?: string };
+  payload?: { references?: Reference[]; figures?: Array<{ url: string; alt: string; caption?: string }>; source?: string; optionIds?: string[]; cardId?: string; cardTitle?: string };
 };
 
 export type Prompt =

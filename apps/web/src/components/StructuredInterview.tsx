@@ -46,34 +46,73 @@ function Paragraphs({ text, references = [] }: { text: string; references?: Refe
   return <>{text.split(/\n{2,}/).map((paragraph, i) => <p key={i}>{withCitations(paragraph, references)}</p>)}</>;
 }
 
-/** Chart and image assets cited in an answer, for the evidence panel. */
-function imageAssets(references: Reference[]) {
+type Figure = { url: string; alt: string; caption?: string; source?: string | null; sourceTitle?: string | null };
+
+/** Charts and images for an answer: assets the answer cited, then matching figures from the site library. */
+function messageFigures(message: InterviewMessage): Figure[] {
   const seen = new Set<string>();
-  return references.flatMap(reference => (reference.assets ?? [])
+  const keep = (url: string) => !seen.has(url) && Boolean(seen.add(url));
+  const cited = (message.payload?.references ?? []).flatMap(reference => (reference.assets ?? [])
     .filter(asset => ["IMAGE", "CHART", "TABLE"].includes(asset.assetKind.toUpperCase()) && /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(asset.url))
-    .filter(asset => !seen.has(asset.url) && Boolean(seen.add(asset.url)))
-    .map(asset => ({ url: asset.url, alt: asset.description ?? asset.title, source: reference.url, sourceTitle: reference.title })));
+    .filter(asset => keep(asset.url))
+    .map(asset => ({ url: asset.url, alt: asset.description ?? asset.title, caption: asset.title, source: reference.url, sourceTitle: reference.title })));
+  const library = (message.payload?.figures ?? []).filter(figure => keep(figure.url));
+  return [...cited, ...library];
 }
 
-type PanelImages = ReturnType<typeof imageAssets>;
-/** What the right-hand evidence panel shows: the trial card in play, plus images cited in answers. */
+type PanelImages = Figure[];
+/** What the right-hand evidence panel shows: the trial card in play, plus figures for answers. */
 type Panel = { card: EvidenceCard | null; images: PanelImages; current: boolean } | null;
 
-function ImageSet({ images }: { images: PanelImages }) {
+/** One figure at a time, with a caption, arrows, a counter and gentle auto-advance. */
+function FigureCarousel({ figures }: { figures: Figure[] }) {
+  const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const count = figures.length;
+  const key = figures.map(figure => figure.url).join("|");
+  useEffect(() => {
+    if (count < 2 || paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => setIndex(current => (current + 1) % count), 7000);
+    return () => window.clearInterval(timer);
+  }, [count, paused, key]);
+  if (!count) return null;
+  const figure = figures[Math.min(index, count - 1)]!;
+  const go = (step: number) => { setPaused(true); setIndex(current => (current + step + count) % count); };
   return (
-    <figure className={styles.plate} aria-label="Images from the prescribing site">
-      <header className={styles.plateHead}><h3 className={styles.plateTitle}>From the prescribing site</h3></header>
-      <div className={styles.plateFigures}>
-        {images.map(image => (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={image.url} src={image.url} alt={image.alt} loading="lazy" />
-        ))}
+    <div className={styles.carousel} onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
+      onFocus={() => setPaused(true)} aria-roledescription="carousel">
+      <div className={styles.carouselFrame}>
+        {/* Hosted on the manufacturer's HCP site; shown as published. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={figure.url} alt={figure.alt} />
       </div>
-      {images[0]?.source && (
-        <figcaption className={styles.plateSource}>
-          Source: <a href={images[0].source} target="_blank" rel="noreferrer">{images[0].sourceTitle ?? "Prescribing site"}</a>
-        </figcaption>
-      )}
+      <div className={styles.carouselBar}>
+        <p className={styles.carouselCaption} aria-live="polite">{figure.caption ?? figure.alt}</p>
+        {count > 1 && (
+          <div className={styles.carouselNav}>
+            <button type="button" onClick={() => go(-1)} aria-label="Previous figure">‹</button>
+            <span>{index + 1} / {count}</span>
+            <button type="button" onClick={() => go(1)} aria-label="Next figure">›</button>
+          </div>
+        )}
+      </div>
+      {/* Preload the rest so stepping through is instant. */}
+      <div hidden>{figures.map(item => <link key={item.url} rel="preload" as="image" href={item.url} />)}</div>
+    </div>
+  );
+}
+
+function ImageSet({ images }: { images: PanelImages }) {
+  const source = images.find(image => image.source);
+  return (
+    <figure className={styles.plate} aria-label="Figures from the prescribing site">
+      <header className={styles.plateHead}><h3 className={styles.plateTitle}>From the prescribing site</h3></header>
+      <FigureCarousel key={images.map(image => image.url).join("|")} figures={images} />
+      <figcaption className={styles.plateSource}>
+        Source: {source?.source
+          ? <a href={source.source} target="_blank" rel="noreferrer">{source.sourceTitle ?? "Prescribing site"}</a>
+          : <a href="https://www.nubeqahcp.com/" target="_blank" rel="noreferrer">nubeqahcp.com</a>}
+      </figcaption>
     </figure>
   );
 }
@@ -86,15 +125,7 @@ function EvidencePlate({ card }: { card: EvidenceCard }) {
         <p className={styles.plateSubtitle}>{card.subtitle}</p>
       </header>
       <p className={styles.plateBody}>{card.body}</p>
-      {card.figures.length > 0 && (
-        <div className={styles.plateFigures} data-count={card.figures.length}>
-          {card.figures.map(figure => (
-            // Hosted on the manufacturer's HCP site; shown as published.
-            // eslint-disable-next-line @next/next/no-img-element
-            <img key={figure.url} src={figure.url} alt={figure.alt} loading="eager" />
-          ))}
-        </div>
-      )}
+      {card.figures.length > 0 && <FigureCarousel key={card.id} figures={card.figures} />}
       {card.context && card.context.length > 0 && (
         <ul className={styles.plateContext} aria-label="Study context">
           {card.context.map(note => <li key={note}>{note}</li>)}
@@ -152,7 +183,7 @@ export function StructuredInterview({ surveySlug }: Props) {
     setMessages(previous => (replace ? response.messages : [...previous, ...response.messages]));
     const prompt = response.prompt;
     const latestImages = [...response.messages].reverse()
-      .map(message => (message.kind === "detour_answer" ? imageAssets(message.payload?.references ?? []) : []))
+      .map(message => (message.kind === "detour_answer" ? messageFigures(message) : []))
       .find(images => images.length > 0);
     if (prompt.type === "question" && prompt.question.card) {
       const card = prompt.question.card;
@@ -350,7 +381,7 @@ export function StructuredInterview({ surveySlug }: Props) {
     }
     if (message.kind === "detour_answer") {
       const references = message.payload?.references ?? [];
-      const images = imageAssets(references);
+      const images = messageFigures(message);
       return (
         <li key={message.id} className={styles.detour} ref={message.id === latestDetourId ? answerRef : undefined}>
           <div className={styles.detourBody}><Paragraphs text={message.content} references={references} /></div>

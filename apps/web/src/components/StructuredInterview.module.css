@@ -754,3 +754,79 @@
     max-height: 40vh;
   }
 }
+
+/* Figure carousel: one chart at a time, caption and controls beneath. */
+.carousel {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.carouselFrame {
+  background: #fff;
+  border: 1px solid var(--si-rule);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  padding: 8px;
+}
+
+.carouselFrame img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 46vh;
+  object-fit: contain;
+}
+
+.carouselBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.carouselCaption {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--si-ink);
+  min-width: 0;
+}
+
+.carouselNav {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--si-slate);
+  font-variant-numeric: tabular-nums;
+}
+
+.carouselNav button {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid var(--si-rule);
+  background: var(--si-surface);
+  color: var(--si-ink);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.carouselNav button:hover {
+  border-color: var(--si-blue);
+}
+
+@media (min-width: 1000px) {
+  .panel .carouselFrame img {
+    max-height: 38vh;
+  }
+
+  .panel .carouselFrame {
+    min-height: 180px;
+  }
+}
