@@ -3,6 +3,7 @@ import { webEnv } from "../env";
 export type EvidenceCard = {
   id: string; title: string; subtitle: string; body: string;
   figures: Array<{ url: string; alt: string }>;
+  context?: string[];
   sourceUrl: string; sourceLabel: string;
 };
 
@@ -12,7 +13,8 @@ export type QuestionView = {
   card: EvidenceCard | null;
 };
 
-export type Reference = { citationId: string; title: string | null; url: string | null };
+export type ReferenceAsset = { title: string; url: string; description: string | null; assetKind: string };
+export type Reference = { citationId: string; title: string | null; url: string | null; assets?: ReferenceAsset[] };
 
 export type InterviewMessage = {
   id: string;

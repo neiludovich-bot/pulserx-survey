@@ -46,6 +46,38 @@ function Paragraphs({ text, references = [] }: { text: string; references?: Refe
   return <>{text.split(/\n{2,}/).map((paragraph, i) => <p key={i}>{withCitations(paragraph, references)}</p>)}</>;
 }
 
+/** Chart and image assets cited in an answer, for the evidence panel. */
+function imageAssets(references: Reference[]) {
+  const seen = new Set<string>();
+  return references.flatMap(reference => (reference.assets ?? [])
+    .filter(asset => ["IMAGE", "CHART", "TABLE"].includes(asset.assetKind.toUpperCase()) && /\.(png|jpe?g|webp|gif|svg)(\?|$)/i.test(asset.url))
+    .filter(asset => !seen.has(asset.url) && Boolean(seen.add(asset.url)))
+    .map(asset => ({ url: asset.url, alt: asset.description ?? asset.title, source: reference.url, sourceTitle: reference.title })));
+}
+
+type PanelImages = ReturnType<typeof imageAssets>;
+/** What the right-hand evidence panel shows: the trial card in play, plus images cited in answers. */
+type Panel = { card: EvidenceCard | null; images: PanelImages; current: boolean } | null;
+
+function ImageSet({ images }: { images: PanelImages }) {
+  return (
+    <figure className={styles.plate} aria-label="Images from the prescribing site">
+      <header className={styles.plateHead}><h3 className={styles.plateTitle}>From the prescribing site</h3></header>
+      <div className={styles.plateFigures}>
+        {images.map(image => (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={image.url} src={image.url} alt={image.alt} loading="lazy" />
+        ))}
+      </div>
+      {images[0]?.source && (
+        <figcaption className={styles.plateSource}>
+          Source: <a href={images[0].source} target="_blank" rel="noreferrer">{images[0].sourceTitle ?? "Prescribing site"}</a>
+        </figcaption>
+      )}
+    </figure>
+  );
+}
+
 function EvidencePlate({ card }: { card: EvidenceCard }) {
   return (
     <figure className={styles.plate} aria-label={`${card.title} evidence`}>
@@ -62,6 +94,11 @@ function EvidencePlate({ card }: { card: EvidenceCard }) {
             <img key={figure.url} src={figure.url} alt={figure.alt} loading="eager" />
           ))}
         </div>
+      )}
+      {card.context && card.context.length > 0 && (
+        <ul className={styles.plateContext} aria-label="Study context">
+          {card.context.map(note => <li key={note}>{note}</li>)}
+        </ul>
       )}
       <figcaption className={styles.plateSource}>
         Source: <a href={card.sourceUrl} target="_blank" rel="noreferrer">{card.sourceLabel}</a>
@@ -84,6 +121,8 @@ export function StructuredInterview({ surveySlug }: Props) {
   const [data, setData] = useState<InterviewResponse | null>(null);
   const [messages, setMessages] = useState<InterviewMessage[]>([]);
   const [cards, setCards] = useState<Record<string, EvidenceCard>>({});
+  const [panel, setPanel] = useState<Panel>(null);
+  const [earlierOpen, setEarlierOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<{ label: string; echo: string | null } | null>(null);
@@ -110,9 +149,20 @@ export function StructuredInterview({ surveySlug }: Props) {
     setData(response);
     setMessages(previous => (replace ? response.messages : [...previous, ...response.messages]));
     const prompt = response.prompt;
+    const latestImages = [...response.messages].reverse()
+      .map(message => (message.kind === "detour_answer" ? imageAssets(message.payload?.references ?? []) : []))
+      .find(images => images.length > 0);
     if (prompt.type === "question" && prompt.question.card) {
       const card = prompt.question.card;
       setCards(previous => ({ ...previous, [prompt.question.id]: card }));
+      setPanel(previous => ({ card, current: true,
+        images: latestImages ?? (previous?.card?.id === card.id ? previous.images : []) }));
+    } else if (latestImages) {
+      setPanel(previous => ({ card: previous?.current ? previous.card : null, images: latestImages, current: true }));
+    } else {
+      // A follow-up about the card keeps it current; later questions show it as earlier evidence.
+      const keepCurrent = prompt.type === "follow_up";
+      setPanel(previous => (previous ? { ...previous, current: keepCurrent && previous.current } : previous));
     }
     if (prompt.type === "end") store.clear(surveySlug); else store.set(surveySlug, response.sessionId);
     if (readAloudRef.current) {
@@ -269,9 +319,55 @@ export function StructuredInterview({ surveySlug }: Props) {
   };
 
   const thread = useMemo(() => threadMessages(messages, prompt), [messages, prompt]);
+  // Earlier questions fold into an accordion; the current question's exchange stays open.
+  const { earlier, recent } = useMemo(() => {
+    const currentId = !prompt ? null : prompt.type === "question" ? prompt.question.id
+      : prompt.type === "follow_up" || prompt.type === "open_question" ? prompt.questionId : null;
+    let split = currentId ? thread.findIndex(m => m.role === "interviewer" && m.kind === "question" && m.questionId === currentId) : -1;
+    if (split < 0) split = prompt?.type === "end" ? Math.max(0, thread.length - 1) : thread.length;
+    // Keep the welcome note visible until the first answer.
+    if (thread.every(m => m.role !== "participant")) split = 0;
+    return { earlier: thread.slice(0, split), recent: thread.slice(split) };
+  }, [thread, prompt]);
+  const answeredEarlier = earlier.filter(m => m.role === "participant").length;
   const done = prompt?.type === "end";
   const progress = data?.progress;
   const share = progress ? Math.round((progress.answered / progress.total) * 100) : 0;
+
+  const renderMessage = (message: InterviewMessage) => {
+    const cardTitle = (message.questionId ? cards[message.questionId]?.title : undefined) ?? message.payload?.cardTitle;
+    if (message.role === "participant") {
+      return <li key={message.id} className={styles.answer}><p>{message.content}</p></li>;
+    }
+    if (message.kind === "detour_answer") {
+      const references = message.payload?.references ?? [];
+      const images = imageAssets(references);
+      return (
+        <li key={message.id} className={styles.detour}>
+          <div className={styles.detourBody}><Paragraphs text={message.content} references={references} /></div>
+          {images.length > 0 && <div className={styles.inlineOnly}><ImageSet images={images} /></div>}
+          {references.length > 0 && (
+            <ol className={styles.sources}>
+              {references.map(reference => (
+                <li key={reference.citationId}>{reference.url
+                  ? <a href={reference.url} target="_blank" rel="noreferrer">{reference.title ?? reference.url}</a>
+                  : reference.title}</li>
+              ))}
+            </ol>
+          )}
+        </li>
+      );
+    }
+    if (message.kind === "notice" || message.kind === "closing") {
+      return <li key={message.id} className={message.kind === "closing" ? styles.closing : styles.notice}><p>{message.content}</p></li>;
+    }
+    return (
+      <li key={message.id} className={styles.pastQuestion}>
+        {cardTitle && <span className={styles.pastCard}>{cardTitle}</span>}
+        <p>{message.content}</p>
+      </li>
+    );
+  };
 
   const composerPlaceholder = prompt?.type === "follow_up" ? "Type your answer"
     : prompt?.type === "open_question" ? "Type your question"
@@ -307,40 +403,16 @@ export function StructuredInterview({ surveySlug }: Props) {
         </div>
       </header>
 
+      <div className={styles.layout} data-panel={panel ? "on" : "off"}>
       <main className={styles.column}>
+        {earlier.length > 0 && (
+          <details className={styles.earlier} open={earlierOpen} onToggle={event => setEarlierOpen((event.target as HTMLDetailsElement).open)}>
+            <summary>Earlier questions <span className={styles.earlierCount}>{answeredEarlier} {answeredEarlier === 1 ? "answer" : "answers"}</span></summary>
+            <ol className={styles.thread}>{earlier.map(message => renderMessage(message))}</ol>
+          </details>
+        )}
         <ol className={styles.thread} aria-live="polite">
-          {thread.map(message => {
-            const cardTitle = (message.questionId ? cards[message.questionId]?.title : undefined) ?? message.payload?.cardTitle;
-            if (message.role === "participant") {
-              return <li key={message.id} className={styles.answer}><p>{message.content}</p></li>;
-            }
-            if (message.kind === "detour_answer") {
-              const references = message.payload?.references ?? [];
-              return (
-                <li key={message.id} className={styles.detour}>
-                  <div className={styles.detourBody}><Paragraphs text={message.content} references={references} /></div>
-                  {references.length > 0 && (
-                    <ol className={styles.sources}>
-                      {references.map(reference => (
-                        <li key={reference.citationId}>{reference.url
-                          ? <a href={reference.url} target="_blank" rel="noreferrer">{reference.title ?? reference.url}</a>
-                          : reference.title}</li>
-                      ))}
-                    </ol>
-                  )}
-                </li>
-              );
-            }
-            if (message.kind === "notice" || message.kind === "closing") {
-              return <li key={message.id} className={message.kind === "closing" ? styles.closing : styles.notice}><p>{message.content}</p></li>;
-            }
-            return (
-              <li key={message.id} className={styles.pastQuestion}>
-                {cardTitle && <span className={styles.pastCard}>{cardTitle}</span>}
-                <p>{message.content}</p>
-              </li>
-            );
-          })}
+          {recent.map(message => renderMessage(message))}
           {pending?.echo && <li className={`${styles.answer} ${styles.answerPending}`}><p>{pending.echo}</p></li>}
         </ol>
 
@@ -359,7 +431,8 @@ export function StructuredInterview({ surveySlug }: Props) {
             {prompt.type === "question" && (
               <>
                 {prompt.returning && <p className={styles.returning}>Back to where we were</p>}
-                {prompt.question.card && <EvidencePlate card={prompt.question.card} />}
+                {prompt.question.card && <div className={styles.inlineOnly}><EvidencePlate card={prompt.question.card} /></div>}
+                {prompt.question.card && <p className={styles.panelHint}>The {prompt.question.card.title} evidence is shown on the right.</p>}
                 <h2 className={styles.prompt}>{prompt.clarifying ? `So I record this accurately, which of these is closest? ${prompt.question.prompt}` : prompt.question.prompt}</h2>
                 {prompt.question.kind === "multi" && prompt.question.maxSelect && (
                   <p className={styles.hint}>{selected.length} of up to {prompt.question.maxSelect} selected</p>
@@ -415,6 +488,17 @@ export function StructuredInterview({ surveySlug }: Props) {
         )}
         <div ref={endRef} />
       </main>
+
+      {panel && (
+        <aside className={styles.panel} aria-label="Evidence">
+          {!panel.current && <p className={styles.panelLabel}>Shown earlier</p>}
+          <div className={styles.panelStack} data-current={panel.current}>
+            {panel.card && <EvidencePlate card={panel.card} />}
+            {panel.images.length > 0 && <ImageSet images={panel.images} />}
+          </div>
+        </aside>
+      )}
+      </div>
     </div>
   );
 }
