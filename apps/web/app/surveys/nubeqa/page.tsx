@@ -1,11 +1,11 @@
-import { MvpCustomGptSurveyModal } from "../../../src/components/MvpCustomGptSurveyModal";
+import type { Metadata } from "next";
+import { StructuredInterview } from "../../../src/components/StructuredInterview";
+
+export const metadata: Metadata = {
+  title: "NUBEQA HCP discussion",
+  description: "A 10-minute market research interview for healthcare professionals.",
+};
 
 export default function NubeqaSurveyPage() {
-  return (
-    <MvpCustomGptSurveyModal
-      surveySlug="nubeqa"
-      studyName="NUBEQA HCP MVP"
-      targetDurationSeconds={600}
-    />
-  );
+  return <StructuredInterview surveySlug="nubeqa" />;
 }
