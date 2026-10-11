@@ -133,6 +133,8 @@ export function StructuredInterview({ surveySlug }: Props) {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
+  const activeRef = useRef<HTMLElement | null>(null);
+  const answerRef = useRef<HTMLLIElement | null>(null);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
   const readAloudRef = useRef(false);
   const inFlightRef = useRef(false);
@@ -199,11 +201,17 @@ export function StructuredInterview({ surveySlug }: Props) {
 
   useEffect(() => { void boot(); }, [boot]);
 
+  // While waiting, show the pending line; once a new prompt arrives, bring its first line (or the
+  // answer to a side question) to the top so the whole question fits on screen.
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "end" });
+    const behavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+    if (pending) { endRef.current?.scrollIntoView({ behavior, block: "end" }); return; }
+    const target = (prompt?.type === "question" && prompt.returning ? answerRef.current : null) ?? activeRef.current ?? endRef.current;
+    target?.scrollIntoView({ behavior, block: target === endRef.current ? "end" : "start" });
   }, [messages, prompt, pending]);
 
   useEffect(() => { if (prompt && prompt.type !== "question") draftRef.current?.focus(); }, [prompt]);
+  useEffect(() => { if (!draft && draftRef.current) draftRef.current.style.height = ""; }, [draft]);
 
   const restart = useCallback(() => {
     store.clear(surveySlug);
@@ -330,6 +338,7 @@ export function StructuredInterview({ surveySlug }: Props) {
     return { earlier: thread.slice(0, split), recent: thread.slice(split) };
   }, [thread, prompt]);
   const answeredEarlier = earlier.filter(m => m.role === "participant").length;
+  const latestDetourId = [...recent].reverse().find(m => m.kind === "detour_answer")?.id ?? null;
   const done = prompt?.type === "end";
   const progress = data?.progress;
   const share = progress ? Math.round((progress.answered / progress.total) * 100) : 0;
@@ -343,7 +352,7 @@ export function StructuredInterview({ surveySlug }: Props) {
       const references = message.payload?.references ?? [];
       const images = imageAssets(references);
       return (
-        <li key={message.id} className={styles.detour}>
+        <li key={message.id} className={styles.detour} ref={message.id === latestDetourId ? answerRef : undefined}>
           <div className={styles.detourBody}><Paragraphs text={message.content} references={references} /></div>
           {images.length > 0 && <div className={styles.inlineOnly}><ImageSet images={images} /></div>}
           {references.length > 0 && (
@@ -427,11 +436,16 @@ export function StructuredInterview({ surveySlug }: Props) {
         {pending && <p className={styles.working} role="status">{pending.label}</p>}
 
         {!pending && prompt && prompt.type !== "end" && (
-          <section className={styles.active} aria-label="Current question">
+          <section className={styles.active} aria-label="Current question" ref={activeRef}>
             {prompt.type === "question" && (
               <>
                 {prompt.returning && <p className={styles.returning}>Back to where we were</p>}
-                {prompt.question.card && <div className={styles.inlineOnly}><EvidencePlate card={prompt.question.card} /></div>}
+                {prompt.question.card && (
+                  <details className={`${styles.inlineOnly} ${styles.inlineCard}`}>
+                    <summary>See the {prompt.question.card.title} chart and study details</summary>
+                    <EvidencePlate card={prompt.question.card} />
+                  </details>
+                )}
                 {!prompt.returning && !prompt.clarifying && prompt.question.narration && (
                   <div className={styles.narration}>
                     {prompt.question.narration.split(/\n{2,}/).map((paragraph, index) => <p key={index}>{paragraph}</p>)}
@@ -442,7 +456,8 @@ export function StructuredInterview({ surveySlug }: Props) {
                 {prompt.question.kind === "multi" && prompt.question.maxSelect && (
                   <p className={styles.hint}>{selected.length} of up to {prompt.question.maxSelect} selected</p>
                 )}
-                <div className={styles.options} role={prompt.question.kind === "single" ? "radiogroup" : "group"} aria-label={prompt.question.prompt}>
+                <div className={styles.options} data-compact={prompt.question.options.every(option => option.label.length <= 40) && prompt.question.options.length >= 4}
+                  role={prompt.question.kind === "single" ? "radiogroup" : "group"} aria-label={prompt.question.prompt}>
                   {prompt.question.options.map((option, index) => {
                     const isOn = selected.includes(option.id);
                     return (
@@ -465,8 +480,13 @@ export function StructuredInterview({ surveySlug }: Props) {
             )}
 
             <form className={styles.composer} onSubmit={event => { event.preventDefault(); sendText(draft, "text"); }}>
-              <textarea ref={draftRef} value={draft} rows={2} placeholder={composerPlaceholder} aria-label={composerPlaceholder}
-                onChange={event => setDraft(event.target.value)}
+              <textarea ref={draftRef} value={draft} rows={1} placeholder={composerPlaceholder} aria-label={composerPlaceholder}
+                onChange={event => {
+                  setDraft(event.target.value);
+                  // Grow with the text, up to about five lines.
+                  event.target.style.height = "auto";
+                  event.target.style.height = `${Math.min(event.target.scrollHeight, 132)}px`;
+                }}
                 onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendText(draft, "text"); } }} />
               <div className={styles.composerActions}>
                 {typeof window !== "undefined" && typeof MediaRecorder !== "undefined" && (

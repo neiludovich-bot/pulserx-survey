@@ -589,3 +589,112 @@
   line-height: 1.6;
   max-width: 62ch;
 }
+
+/* Sizing: keep the narration, question and every answer on one screen. */
+.active {
+  margin-top: 20px;
+  gap: 12px;
+  scroll-margin-top: 76px;
+}
+
+.detour {
+  scroll-margin-top: 76px;
+}
+
+.narration {
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  gap: 6px;
+}
+
+.prompt {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.options {
+  gap: 6px;
+}
+
+.option {
+  padding: 9px 12px;
+  gap: 10px;
+  font-size: 0.9375rem;
+}
+
+.optionKey {
+  width: 20px;
+  height: 20px;
+  font-size: 0.6875rem;
+}
+
+@media (min-width: 560px) {
+  .options[data-compact="true"] {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Composer: one line with its buttons beside it; grows as you type. */
+.composer {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  margin-top: 2px;
+}
+
+.composer textarea {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  resize: none;
+  padding: 7px 0;
+  line-height: 1.45;
+}
+
+.composerActions {
+  flex: none;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.composerActions .primary,
+.composerActions .secondary,
+.composerActions .mic {
+  padding: 6px 12px;
+  min-height: 36px;
+  font-size: 0.875rem;
+}
+
+/* Phones: the evidence card folds behind a toggle; the narration already gives the results. */
+.inlineCard > summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--si-blue);
+  padding: 2px 0;
+}
+
+.inlineCard[open] > summary {
+  margin-bottom: 10px;
+}
+
+.barInner {
+  padding-top: 10px;
+  padding-bottom: 8px;
+}
+
+@media (max-width: 520px) {
+  .prompt {
+    font-size: 1rem;
+  }
+
+  .composer {
+    flex-wrap: wrap;
+  }
+
+  .composerActions {
+    margin-left: auto;
+  }
+}
