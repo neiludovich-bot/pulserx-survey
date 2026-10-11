@@ -703,6 +703,7 @@ export const openAIDebugTraceSchema = z.object({
     "moderator_evidence",
     "source_question_plan",
     "structured_reply",
+    "objection_coaching",
   ]),
   promptVersion: z.string().min(1),
   requestedAt: z.string().datetime(),
@@ -2564,3 +2565,30 @@ export const structuredReplyResultSchema = z.object({
   givesReason: z.boolean(),
 });
 export type StructuredReplyResult = z.infer<typeof structuredReplyResultSchema>;
+
+/** Objection trainer: score a sales rep's reply to a simulated HCP objection. */
+export const objectionCoachingInputSchema = z.object({
+  brand: z.string().min(1),
+  persona: z.string().min(1),
+  objection: z.string().min(1),
+  setting: z.string().min(1),
+  criteria: z.array(z.object({ id: z.string().min(1), label: z.string().min(1), description: z.string().min(1) })).min(1),
+  rules: z.array(z.string().min(1)).min(1),
+  approvedFacts: z.array(z.string().min(1)).min(1),
+  reply: z.string().min(1).max(6000),
+});
+export type ObjectionCoachingInput = z.infer<typeof objectionCoachingInputSchema>;
+
+export const objectionCoachingResultSchema = z.object({
+  criteria: z.array(z.object({ id: z.string(), status: z.enum(["met", "partial", "missed"]), note: z.string() })),
+  compliance: z.array(z.object({
+    issue: z.enum(["off_label", "comparative_claim", "wrong_trial_or_setting", "inaccurate_number", "missing_fair_balance", "unsupported_claim"]),
+    quote: z.string(),
+    explanation: z.string(),
+  })),
+  score: z.number().int().min(1).max(5),
+  strengths: z.array(z.string()),
+  improvements: z.array(z.string()),
+  hcpReaction: z.string(),
+});
+export type ObjectionCoachingResult = z.infer<typeof objectionCoachingResultSchema>;

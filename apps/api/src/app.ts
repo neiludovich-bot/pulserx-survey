@@ -83,6 +83,7 @@ import { prisma } from "./lib/prisma";
 import { getStructuredInterview, speakStructuredInterview, startStructuredInterview, StructuredInterviewError, structuredSurveyFor, submitStructuredTurn } from "./lib/structured-interview/service";
 import { interviewsToCsv, summarize } from "./lib/structured-interview/results";
 import { listInterviews } from "./lib/structured-interview/store";
+import { getTrainer, moveTrainer, replyToObjection, speakObjection, startTrainer, TrainerError, trainerResults } from "./lib/objection-trainer/service";
 import { websiteTableSchema } from "@interview/schemas";
 import { renderWebsiteTable } from "./lib/website-table-renderer";
 import {
@@ -248,6 +249,42 @@ export function buildApp() {
       return reply.header("Content-Type", "text/csv; charset=utf-8")
         .header("Content-Disposition", `attachment; filename="${survey.slug}-interviews.csv"`).send(`\uFEFF${csv}`);
     } catch (error) { return structuredError(reply, error); }
+  });
+
+  // Objection trainer: sales reps practice responses to simulated HCP objections.
+  const trainerError = (reply: FastifyReply, error: unknown) => {
+    const statusCode = error instanceof TrainerError ? error.statusCode : 500;
+    if (statusCode >= 500) console.error(error);
+    return reply.status(statusCode).send({ message: error instanceof TrainerError ? error.message : "Something went wrong. Please try again." });
+  };
+  app.post<{ Body: unknown }>("/trainer/start", async (request, reply) => {
+    const body = z.object({ program: z.string().min(1).max(40), repName: z.string().min(1).max(80), team: z.string().max(80).optional() }).safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ message: "Enter your name to start." });
+    try { return await startTrainer(body.data.program, body.data.repName, body.data.team ?? null); } catch (error) { return trainerError(reply, error); }
+  });
+  app.post<{ Body: unknown }>("/trainer/reply", async (request, reply) => {
+    const body = z.object({ sessionId: z.string().min(1).max(100), text: z.string().min(1).max(6000), source: z.enum(["text", "voice"]).optional() }).safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ message: "Type or say your response to the doctor." });
+    const callGroupId = randomUUID();
+    return withModelCallTimingContext({ callGroupId }, async () => {
+      try { return await replyToObjection(body.data.sessionId, body.data.text, body.data.source ?? "text"); } catch (error) { return trainerError(reply, error); }
+    });
+  });
+  app.post<{ Body: unknown }>("/trainer/move", async (request, reply) => {
+    const body = z.object({ sessionId: z.string().min(1).max(100), action: z.enum(["retry", "next", "finish"]) }).safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ message: "Invalid request." });
+    try { return await moveTrainer(body.data.sessionId, body.data.action); } catch (error) { return trainerError(reply, error); }
+  });
+  app.get<{ Params: { sessionId: string } }>("/trainer/sessions/:sessionId", async (request, reply) => {
+    try { return await getTrainer(request.params.sessionId); } catch (error) { return trainerError(reply, error); }
+  });
+  app.post<{ Body: unknown }>("/trainer/speech", async (request, reply) => {
+    const body = z.object({ sessionId: z.string().min(1).max(100) }).safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ message: "Invalid request." });
+    try { return await speakObjection(body.data.sessionId); } catch (error) { return trainerError(reply, error); }
+  });
+  app.get<{ Params: { program: string } }>("/admin/trainer/:program/results", async (request, reply) => {
+    try { return await trainerResults(request.params.program); } catch (error) { return trainerError(reply, error); }
   });
 
   app.post<{

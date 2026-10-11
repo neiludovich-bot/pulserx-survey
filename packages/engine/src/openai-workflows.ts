@@ -3,7 +3,7 @@ import { join } from "node:path";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { conversationTurnSystemPrompt } from "@interview/prompts";
-import { structuredReplyInputSchema, structuredReplyResultSchema, type StructuredReplyInput, type StructuredReplyResult } from "@interview/schemas";
+import { structuredReplyInputSchema, structuredReplyResultSchema, type StructuredReplyInput, type StructuredReplyResult, objectionCoachingInputSchema, objectionCoachingResultSchema, type ObjectionCoachingInput, type ObjectionCoachingResult } from "@interview/schemas";
 import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnResultSchemaForQuestion, conversationTurnContextSchema, conversationWebsiteAnswerSchema, type ConversationTurnContext } from "@interview/schemas";
 import { validateConversationObservation } from "./conversation-runtime";
 import { coalesceConversationSources } from "./conversation-sources";
@@ -116,7 +116,8 @@ type CallType =
   | "single_call_conversation"
   | "website_answer"
   | "turn_route"
-  | "structured_reply";
+  | "structured_reply"
+  | "objection_coaching";
 
 type ModelConfig = {
   analysisModel: string;
@@ -650,6 +651,30 @@ export class OpenAIResponsesGateway {
     return { ...call, result: { ...call.result, optionIds } };
   }
 
+  /** Score a sales rep's reply to a simulated HCP objection against a rubric, approved facts and compliance rules. */
+  async coachObjectionReply(input: ObjectionCoachingInput) {
+    const parsed = objectionCoachingInputSchema.parse(input);
+    const call = await this.runStructuredCall<ObjectionCoachingResult>({
+      callType: "objection_coaching", model: this.config.sourceModel ?? this.config.analysisModel,
+      promptVersion: "objection-coaching-v1", schemaName: "objection_coaching_v1", schema: objectionCoachingResultSchema,
+      instructions: [
+        `You coach pharmaceutical sales representatives practicing how to respond to a healthcare professional's objection about ${parsed.brand}.`,
+        "Judge the rep's reply against the criteria, the approved facts and the compliance rules. Be fair, specific and brief; write for a busy rep.",
+        "criteria: one entry per listed criterion id, status met, partial or missed, with a one-sentence note that cites what the rep did or did not say.",
+        "compliance: list every breach of the rules. quote = the rep's exact words (short), explanation = one sentence. Any number, trial result or claim not supported by the approved facts is inaccurate_number or unsupported_claim. Claiming or implying superiority to another product without head-to-head data is comparative_claim. Discussing safety or tolerability without any mention of warnings or the safety information is missing_fair_balance. Empty list if none.",
+        "score 1-5: 5 = all criteria met and compliant; 4 = minor gaps; 3 = some criteria missed; 2 = most missed or any compliance breach; 1 = off-topic, empty, or a serious breach such as an off-label or false claim. Any compliance breach caps the score at 2.",
+        "strengths: up to 2 short points. improvements: up to 3 short, actionable points, each naming the exact fact or wording to use from the approved facts.",
+        `hcpReaction: one or two sentences in the voice of ${parsed.persona}, reacting realistically to the reply (convinced, unconvinced, wants more data, or concerned by an inaccuracy).`,
+        "Never introduce facts beyond the approved facts.",
+      ],
+      input: parsed, metadata: {},
+    });
+    const criteria = parsed.criteria.map(criterion => call.result.criteria.find(item => item.id === criterion.id)
+      ?? { id: criterion.id, status: "missed" as const, note: "Not addressed." });
+    const score = call.result.compliance.length ? Math.min(call.result.score, 2) : call.result.score;
+    return { ...call, result: { ...call.result, criteria, score, strengths: call.result.strengths.slice(0, 2), improvements: call.result.improvements.slice(0, 3) } };
+  }
+
   async answerFromWebsite(input: ModeratorEvidenceSelectionInput) {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
     let repairFeedback: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint" | null = null;
@@ -711,7 +736,7 @@ export class OpenAIResponsesGateway {
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
       ? (callType === "conversation_interpretation" ? this.config.conversationReasoningEffort ?? "low" : callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : callType === "moderator_plan" ? this.config.moderatorReasoningEffort ?? this.config.interpretationReasoningEffort : callType === "turn_route" ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
-    const effectiveReasoningEffort = callType === "structured_reply" ? (reasoningEffort !== undefined ? "none" : undefined) : callType === "single_call_conversation" ? schemaName === "conversation_turn_v2" ? "low" : "none" : reasoningEffort;
+    const effectiveReasoningEffort = callType === "structured_reply" ? (reasoningEffort !== undefined ? "none" : undefined) : callType === "objection_coaching" ? (reasoningEffort !== undefined ? "low" : undefined) : callType === "single_call_conversation" ? schemaName === "conversation_turn_v2" ? "low" : "none" : reasoningEffort;
     const effectiveMetadata = { ...metadata, ...(effectiveReasoningEffort ? { reasoning_effort: effectiveReasoningEffort } : {}) };
     const requestPayload = {
       model,
