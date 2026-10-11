@@ -702,6 +702,7 @@ export const openAIDebugTraceSchema = z.object({
     "moderator_phrasing",
     "moderator_evidence",
     "source_question_plan",
+    "structured_reply",
   ]),
   promptVersion: z.string().min(1),
   requestedAt: z.string().datetime(),
@@ -2542,3 +2543,24 @@ export * from "./conversation-state";
 export * from "./conversation-turn";
 
 export * from './website-index';
+
+/** Structured interview: interpret a typed or spoken reply against the open question's options. */
+export const structuredReplyInputSchema = z.object({
+  brand: z.string().min(1),
+  question: z.string().min(1),
+  questionKind: z.enum(["single", "multi"]),
+  maxSelect: z.number().int().positive().nullable(),
+  options: z.array(z.object({ id: z.string().min(1), label: z.string().min(1) })).min(1),
+  /** The previous interviewer message, for context such as an evidence card. */
+  context: z.string().nullable(),
+  reply: z.string().min(1).max(4000),
+});
+export type StructuredReplyInput = z.infer<typeof structuredReplyInputSchema>;
+
+export const structuredReplyResultSchema = z.object({
+  intent: z.enum(["answer", "question", "answer_and_question", "unclear", "stop"]),
+  optionIds: z.array(z.string()),
+  question: z.string().nullable(),
+  givesReason: z.boolean(),
+});
+export type StructuredReplyResult = z.infer<typeof structuredReplyResultSchema>;

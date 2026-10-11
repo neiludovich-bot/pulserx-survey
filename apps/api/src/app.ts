@@ -36,7 +36,8 @@ import {
   updateStudySourceContextNotesSchema,
   updateStudySettingsSchema,
 } from "@interview/schemas";
-import Fastify from "fastify";
+import Fastify, { type FastifyReply } from "fastify";
+import { z } from "zod";
 import { env } from "./env";
 import {
   AdminAuthError,
@@ -79,6 +80,9 @@ import {
 import { previewSourceImages } from "./lib/source-preview-service";
 import { applyWebsiteIndex, websiteIndexReports } from "./lib/website-index-service";
 import { prisma } from "./lib/prisma";
+import { getStructuredInterview, speakStructuredInterview, startStructuredInterview, StructuredInterviewError, structuredSurveyFor, submitStructuredTurn } from "./lib/structured-interview/service";
+import { interviewsToCsv, summarize } from "./lib/structured-interview/results";
+import { listInterviews } from "./lib/structured-interview/store";
 import { websiteTableSchema } from "@interview/schemas";
 import { renderWebsiteTable } from "./lib/website-table-renderer";
 import {
@@ -192,6 +196,58 @@ export function buildApp() {
           error instanceof Error ? error.message : "Unable to create session.",
       });
     }
+  });
+
+  // Structured interview: fixed guide, tappable options, grounded detours.
+  const structuredTurnSchema = z.object({
+    sessionId: z.string().min(1).max(100),
+    action: z.enum(["select", "text", "skip", "stop"]),
+    optionIds: z.array(z.string().min(1).max(100)).max(20).optional(),
+    text: z.string().max(4000).optional(),
+    source: z.enum(["tap", "text", "voice"]).optional(),
+  });
+  const structuredError = (reply: FastifyReply, error: unknown) => {
+    const statusCode = error instanceof StructuredInterviewError ? error.statusCode : 500;
+    if (statusCode >= 500) console.error(error);
+    return reply.status(statusCode).send({ message: error instanceof StructuredInterviewError ? error.message : "Something went wrong. Please try again." });
+  };
+  app.post<{ Body: unknown }>("/survey/structured/start", async (request, reply) => {
+    const body = z.object({ surveySlug: z.string().min(1).max(40) }).safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ message: "Invalid start payload." });
+    try { return await startStructuredInterview(body.data.surveySlug); } catch (error) { return structuredError(reply, error); }
+  });
+  app.post<{ Body: unknown }>("/survey/structured/turn", async (request, reply) => {
+    const body = structuredTurnSchema.safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ message: "Invalid turn payload." });
+    const callGroupId = randomUUID();
+    return withModelCallTimingContext({ callGroupId }, async () => {
+      const startedAt = performance.now();
+      try { return await submitStructuredTurn(body.data); }
+      catch (error) { return structuredError(reply, error); }
+      finally { console.info(JSON.stringify({ event: "structured_turn_timing", callGroupId, action: body.data.action, elapsedMs: Math.round(performance.now() - startedAt) })); }
+    });
+  });
+  app.get<{ Params: { sessionId: string } }>("/survey/structured/sessions/:sessionId", async (request, reply) => {
+    try { return await getStructuredInterview(request.params.sessionId); } catch (error) { return structuredError(reply, error); }
+  });
+  app.post<{ Body: unknown }>("/survey/structured/speech", async (request, reply) => {
+    const body = z.object({ sessionId: z.string().min(1).max(100) }).safeParse(request.body);
+    if (!body.success) return reply.status(400).send({ message: "Invalid speech payload." });
+    try { return await speakStructuredInterview(body.data.sessionId); } catch (error) { return structuredError(reply, error); }
+  });
+  app.get<{ Params: { surveySlug: string } }>("/admin/structured-interview/:surveySlug/results", async (request, reply) => {
+    const survey = structuredSurveyFor(request.params.surveySlug);
+    if (!survey) return reply.status(404).send({ message: "Survey not found." });
+    try { return summarize(survey, await listInterviews(survey)); } catch (error) { return structuredError(reply, error); }
+  });
+  app.get<{ Params: { surveySlug: string } }>("/admin/structured-interview/:surveySlug/export.csv", async (request, reply) => {
+    const survey = structuredSurveyFor(request.params.surveySlug);
+    if (!survey) return reply.status(404).send({ message: "Survey not found." });
+    try {
+      const csv = interviewsToCsv(survey, await listInterviews(survey));
+      return reply.header("Content-Type", "text/csv; charset=utf-8")
+        .header("Content-Disposition", `attachment; filename="${survey.slug}-interviews.csv"`).send(`\uFEFF${csv}`);
+    } catch (error) { return structuredError(reply, error); }
   });
 
   app.post<{

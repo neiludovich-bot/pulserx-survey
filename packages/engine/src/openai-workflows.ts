@@ -3,6 +3,7 @@ import { join } from "node:path";
 import OpenAI from "openai";
 import { zodTextFormat } from "openai/helpers/zod";
 import { conversationTurnSystemPrompt } from "@interview/prompts";
+import { structuredReplyInputSchema, structuredReplyResultSchema, type StructuredReplyInput, type StructuredReplyResult } from "@interview/schemas";
 import { conversationTurnInputSchema, conversationTurnResultSchema, conversationTurnResultSchemaForQuestion, conversationTurnContextSchema, conversationWebsiteAnswerSchema, type ConversationTurnContext } from "@interview/schemas";
 import { validateConversationObservation } from "./conversation-runtime";
 import { coalesceConversationSources } from "./conversation-sources";
@@ -114,7 +115,8 @@ type CallType =
   | "conversation_interpretation"
   | "single_call_conversation"
   | "website_answer"
-  | "turn_route";
+  | "turn_route"
+  | "structured_reply";
 
 type ModelConfig = {
   analysisModel: string;
@@ -624,6 +626,30 @@ export class OpenAIResponsesGateway {
     return { ...call, result: validateModeratorPhrasing(parsed, call.result) };
   }
 
+  /** One fast call that maps a free-text reply onto the open question's options. */
+  async interpretStructuredReply(input: StructuredReplyInput) {
+    const parsed = structuredReplyInputSchema.parse(input);
+    const call = await this.runStructuredCall<StructuredReplyResult>({
+      callType: "structured_reply", model: this.config.analysisModel,
+      promptVersion: "structured-reply-v1", schemaName: "structured_reply_v1", schema: structuredReplyResultSchema,
+      instructions: [
+        `You record a healthcare professional's answer in a market research interview about ${parsed.brand}.`,
+        "Classify the reply to the current question and map it to the listed option ids.",
+        "intent: \"answer\" when the reply answers the question; \"question\" when it only asks something (about the drug, data, or the survey); \"answer_and_question\" when it does both; \"stop\" when they want to end the interview; \"unclear\" when it does not answer and is not a question.",
+        "optionIds: the option ids the reply clearly supports, using only ids from the list. For a single-choice question return at most one. For multi-choice return at most maxSelect. Return [] if no option is clearly supported. Never guess: an ambiguous or off-topic reply maps to [].",
+        "Map by meaning, not by keywords. A reply that names something not listed maps to the option with id \"other\" if it exists.",
+        "question: when intent includes a question, restate it as one self-contained question; otherwise null.",
+        "givesReason: true only if the reply itself explains why, gives an example, or adds a specific detail beyond picking an option.",
+        "Be neutral. Do not infer sentiment that is not stated.",
+      ],
+      input: parsed, metadata: {},
+    });
+    const known = new Set(parsed.options.map(option => option.id));
+    const optionIds = [...new Set(call.result.optionIds)].filter(id => known.has(id))
+      .slice(0, parsed.questionKind === "single" ? 1 : parsed.maxSelect ?? parsed.options.length);
+    return { ...call, result: { ...call.result, optionIds } };
+  }
+
   async answerFromWebsite(input: ModeratorEvidenceSelectionInput) {
     const parsed = moderatorEvidenceSelectionInputSchema.parse(input);
     let repairFeedback: "invalid_output" | "unsupported_number" | "too_verbose" | "unrequested_endpoint" | null = null;
@@ -685,7 +711,7 @@ export class OpenAIResponsesGateway {
     // its fast path. Only send the parameter to documented supported families.
     const reasoningEffort = /^gpt-5\.(?:4(?:-mini|-nano)?|5)(?:-\d{4}-\d{2}-\d{2})?$/.test(model) && !["phrasing", "moderator_phrasing"].includes(callType)
       ? (callType === "conversation_interpretation" ? this.config.conversationReasoningEffort ?? "low" : callType === "source_grounding_review" ? this.config.groundingReasoningEffort : callType === "source_composition" ? this.config.compositionReasoningEffort : callType === "moderator_plan" ? this.config.moderatorReasoningEffort ?? this.config.interpretationReasoningEffort : callType === "turn_route" ? this.config.interpretationReasoningEffort : undefined) ?? this.config.reasoningEffort ?? "medium" : undefined;
-    const effectiveReasoningEffort = callType === "single_call_conversation" ? schemaName === "conversation_turn_v2" ? "low" : "none" : reasoningEffort;
+    const effectiveReasoningEffort = callType === "structured_reply" ? "none" : callType === "single_call_conversation" ? schemaName === "conversation_turn_v2" ? "low" : "none" : reasoningEffort;
     const effectiveMetadata = { ...metadata, ...(effectiveReasoningEffort ? { reasoning_effort: effectiveReasoningEffort } : {}) };
     const requestPayload = {
       model,
