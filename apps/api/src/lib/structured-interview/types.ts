@@ -30,6 +30,8 @@ export type EvidenceCard = {
   /** Pre-approved stimulus text. Never rewritten by a model. */
   body: string;
   figures: EvidenceFigure[];
+  /** Short notes shown under the figure: design, supporting results, limitations. */
+  context: string[];
   sourceUrl: string;
   sourceLabel: string;
 };
