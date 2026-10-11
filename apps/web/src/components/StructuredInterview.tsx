@@ -380,8 +380,7 @@ export function StructuredInterview({ surveySlug }: Props) {
 
   const composerPlaceholder = prompt?.type === "follow_up" ? "Type your answer"
     : prompt?.type === "open_question" ? "Type your question"
-    : question?.kind === "multi" ? "Add a comment, answer in your own words, or ask a question"
-    : "Add a comment before tapping, answer in your own words, or ask a question";
+    : "Type a comment or a question";
 
   return (
     <div className={`${styles.root} ${sans.variable} ${serif.variable}`}>

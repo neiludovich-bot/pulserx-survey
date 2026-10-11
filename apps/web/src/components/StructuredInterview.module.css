@@ -698,3 +698,48 @@
     margin-left: auto;
   }
 }
+
+.composer textarea {
+  overflow-y: auto;
+}
+
+.composer textarea::placeholder {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Keep the whole evidence card inside the panel on a laptop screen. */
+.panel .plate {
+  padding: 14px 16px 10px;
+}
+
+.panel .plateTitle {
+  font-size: 1.25rem;
+}
+
+.panel .plateBody {
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.panel .plateFigures {
+  margin-top: 10px;
+}
+
+.panel .plateFigures img {
+  max-height: 44vh;
+  object-fit: contain;
+}
+
+.panel .plateContext {
+  margin-top: 10px;
+  padding-top: 8px;
+  font-size: 0.8125rem;
+  gap: 4px;
+}
+
+.panel .plateSource {
+  margin-top: 8px;
+  padding-top: 6px;
+}
