@@ -21,7 +21,7 @@ export type InterviewMessage = {
   content: string;
   questionId: string | null;
   createdAt: string;
-  payload?: { references?: Reference[]; source?: string; optionIds?: string[]; cardId?: string };
+  payload?: { references?: Reference[]; source?: string; optionIds?: string[]; cardId?: string; cardTitle?: string };
 };
 
 export type Prompt =

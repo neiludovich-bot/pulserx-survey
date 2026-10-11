@@ -95,22 +95,27 @@ export function StructuredInterview({ surveySlug }: Props) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const endRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<HTMLTextAreaElement | null>(null);
-  const readAloudRef = useRef(readAloud);
-  readAloudRef.current = readAloud;
+  const readAloudRef = useRef(false);
+  const inFlightRef = useRef(false);
+  const lastQuestionRef = useRef<string | null>(null);
 
   const prompt = data?.prompt ?? null;
   const busy = pending !== null;
 
   const absorb = useCallback((response: InterviewResponse, replace: boolean) => {
+    const after = response.prompt.type === "question" ? response.prompt.question.id : null;
+    // Returning from a side question keeps any boxes already ticked.
+    if (!after || lastQuestionRef.current !== after) setSelected([]);
+    lastQuestionRef.current = after;
     setData(response);
     setMessages(previous => (replace ? response.messages : [...previous, ...response.messages]));
-    if (response.prompt.type === "question" && response.prompt.question.card) {
-      const card = response.prompt.question.card;
-      setCards(previous => ({ ...previous, [response.prompt.type === "question" ? response.prompt.question.id : ""]: card }));
+    const prompt = response.prompt;
+    if (prompt.type === "question" && prompt.question.card) {
+      const card = prompt.question.card;
+      setCards(previous => ({ ...previous, [prompt.question.id]: card }));
     }
-    setSelected([]);
-    if (response.prompt.type === "end") store.clear(surveySlug); else store.set(surveySlug, response.sessionId);
-    if (readAloudRef.current && response.prompt.type !== "end") {
+    if (prompt.type === "end") store.clear(surveySlug); else store.set(surveySlug, response.sessionId);
+    if (readAloudRef.current) {
       speakLatest(response.sessionId).then(result => {
         if (!result.audio) return;
         audioRef.current?.pause();
@@ -128,7 +133,11 @@ export function StructuredInterview({ surveySlug }: Props) {
       const existing = store.get(surveySlug);
       if (existing) {
         try { absorb(await resumeInterview(existing), true); return; }
-        catch { store.clear(surveySlug); }
+        catch (cause) {
+          // Only a missing interview starts over; a network blip should not lose progress.
+          if ((cause as { status?: number }).status !== 404) throw cause;
+          store.clear(surveySlug);
+        }
       }
       absorb(await startInterview(surveySlug), true);
     } catch (cause) {
@@ -146,8 +155,15 @@ export function StructuredInterview({ surveySlug }: Props) {
 
   useEffect(() => { if (prompt && prompt.type !== "question") draftRef.current?.focus(); }, [prompt]);
 
+  const restart = useCallback(() => {
+    store.clear(surveySlug);
+    setData(null); setMessages([]); setCards({}); setSelected([]); setDraft("");
+    void boot();
+  }, [boot, surveySlug]);
+
   const submit = useCallback(async (input: TurnInput, label: string, echo: string | null) => {
-    if (!data) return;
+    if (!data || inFlightRef.current) return;
+    inFlightRef.current = true;
     audioRef.current?.pause();
     setError(null);
     setConfirmStop(false);
@@ -157,22 +173,25 @@ export function StructuredInterview({ surveySlug }: Props) {
       setDraft("");
     } catch (cause) {
       const status = (cause as { status?: number }).status;
-      if (status === 404) { store.clear(surveySlug); }
-      setError({ message: cause instanceof Error ? cause.message : "Your answer was not saved.", retry: status === 404 ? null : () => void submit(input, label, echo) });
+      setError(status === 404
+        ? { message: "This interview has expired. Start again to continue.", retry: restart, }
+        : { message: cause instanceof Error ? cause.message : "Your answer was not saved.", retry: () => void submit(input, label, echo) });
     } finally {
+      inFlightRef.current = false;
       setPending(null);
     }
-  }, [absorb, data, surveySlug]);
+  }, [absorb, data, restart]);
 
   const question = prompt?.type === "question" ? prompt.question : null;
-  const optionLabel = (id: string) => question?.options.find(o => o.id === id)?.label ?? id;
+  const labelsFor = (ids: string[]) => ids.map(id => question?.options.find(o => o.id === id)?.label ?? id).join("; ");
 
   const choose = useCallback((optionId: string) => {
-    if (!question || busy) return;
+    if (!question || busy || recording) return;
     if (question.kind === "single") {
       const comment = draft.trim();
+      const label = question.options.find(o => o.id === optionId)?.label ?? optionId;
       void submit({ action: "select", optionIds: [optionId], text: comment || undefined, source: "tap" }, "Saving your answer…",
-        [optionLabel(optionId), comment].filter(Boolean).join(" — "));
+        [label, comment].filter(Boolean).join(" — "));
       return;
     }
     const option = question.options.find(o => o.id === optionId);
@@ -183,14 +202,13 @@ export function StructuredInterview({ surveySlug }: Props) {
       if (question.maxSelect && withoutExclusive.length >= question.maxSelect) return withoutExclusive;
       return [...withoutExclusive, optionId];
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [question, busy, draft, submit]);
+  }, [question, busy, recording, draft, submit]);
 
   const confirmMulti = () => {
     if (!question || !selected.length) return;
     const comment = draft.trim();
     void submit({ action: "select", optionIds: selected, text: comment || undefined, source: "tap" }, "Saving your answer…",
-      [selected.map(optionLabel).join("; "), comment].filter(Boolean).join(" — "));
+      [labelsFor(selected), comment].filter(Boolean).join(" — "));
   };
 
   const sendText = (text: string, source: "text" | "voice") => {
@@ -200,6 +218,9 @@ export function StructuredInterview({ surveySlug }: Props) {
       : prompt.type === "open_question" ? "Checking the prescribing site…" : "Reading your answer…";
     void submit({ action: "text", text: trimmed, source }, label, trimmed);
   };
+
+  const sendTextRef = useRef(sendText);
+  useEffect(() => { sendTextRef.current = sendText; });
 
   // Number keys pick options when the text box is not in use.
   useEffect(() => {
@@ -233,7 +254,7 @@ export function StructuredInterview({ surveySlug }: Props) {
         try {
           const { transcript } = await transcribe(await blobToBase64(blob), blob.type);
           setPending(null);
-          sendText(transcript, "voice");
+          sendTextRef.current(transcript, "voice");
         } catch (cause) {
           setPending(null);
           setError({ message: cause instanceof Error ? cause.message : "Transcription failed. Type your answer instead.", retry: null });
@@ -267,7 +288,7 @@ export function StructuredInterview({ surveySlug }: Props) {
           </div>
           <div className={styles.barActions}>
             <label className={styles.toggle}>
-              <input type="checkbox" checked={readAloud} onChange={event => { setReadAloud(event.target.checked); if (!event.target.checked) audioRef.current?.pause(); }} />
+              <input type="checkbox" checked={readAloud} onChange={event => { readAloudRef.current = event.target.checked; setReadAloud(event.target.checked); if (!event.target.checked) audioRef.current?.pause(); }} />
               Read aloud
             </label>
             {!done && data && (confirmStop ? (
@@ -289,7 +310,7 @@ export function StructuredInterview({ surveySlug }: Props) {
       <main className={styles.column}>
         <ol className={styles.thread} aria-live="polite">
           {thread.map(message => {
-            const card = message.questionId ? cards[message.questionId] : undefined;
+            const cardTitle = (message.questionId ? cards[message.questionId]?.title : undefined) ?? message.payload?.cardTitle;
             if (message.role === "participant") {
               return <li key={message.id} className={styles.answer}><p>{message.content}</p></li>;
             }
@@ -315,7 +336,7 @@ export function StructuredInterview({ surveySlug }: Props) {
             }
             return (
               <li key={message.id} className={styles.pastQuestion}>
-                {card && <span className={styles.pastCard}>{card.title}</span>}
+                {cardTitle && <span className={styles.pastCard}>{cardTitle}</span>}
                 <p>{message.content}</p>
               </li>
             );
@@ -326,7 +347,7 @@ export function StructuredInterview({ surveySlug }: Props) {
         {error && (
           <div className={styles.error} role="alert">
             <p>{error.message}</p>
-            {error.retry && <button type="button" className={styles.secondary} onClick={error.retry}>Try again</button>}
+            {error.retry && <button type="button" className={styles.secondary} onClick={error.retry}>{error.retry === restart ? "Start again" : "Try again"}</button>}
             {!error.retry && !data && <button type="button" className={styles.secondary} onClick={() => void boot()}>Start again</button>}
           </div>
         )}
@@ -349,7 +370,7 @@ export function StructuredInterview({ surveySlug }: Props) {
                     return (
                       <button key={option.id} type="button" className={styles.option} data-kind={prompt.question.kind} aria-pressed={prompt.question.kind === "multi" ? isOn : undefined}
                         role={prompt.question.kind === "single" ? "radio" : "checkbox"} aria-checked={isOn}
-                        onClick={() => choose(option.id)}>
+                        disabled={recording} onClick={() => choose(option.id)}>
                         <span className={styles.optionKey} aria-hidden="true">{index + 1}</span>
                         <span className={styles.optionLabel}>{option.label}</span>
                       </button>

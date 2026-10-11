@@ -12,29 +12,28 @@ const percent = (share: number) => `${Math.round(share * 100)}%`;
 function Results({ session, surveySlug }: { session: StoredAdminSession; surveySlug: string }) {
   const [summary, setSummary] = useState<ResultsSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const auth = { Authorization: `Bearer ${session.token}` };
+  const token = session.token;
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const response = await fetch(`${webEnv.NEXT_PUBLIC_API_BASE_URL}/admin/structured-interview/${surveySlug}/results`, { headers: auth, cache: "no-store" });
+      const response = await fetch(`${webEnv.NEXT_PUBLIC_API_BASE_URL}/admin/structured-interview/${surveySlug}/results`, { headers: { Authorization: `Bearer ${token}` }, cache: "no-store" });
       if (!response.ok) throw new Error(`Results could not load (${response.status}).`);
       setSummary((await response.json()) as ResultsSummary);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Results could not load.");
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [surveySlug, session.token]);
+  }, [surveySlug, token]);
 
   useEffect(() => { void load(); }, [load]);
 
   const download = async () => {
-    const response = await fetch(`${webEnv.NEXT_PUBLIC_API_BASE_URL}/admin/structured-interview/${surveySlug}/export.csv`, { headers: auth });
+    const response = await fetch(`${webEnv.NEXT_PUBLIC_API_BASE_URL}/admin/structured-interview/${surveySlug}/export.csv`, { headers: { Authorization: `Bearer ${token}` } });
     if (!response.ok) { setError(`Export failed (${response.status}).`); return; }
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement("a");
     link.href = url; link.download = `${surveySlug}-interviews.csv`; link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 10_000);
   };
 
   if (error) return <div className={styles.page}><p className={styles.error}>{error}</p><button type="button" onClick={() => void load()}>Try again</button></div>;
