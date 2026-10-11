@@ -161,7 +161,7 @@ export function recordAnswer(survey: StructuredSurvey, state: InterviewState, in
     state.phase = "declined"; state.endReason = "declined"; state.completedAt = input.now.toISOString(); state.presentedAt = null;
     return { kind: "ended" };
   }
-  if (question.detourOnOptions?.some(id => optionIds.includes(id)) && !verbatim) {
+  if (question.detourOnOptions?.some(id => optionIds.includes(id))) {
     state.phase = "detour_open";
     state.pendingFollowUp = { questionId: question.id, prompt: question.detourPrompt ?? "What would you like to know?" };
     return { kind: "detour_open", prompt: state.pendingFollowUp.prompt };
@@ -188,9 +188,9 @@ export function recordFollowUp(state: InterviewState, input: { text: string | nu
   return isFinished(state) ? { kind: "ended" as const } : { kind: "advanced" as const };
 }
 
-/** How many detours have been answered while this question was open. */
+/** How many site lookups have been made while this question was open (answered or not). */
 export function detoursOnQuestion(state: InterviewState, questionId: string | null) {
-  return state.detours.filter(d => d.questionId === questionId && d.answered).length;
+  return state.detours.filter(d => d.questionId === questionId && !d.parked).length;
 }
 
 export function canAnswerDetour(survey: StructuredSurvey, state: InterviewState) {

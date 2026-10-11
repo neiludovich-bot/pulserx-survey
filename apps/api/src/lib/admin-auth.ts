@@ -136,7 +136,13 @@ export async function requireAdminSession(
   request: FastifyRequest,
   reply: FastifyReply,
 ) {
-  if (!pathRequiresAdmin(request.url.split("?")[0] ?? request.url)) {
+  // Check the raw, decoded and matched route paths, so percent-encoding
+  // (e.g. "/%61dmin/...") cannot slip past the guard.
+  const raw = request.url.split("?")[0] ?? request.url;
+  let decoded = raw;
+  try { decoded = decodeURIComponent(raw); } catch { /* malformed escapes: raw path is still checked */ }
+  const routed = request.routeOptions?.url;
+  if (![raw, decoded, routed].some((path) => path && pathRequiresAdmin(path))) {
     return;
   }
 

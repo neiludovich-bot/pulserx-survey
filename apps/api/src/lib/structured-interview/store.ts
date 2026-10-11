@@ -11,6 +11,8 @@ export type InterviewMessage = {
   questionId: string | null;
   createdAt: string;
   payload?: Record<string, unknown>;
+  /** Position in the stored transcript; assigned when first saved. */
+  sequence?: number;
 };
 
 export type StoredInterview = { state: InterviewState; messages: InterviewMessage[] };
@@ -29,35 +31,46 @@ function remember(id: string, interview: StoredInterview) {
   if (memory.size > MAX_MEMORY_SESSIONS) memory.delete(memory.keys().next().value!);
 }
 
+const studyIds = new Map<string, string>();
+
 async function ensureStudy(survey: StructuredSurvey) {
+  const slug = studySlug(survey);
+  const cached = studyIds.get(slug);
+  if (cached) return cached;
   const config = json({ runtime: RUNTIME, surveySlug: survey.slug, surveyVersion: survey.version, brand: survey.brand });
-  return prisma.study.upsert({
-    where: { slug: studySlug(survey) },
-    create: { slug: studySlug(survey), name: survey.title, description: "Structured HCP interview.", status: "ACTIVE", config },
+  const upsert = () => prisma.study.upsert({
+    where: { slug },
+    create: { slug, name: survey.title, description: "Structured HCP interview.", status: "ACTIVE", config },
     update: { name: survey.title, status: "ACTIVE", config },
   });
+  // Two first interviews at once can race on the unique slug; the second simply retries.
+  const study = await upsert().catch(() => upsert());
+  studyIds.set(slug, study.id);
+  return study.id;
 }
 
 /** Save state and any new messages. The respondent never waits on a failed audit write. */
 export async function saveInterview(survey: StructuredSurvey, interview: StoredInterview, newMessages: InterviewMessage[]) {
   const { state } = interview;
+  // Number new messages after the highest earlier one, so a failed save or a restart never overwrites turns.
+  let next = Math.max(0, ...interview.messages.filter(m => !newMessages.includes(m)).map(m => m.sequence ?? 0)) + 1;
+  for (const message of newMessages) message.sequence ??= next++;
   remember(state.sessionId, interview);
   if (!dbEnabled()) return;
   try {
-    const study = await ensureStudy(survey);
+    const studyId = await ensureStudy(survey);
     const status = state.phase === "complete" || state.phase === "declined" ? SessionStatus.COMPLETED : SessionStatus.ACTIVE;
     const metadata = json({ runtime: RUNTIME, surveySlug: survey.slug, surveyVersion: survey.version, state });
-    const firstSequence = interview.messages.length - newMessages.length + 1;
     await prisma.$transaction([
       prisma.session.upsert({
         where: { id: state.sessionId },
-        create: { id: state.sessionId, studyId: study.id, status, metadata, startedAt: new Date(state.startedAt),
+        create: { id: state.sessionId, studyId, status, metadata, startedAt: new Date(state.startedAt),
           completedAt: state.completedAt ? new Date(state.completedAt) : null },
         update: { status, metadata, completedAt: state.completedAt ? new Date(state.completedAt) : null },
       }),
-      ...newMessages.map((message, offset) => prisma.turn.upsert({
-        where: { sessionId_sequence: { sessionId: state.sessionId, sequence: firstSequence + offset } },
-        create: { studyId: study.id, sessionId: state.sessionId, sequence: firstSequence + offset,
+      ...newMessages.map(message => prisma.turn.upsert({
+        where: { sessionId_sequence: { sessionId: state.sessionId, sequence: message.sequence! } },
+        create: { studyId, sessionId: state.sessionId, sequence: message.sequence!,
           role: message.role === "interviewer" ? TurnRole.INTERVIEWER : TurnRole.PARTICIPANT,
           content: message.content, payload: json({ runtime: RUNTIME, ...message }) },
         update: { content: message.content, payload: json({ runtime: RUNTIME, ...message }) },
@@ -82,7 +95,7 @@ export async function loadInterview(sessionId: string): Promise<StoredInterview 
       const payload = (turn.payload ?? {}) as Partial<InterviewMessage>;
       return { id: payload.id ?? turn.id, role: payload.role ?? (turn.role === TurnRole.INTERVIEWER ? "interviewer" : "participant"),
         kind: payload.kind ?? "notice", content: turn.content, questionId: payload.questionId ?? null,
-        createdAt: payload.createdAt ?? turn.createdAt.toISOString(), payload: payload.payload } as InterviewMessage;
+        createdAt: payload.createdAt ?? turn.createdAt.toISOString(), payload: payload.payload, sequence: turn.sequence } as InterviewMessage;
     });
     const interview = { state: metadata.state, messages };
     remember(sessionId, interview);

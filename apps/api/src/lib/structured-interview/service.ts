@@ -44,7 +44,7 @@ export class StructuredInterviewError extends Error {
 }
 
 export function structuredSurveyFor(slug: string) {
-  return STRUCTURED_SURVEYS[slug as StructuredSurvey["slug"]] ?? null;
+  return Object.hasOwn(STRUCTURED_SURVEYS, slug) ? STRUCTURED_SURVEYS[slug as StructuredSurvey["slug"]] ?? null : null;
 }
 
 const nowDate = () => new Date();
@@ -78,7 +78,7 @@ function promptMessages(survey: StructuredSurvey, state: InterviewState): Interv
   const question = currentQuestion(survey, state)!;
   const content = state.clarifying ? `So I record this accurately, which of these is closest? ${question.prompt}` : question.prompt;
   return [message({ role: "interviewer", kind: "question", content, questionId: question.id,
-    payload: question.card ? { cardId: question.card.id } : undefined })];
+    payload: question.card ? { cardId: question.card.id, cardTitle: question.card.title } : undefined })];
 }
 
 function respond(survey: StructuredSurvey, interview: StoredInterview, messages: InterviewMessage[], returning = false): StructuredResponse {
@@ -132,11 +132,14 @@ async function answerFromSite(survey: StructuredSurvey, question: string): Promi
       sourceIds: result.chunks.map(chunk => chunk.id),
     };
   })();
-  const timeout = new Promise<DetourResult>(resolve => setTimeout(() => resolve({ text: null, references: [], sourceIds: [] }), DETOUR_TIMEOUT_MS));
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<DetourResult>(resolve => { timer = setTimeout(() => resolve({ text: null, references: [], sourceIds: [] }), DETOUR_TIMEOUT_MS); });
   try { return await Promise.race([work, timeout]); }
   catch (error) {
     console.warn(JSON.stringify({ event: "structured_detour_failed", surveySlug: survey.slug, message: error instanceof Error ? error.message : "Unknown" }));
     return { text: null, references: [], sourceIds: [] };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -201,6 +204,8 @@ export async function submitStructuredTurn(input: StructuredTurnRequest): Promis
         const labels = (input.optionIds ?? []).map(id => question.options.find(o => o.id === id)?.label).filter(Boolean).join("; ");
         participant([labels, text].filter(Boolean).join(" — "), "answer", { optionIds: input.optionIds ?? [] });
         recordAnswer(survey, state, { optionIds: input.optionIds ?? [], verbatim: text, source, inferred: false, givesReason: Boolean(text), now: nowDate() });
+        // "Yes, I have a question" typed together with the question: answer it now.
+        if (state.phase === "detour_open" && text) added.push(...await handleDetour(survey, state, text));
       } else {
         if (!text) throw new SelectionError("Type or say your answer.");
         if (state.phase === "detour_open") {
@@ -223,10 +228,13 @@ export async function submitStructuredTurn(input: StructuredTurnRequest): Promis
             stopInterview(state, nowDate());
           } else if ((reading.intent === "answer" || reading.intent === "answer_and_question") && reading.optionIds.length) {
             participant(text, "answer", { optionIds: reading.optionIds, inferred: true });
-            const outcome = recordAnswer(survey, state, { optionIds: reading.optionIds, verbatim: text, source, inferred: true, givesReason: reading.givesReason, now: nowDate() });
-            if (reading.intent === "answer_and_question" && reading.question && outcome.kind !== "ended") {
+            const closingQuestion = Boolean(currentQuestion(survey, state)?.detourOnOptions?.some(id => reading.optionIds.includes(id)));
+            // Answer a side question while its own question is still current, so it counts there.
+            if (reading.intent === "answer_and_question" && reading.question && !closingQuestion) {
               added.push(...await handleDetour(survey, state, reading.question));
             }
+            recordAnswer(survey, state, { optionIds: reading.optionIds, verbatim: text, source, inferred: true, givesReason: reading.givesReason, now: nowDate() });
+            if (state.phase === "detour_open" && reading.question) added.push(...await handleDetour(survey, state, reading.question));
           } else if ((reading.intent === "question" || reading.intent === "answer_and_question") && reading.question) {
             participant(text, "detour_question");
             added.push(...await handleDetour(survey, state, reading.question));
