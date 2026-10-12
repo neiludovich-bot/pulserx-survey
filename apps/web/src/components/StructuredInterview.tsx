@@ -65,7 +65,7 @@ type PanelImages = Figure[];
 type Panel = { card: EvidenceCard | null; images: PanelImages; current: boolean } | null;
 
 /** One figure at a time, with a caption, arrows, a counter and gentle auto-advance. */
-export function FigureCarousel({ figures, intervalMs = 2000 }: { figures: Figure[]; intervalMs?: number }) {
+export function FigureCarousel({ figures, intervalMs = 3000 }: { figures: Figure[]; intervalMs?: number }) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
   const count = figures.length;
