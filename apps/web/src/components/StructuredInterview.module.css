@@ -830,3 +830,18 @@
     min-height: 180px;
   }
 }
+
+/* Carousel play control */
+.carouselPlay {
+  width: auto !important;
+  border-radius: 999px !important;
+  padding: 0 10px;
+  font-size: 0.75rem !important;
+  font-weight: 500;
+  margin-left: 4px;
+}
+
+.carouselPlay[data-on="false"] {
+  border-color: var(--si-blue) !important;
+  color: var(--si-blue) !important;
+}

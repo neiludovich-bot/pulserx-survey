@@ -65,26 +65,29 @@ type PanelImages = Figure[];
 type Panel = { card: EvidenceCard | null; images: PanelImages; current: boolean } | null;
 
 /** One figure at a time, with a caption, arrows, a counter and gentle auto-advance. */
-export function FigureCarousel({ figures }: { figures: Figure[] }) {
+export function FigureCarousel({ figures, intervalMs = 2000 }: { figures: Figure[]; intervalMs?: number }) {
   const [index, setIndex] = useState(0);
-  const [paused, setPaused] = useState(false);
+  const [playing, setPlaying] = useState(true);
   const count = figures.length;
   const key = figures.map(figure => figure.url).join("|");
   useEffect(() => {
-    if (count < 2 || paused || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const timer = window.setInterval(() => setIndex(current => (current + 1) % count), 7000);
+    if (count < 2 || !playing || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => setIndex(current => (current + 1) % count), intervalMs);
     return () => window.clearInterval(timer);
-  }, [count, paused, key]);
+  }, [count, playing, key, intervalMs]);
   if (!count) return null;
   const figure = figures[Math.min(index, count - 1)]!;
-  const go = (step: number) => { setPaused(true); setIndex(current => (current + step + count) % count); };
+  // Using an arrow means they are reading, so it pauses; Play resumes the cycle.
+  const go = (step: number) => { setPlaying(false); setIndex(current => (current + step + count) % count); };
   return (
-    <div className={styles.carousel} onMouseEnter={() => setPaused(true)} onMouseLeave={() => setPaused(false)}
-      onFocus={() => setPaused(true)} aria-roledescription="carousel">
+    <div className={styles.carousel} aria-roledescription="carousel" aria-label="Figures">
       <div className={styles.carouselFrame}>
-        {/* Hosted on the manufacturer's HCP site; shown as published. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={figure.url} alt={figure.alt} />
+        {/* All figures stay mounted so switching is instant; only the current one is shown. */}
+        {figures.map((item, i) => (
+          // Hosted on the manufacturer's HCP site; shown as published.
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={item.url} src={item.url} alt={item.alt} hidden={i !== index} loading="eager" />
+        ))}
       </div>
       <div className={styles.carouselBar}>
         <p className={styles.carouselCaption} aria-live="polite">{figure.caption ?? figure.alt}</p>
@@ -93,11 +96,11 @@ export function FigureCarousel({ figures }: { figures: Figure[] }) {
             <button type="button" onClick={() => go(-1)} aria-label="Previous figure">‹</button>
             <span>{index + 1} / {count}</span>
             <button type="button" onClick={() => go(1)} aria-label="Next figure">›</button>
+            <button type="button" className={styles.carouselPlay} data-on={playing} onClick={() => setPlaying(current => !current)}
+              aria-label={playing ? "Pause" : "Play"} aria-pressed={playing}>{playing ? "Pause" : "Play"}</button>
           </div>
         )}
       </div>
-      {/* Preload the rest so stepping through is instant. */}
-      <div hidden>{figures.map(item => <link key={item.url} rel="preload" as="image" href={item.url} />)}</div>
     </div>
   );
 }
