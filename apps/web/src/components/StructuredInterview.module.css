@@ -845,3 +845,20 @@
   border-color: var(--si-blue) !important;
   color: var(--si-blue) !important;
 }
+
+.carouselPreload {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.carousel {
+  position: relative;
+}
+
+.carouselFrame img {
+  max-width: 100%;
+}

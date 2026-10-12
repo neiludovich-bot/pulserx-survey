@@ -82,12 +82,9 @@ export function FigureCarousel({ figures, intervalMs = 2000 }: { figures: Figure
   return (
     <div className={styles.carousel} aria-roledescription="carousel" aria-label="Figures">
       <div className={styles.carouselFrame}>
-        {/* All figures stay mounted so switching is instant; only the current one is shown. */}
-        {figures.map((item, i) => (
-          // Hosted on the manufacturer's HCP site; shown as published.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={item.url} src={item.url} alt={item.alt} hidden={i !== index} loading="eager" />
-        ))}
+        {/* Only the current figure is in the frame. Hosted on the manufacturer's HCP site; shown as published. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img key={figure.url} src={figure.url} alt={figure.alt} loading="eager" />
       </div>
       <div className={styles.carouselBar}>
         <p className={styles.carouselCaption} aria-live="polite">{figure.caption ?? figure.alt}</p>
@@ -100,6 +97,13 @@ export function FigureCarousel({ figures, intervalMs = 2000 }: { figures: Figure
               aria-label={playing ? "Pause" : "Play"} aria-pressed={playing}>{playing ? "Pause" : "Play"}</button>
           </div>
         )}
+      </div>
+      {/* The other figures are fetched now, off screen, so each switch is instant. */}
+      <div className={styles.carouselPreload} aria-hidden="true">
+        {figures.map((item, i) => i !== index && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={item.url} src={item.url} alt="" loading="eager" />
+        ))}
       </div>
     </div>
   );
