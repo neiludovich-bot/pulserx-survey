@@ -192,11 +192,12 @@ export function StructuredInterview({ surveySlug }: Props) {
     const latestImages = [...response.messages].reverse()
       .map(message => (message.kind === "detour_answer" ? messageFigures(message) : []))
       .find(images => images.length > 0);
+    // The panel shows one thing at a time: the figures for a side question while it is being answered,
+    // otherwise the trial card in play.
     if (prompt.type === "question" && prompt.question.card) {
       const card = prompt.question.card;
       setCards(previous => ({ ...previous, [prompt.question.id]: card }));
-      setPanel(previous => ({ card, current: true,
-        images: latestImages ?? (previous?.card?.id === card.id ? previous.images : []) }));
+      setPanel({ card, images: latestImages && prompt.returning ? latestImages : [], current: true });
     } else if (latestImages) {
       setPanel(previous => ({ card: previous?.current ? previous.card : null, images: latestImages, current: true }));
     } else {
@@ -555,8 +556,12 @@ export function StructuredInterview({ surveySlug }: Props) {
         <aside className={styles.panel} aria-label="Evidence">
           {!panel.current && <p className={styles.panelLabel}>Shown earlier</p>}
           <div className={styles.panelStack} data-current={panel.current}>
-            {panel.card && <EvidencePlate card={panel.card} />}
-            {panel.images.length > 0 && <ImageSet images={panel.images} />}
+            {panel.images.length > 0 ? <ImageSet images={panel.images} /> : panel.card && <EvidencePlate card={panel.card} />}
+            {panel.images.length > 0 && panel.card && (
+              <button type="button" className={styles.panelSwitch} onClick={() => setPanel(previous => (previous ? { ...previous, images: [] } : previous))}>
+                Back to the {panel.card.title} results
+              </button>
+            )}
           </div>
         </aside>
       )}
