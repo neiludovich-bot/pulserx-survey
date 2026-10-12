@@ -84,7 +84,14 @@ export function narrationFor(survey: StructuredSurvey, state: InterviewState) {
   // Within a section, a short rotating acknowledgment keeps it sounding like a conversation.
   const acknowledgment = !lead && previous && state.answers[previous.id] && survey.acknowledgments.length
     ? survey.acknowledgments[state.index % survey.acknowledgments.length] : undefined;
-  return [lead ?? acknowledgment, question.intro].filter(Boolean).join(" ") || null;
+  // Each study in a rotation block is announced: the first as "the first study", the rest as "a different study".
+  let signpost: string | undefined;
+  if (question.transition) {
+    const block = survey.rotationBlocks.find(ids => ids.includes(question.id)) ?? [];
+    const first = state.order.find(id => block.includes(id)) === question.id;
+    signpost = first ? `The first study is ${question.transition}.` : `Next, let's look at a different study. This one is ${question.transition}.`;
+  }
+  return [lead ?? acknowledgment, signpost, question.intro].filter(Boolean).join(" ") || null;
 }
 
 export type QuestionView = {

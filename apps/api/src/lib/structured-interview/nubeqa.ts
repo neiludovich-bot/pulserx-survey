@@ -8,9 +8,9 @@ const figures = (...ids: string[]): EvidenceFigure[] => ids.map(id => { const { 
 const HCP = "https://www.nubeqahcp.com";
 
 /** One balanced reaction scale reused after every evidence card. */
-export function reactionOptions(setting: string): StructuredOption[] {
+export function reactionOptions(setting: string, positiveFollowUp: string): StructuredOption[] {
   return [
-    { id: "strongly_positive", label: `This is compelling, and it makes me more likely to use NUBEQA ${setting}.`, followUp: "Which patients would you think of first?" },
+    { id: "strongly_positive", label: `This is compelling, and it makes me more likely to use NUBEQA ${setting}.`, followUp: positiveFollowUp },
     { id: "positive_reservations", label: "The data look good, but something holds me back from using it more.", followUp: "What is holding you back?" },
     { id: "no_change", label: "This is about what I expected, and it doesn't change how I treat.", followUp: "What would it take to change your approach here?" },
     { id: "concerns", label: "I have doubts about this data or how it applies to my patients.", followUp: "What is your main doubt?" },
@@ -33,7 +33,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
   sectionLeads: {
     "About you": "Great, thank you. To start, a little about you.",
     "What matters to you": "Before we look at any data, I'd like to understand what drives your choices.",
-    "The evidence": "Now let's look at the evidence. I'll walk you through three studies, and for each one I'd like your honest reaction.",
+    "The evidence": "Now let's look at the evidence. I'll walk you through three studies, one at a time, and for each one I'd like your honest reaction.",
     "Using it in practice": "Thanks. Next, a couple of questions about using it day to day.",
     "Overall": "We're nearly done.",
   },
@@ -89,9 +89,10 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "c1_aranote", section: "The evidence", kind: "single", exportLabel: "ARANOTE reaction",
+      transition: "ARANOTE, in metastatic castration-sensitive prostate cancer without docetaxel",
       intro: "The ARANOTE study enrolled 669 men with metastatic castration-sensitive prostate cancer who were not receiving docetaxel. Adding NUBEQA to ADT reduced the risk of radiographic progression or death by 46% compared with placebo plus ADT, a hazard ratio of 0.54. At two years, 70% were alive without radiographic progression, versus 52% with placebo.",
       prompt: "Which of these comes closest to your reaction?",
-      options: reactionOptions("in mCSPC without docetaxel"),
+      options: reactionOptions("in mCSPC without docetaxel", "For which of your mCSPC patients who aren't getting docetaxel would this change what you prescribe?"),
       card: {
         id: "aranote", title: "ARANOTE", subtitle: "mCSPC · NUBEQA + ADT vs placebo + ADT (no docetaxel)",
         body: "Primary endpoint: radiographic progression-free survival (rPFS). HR 0.54 (95% CI 0.41–0.71; P<0.0001), a 46% reduction in the risk of radiographic progression or death.",
@@ -106,9 +107,10 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "c2_arasens", section: "The evidence", kind: "single", exportLabel: "ARASENS reaction",
+      transition: "ARASENS, in metastatic castration-sensitive prostate cancer with docetaxel",
       intro: "The ARASENS study looked at men with metastatic castration-sensitive prostate cancer who were also receiving docetaxel. Adding NUBEQA to docetaxel and ADT reduced the risk of death by nearly a third compared with docetaxel and ADT alone, a hazard ratio of 0.68. At four years, 63% of patients were alive with the NUBEQA combination, versus 50% without it.",
       prompt: "Which of these comes closest to your reaction?",
-      options: reactionOptions("with docetaxel in mCSPC"),
+      options: reactionOptions("with docetaxel in mCSPC", "For which patients who are already getting docetaxel would you add NUBEQA, and who would you hold off on?"),
       card: {
         id: "arasens", title: "ARASENS", subtitle: "mCSPC · NUBEQA + ADT + docetaxel vs placebo + ADT + docetaxel",
         body: "Primary endpoint: overall survival. HR 0.68 (95% CI 0.57–0.80; P<0.0001). Docetaxel 75 mg/m² every 21 days for 6 cycles in both arms.",
@@ -123,9 +125,10 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "c3_aramis", section: "The evidence", kind: "single", exportLabel: "ARAMIS reaction",
+      transition: "ARAMIS, in non-metastatic castration-resistant prostate cancer",
       intro: "The ARAMIS study enrolled men with non-metastatic castration-resistant prostate cancer. Adding NUBEQA to ADT extended median metastasis-free survival to 40.4 months, versus 18.4 months with placebo plus ADT, and reduced the risk of death by 31%, a hazard ratio of 0.69.",
       prompt: "Which of these comes closest to your reaction?",
-      options: reactionOptions("in nmCRPC"),
+      options: reactionOptions("in nmCRPC", "Which of your nmCRPC patients would you start sooner because of this, and what would you be watching for?"),
       card: {
         id: "aramis", title: "ARAMIS", subtitle: "nmCRPC · NUBEQA + ADT vs placebo + ADT",
         body: "Primary endpoint: metastasis-free survival, median 40.4 vs 18.4 months, HR 0.41 (95% CI 0.34–0.50; P<0.0001). Overall survival: HR 0.69 (95% CI 0.53–0.88; P=0.003).",

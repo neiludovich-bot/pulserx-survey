@@ -51,6 +51,8 @@ export type StructuredQuestion = {
   card?: EvidenceCard;
   /** What the interviewer says before asking: plain spoken sentences, pre-approved, never generated. */
   intro?: string;
+  /** Names the study and population, so each trial in a rotation block opens with a clear signpost. */
+  transition?: string;
   /** Question-level follow-up, used when the chosen option has none. */
   followUp?: string;
   /** Ask the follow-up only when exactly this many options were chosen bare (multi). */

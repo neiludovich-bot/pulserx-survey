@@ -102,11 +102,13 @@ describe("structured interview engine", () => {
     const state = runToCard("narration");
     const view = questionView(survey, state)!;
     expect(view.narration!.startsWith("Now let's look at the evidence.")).toBe(true);
+    expect(view.narration!.includes(`The first study is ${questionById(survey, view.id).transition}.`)).toBe(true);
     expect(view.narration!.includes(questionById(survey, view.id).intro!)).toBe(true);
     tap(state, ["no_change"], "As expected");
     const next = questionView(survey, state)!;
     const intro = questionById(survey, next.id).intro;
     expect(survey.acknowledgments.some(ack => next.narration!.startsWith(ack))).toBe(true);
+    expect(next.narration!.includes("Next, let's look at a different study. This one is ")).toBe(true);
     expect(intro ? next.narration!.endsWith(intro) : true).toBe(true);
   });
 
