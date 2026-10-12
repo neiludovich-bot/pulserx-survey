@@ -68,24 +68,40 @@ type Panel = { card: EvidenceCard | null; images: PanelImages; current: boolean 
 export function FigureCarousel({ figures, intervalMs = 3000 }: { figures: Figure[]; intervalMs?: number }) {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(true);
+  const [open, setOpen] = useState(false);
   const count = figures.length;
   const key = figures.map(figure => figure.url).join("|");
   useEffect(() => {
-    if (count < 2 || !playing || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (count < 2 || !playing || open || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const timer = window.setInterval(() => setIndex(current => (current + 1) % count), intervalMs);
     return () => window.clearInterval(timer);
-  }, [count, playing, key, intervalMs]);
+  }, [count, playing, open, key, intervalMs]);
+  // While enlarged: Esc closes, arrow keys step, and the page behind does not scroll.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+      if (event.key === "ArrowRight" && count > 1) setIndex(current => (current + 1) % count);
+      if (event.key === "ArrowLeft" && count > 1) setIndex(current => (current - 1 + count) % count);
+    };
+    window.addEventListener("keydown", onKey);
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = previousOverflow; };
+  }, [open, count]);
   if (!count) return null;
   const figure = figures[Math.min(index, count - 1)]!;
   // Using an arrow means they are reading, so it pauses; Play resumes the cycle.
   const go = (step: number) => { setPlaying(false); setIndex(current => (current + step + count) % count); };
+  const enlarge = () => { setPlaying(false); setOpen(true); };
   return (
     <div className={styles.carousel} aria-roledescription="carousel" aria-label="Figures">
-      <div className={styles.carouselFrame}>
+      <button type="button" className={styles.carouselFrame} onClick={enlarge} aria-label={`Enlarge: ${figure.caption ?? figure.alt}`} title="Click to enlarge">
         {/* Only the current figure is in the frame. Hosted on the manufacturer's HCP site; shown as published. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img key={figure.url} src={figure.url} alt={figure.alt} loading="eager" />
-      </div>
+        <span className={styles.enlargeHint} aria-hidden="true">⤢</span>
+      </button>
       <div className={styles.carouselBar}>
         <p className={styles.carouselCaption} aria-live="polite">{figure.caption ?? figure.alt}</p>
         {count > 1 && (
@@ -105,6 +121,25 @@ export function FigureCarousel({ figures, intervalMs = 3000 }: { figures: Figure
           <img key={item.url} src={item.url} alt="" loading="eager" />
         ))}
       </div>
+      {open && (
+        <div className={styles.lightbox} role="dialog" aria-modal="true" aria-label={figure.caption ?? figure.alt} onClick={() => setOpen(false)}>
+          <div className={styles.lightboxBody} onClick={event => event.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={figure.url} alt={figure.alt} />
+            <div className={styles.lightboxBar}>
+              <p>{figure.caption ?? figure.alt}</p>
+              <div className={styles.carouselNav}>
+                {count > 1 && (<>
+                  <button type="button" onClick={() => go(-1)} aria-label="Previous figure">‹</button>
+                  <span>{index + 1} / {count}</span>
+                  <button type="button" onClick={() => go(1)} aria-label="Next figure">›</button>
+                </>)}
+                <button type="button" className={styles.carouselPlay} onClick={() => setOpen(false)} autoFocus>Close</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
