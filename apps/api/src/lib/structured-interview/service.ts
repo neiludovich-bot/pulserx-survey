@@ -122,13 +122,20 @@ async function interpret(survey: StructuredSurvey, state: InterviewState, reply:
 
 type DetourResult = { text: string | null; references: GroundedReference[]; sourceIds: string[] };
 
-async function answerFromSite(survey: StructuredSurvey, question: string): Promise<DetourResult> {
+/** The trial and setting under discussion, so a question asked during ARASENS is answered from ARASENS. */
+function discussionContext(survey: StructuredSurvey, state: InterviewState) {
+  const card = currentQuestion(survey, state)?.card;
+  if (!card || !card.title || card.id === "dosing") return null;
+  return `The participant is currently discussing the ${card.title} study (${card.subtitle}). Answer from that study and setting unless the question names another.`;
+}
+
+async function answerFromSite(survey: StructuredSurvey, question: string, context: string | null = null): Promise<DetourResult> {
   const work = (async () => {
     const candidates = await retrieveWebsiteCandidates({ surveySlug: survey.slug, participantMessage: question, surveyContext: "",
-      currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, responseMode: "answer_only" });
+      currentQuestion: null, selectedNextQuestion: null, selectedQuestionSourceContext: null, sourceTopicContext: context, responseMode: "answer_only" });
     if (!candidates.length) return { text: null, references: [], sourceIds: [] };
     const result = await answerFromWebsite({ surveySlug: survey.slug, query: question.slice(0, 4000), candidates,
-      sourceTopicContext: null, priorSourceIds: [], sourceQuestionPlan: null, evidenceFocus: "all" });
+      sourceTopicContext: context, priorSourceIds: [], sourceQuestionPlan: null, evidenceFocus: "all" });
     if (!result || result.unavailableReason) return { text: null, references: [], sourceIds: [] };
     return {
       text: renderWebsiteAnswer(result.paragraphs, result.chunks),
@@ -156,12 +163,13 @@ async function handleDetour(survey: StructuredSurvey, state: InterviewState, que
     return [message({ role: "interviewer", kind: "detour_answer", questionId,
       content: "Good question. I've noted it, and I'll answer it before we finish." })];
   }
-  const result = await answerFromSite(survey, question);
+  const card = currentQuestion(survey, state)?.card;
+  const result = await answerFromSite(survey, question, discussionContext(survey, state));
   recordDetour(state, { question, answer: result.text, sourceIds: result.sourceIds, parked: false, now: nowDate() });
   const content = result.text
     ?? `I couldn't find a supported answer to that on the ${survey.brand} prescribing site, so I won't speculate. Your question has been recorded for the research team.`;
   return [message({ role: "interviewer", kind: "detour_answer", questionId, content,
-    payload: detourPayload(survey, question, result) })];
+    payload: detourPayload(survey, card && card.id !== "dosing" ? `${card.title}: ${question}` : question, result) })];
 }
 
 /** References plus the site's own figures that match the question, so answers show evidence. */
