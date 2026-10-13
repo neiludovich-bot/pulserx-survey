@@ -6,7 +6,7 @@ import { answerFromWebsite, renderWebsiteAnswer } from "../website-answer-servic
 import { withExplicitSourceAssets } from "../focused-source-evidence";
 import { synthesizeSpeech } from "../voice-service";
 import {
-  canAnswerDetour, createInterview, narrationFor, promptFor, currentQuestion, isFinished, markClarifying, parkedQuestions, progress, questionView,
+  canAnswerDetour, createInterview, narrationFor, promptFor as questionWording, currentQuestion, isFinished, markClarifying, parkedQuestions, progress, questionView,
   recordAnswer, recordDetour, recordFollowUp, SelectionError, skipOpenDetour, stopInterview, type QuestionView,
 } from "./engine";
 import { STRUCTURED_SURVEYS } from "./nubeqa";
@@ -79,7 +79,7 @@ function promptMessages(survey: StructuredSurvey, state: InterviewState, returni
   const question = currentQuestion(survey, state)!;
   // The narration is said once; a re-ask after a side question or a clarification goes straight to the question.
   const narration = state.clarifying || returning ? null : narrationFor(survey, state);
-  const wording = promptFor(state, question);
+  const wording = questionWording(state, question);
   const content = state.clarifying ? `So I record this accurately, which of these is closest? ${wording}`
     : returning ? `Back to where we were: ${wording.charAt(0).toLowerCase()}${wording.slice(1)}`
     : [narration, wording].filter(Boolean).join("\n\n");
