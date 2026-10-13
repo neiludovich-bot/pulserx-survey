@@ -1031,3 +1031,27 @@
 .rankButtons button:hover:not(:disabled) {
   border-color: var(--si-blue);
 }
+
+/* Sponsor brand in the header */
+.titleBlock {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.brand {
+  height: 40px;
+  width: auto;
+  flex: none;
+}
+
+@media (max-width: 520px) {
+  .brand {
+    height: 32px;
+  }
+
+  .titleBlock {
+    gap: 10px;
+  }
+}

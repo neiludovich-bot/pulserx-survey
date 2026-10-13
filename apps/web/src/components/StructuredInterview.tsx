@@ -505,8 +505,12 @@ export function StructuredInterview({ surveySlug }: Props) {
       <header className={styles.bar}>
         <div className={styles.barInner}>
           <div className={styles.titleBlock}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img className={styles.brand} src="/brands/cornerstone-urology.png" alt="Cornerstone Urology Specialty Network" width={149} height={59} />
+            <div>
             <h1 className={styles.title}>{data?.title ?? "HCP discussion"}</h1>
             <p className={styles.meta}>{done ? "Finished" : question ? question.section : progress ? "In progress" : ""}</p>
+            </div>
           </div>
           <div className={styles.barActions}>
             <label className={styles.toggle}>
