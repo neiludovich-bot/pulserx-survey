@@ -8,7 +8,7 @@ export type EvidenceCard = {
 };
 
 export type QuestionView = {
-  id: string; section: string; prompt: string; narration?: string | null; kind: "single" | "multi"; maxSelect: number | null;
+  id: string; section: string; prompt: string; narration?: string | null; kind: "single" | "multi" | "rank"; maxSelect: number | null;
   options: Array<{ id: string; label: string; exclusive: boolean }>;
   card: EvidenceCard | null;
 };
@@ -80,8 +80,8 @@ export type ResultsSummary = {
   totals: { started: number; completed: number; declined: number; stopped: number; medianMinutes: number | null };
   detours: Array<{ sessionId: string; questionId: string | null; question: string; answered: boolean }>;
   questions: Array<{
-    id: string; section: string; prompt: string; label: string; kind: "single" | "multi"; responses: number;
-    options: Array<{ id: string; label: string; count: number; share: number }>;
+    id: string; section: string; prompt: string; label: string; kind: "single" | "multi" | "rank"; responses: number;
+    options: Array<{ id: string; label: string; count: number; share: number; averageRank?: number }>;
     verbatims: Array<{ sessionId: string; optionLabels: string; text: string }>;
   }>;
 };

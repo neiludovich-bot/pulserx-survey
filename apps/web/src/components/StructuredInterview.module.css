@@ -967,3 +967,67 @@
     padding: 8px;
   }
 }
+
+/* Rank question */
+.rank {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.rankItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--si-surface);
+  border: 1px solid var(--si-rule);
+  border-radius: 8px;
+  padding: 8px 10px 8px 8px;
+  cursor: grab;
+  font-size: 0.9375rem;
+}
+
+.rankItem[data-dragging="true"] {
+  opacity: 0.5;
+  border-style: dashed;
+}
+
+.rankHandle {
+  color: var(--si-slate);
+  font-size: 0.875rem;
+  letter-spacing: -2px;
+  user-select: none;
+}
+
+.rankItem .optionLabel {
+  flex: 1;
+  min-width: 0;
+}
+
+.rankButtons {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.rankButtons button {
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  border: 1px solid var(--si-rule);
+  background: var(--si-surface);
+  color: var(--si-ink);
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.rankButtons button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.rankButtons button:hover:not(:disabled) {
+  border-color: var(--si-blue);
+}

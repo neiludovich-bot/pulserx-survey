@@ -159,6 +159,39 @@ function ImageSet({ images }: { images: PanelImages }) {
   );
 }
 
+/** Order a list by dragging, or with the up/down buttons (keyboard and touch friendly). */
+function RankList({ options, order, onChange, disabled }: {
+  options: Array<{ id: string; label: string }>; order: string[]; onChange: (next: string[]) => void; disabled?: boolean;
+}) {
+  const [dragging, setDragging] = useState<string | null>(null);
+  const move = (id: string, to: number) => {
+    const from = order.indexOf(id);
+    if (from < 0 || to < 0 || to >= order.length || to === from) return;
+    const next = [...order]; next.splice(from, 1); next.splice(to, 0, id); onChange(next);
+  };
+  return (
+    <ol className={styles.rank} aria-label="Ranked list, most important first">
+      {order.map((id, index) => {
+        const option = options.find(o => o.id === id)!;
+        return (
+          <li key={id} className={styles.rankItem} draggable={!disabled} data-dragging={dragging === id}
+            onDragStart={event => { setDragging(id); event.dataTransfer.effectAllowed = "move"; }}
+            onDragEnd={() => setDragging(null)}
+            onDragOver={event => { event.preventDefault(); if (dragging && dragging !== id) move(dragging, index); }}>
+            <span className={styles.rankHandle} aria-hidden="true">⋮⋮</span>
+            <span className={styles.optionKey} aria-hidden="true">{index + 1}</span>
+            <span className={styles.optionLabel}>{option.label}</span>
+            <span className={styles.rankButtons}>
+              <button type="button" onClick={() => move(id, index - 1)} disabled={disabled || index === 0} aria-label={`Move ${option.label} up`}>↑</button>
+              <button type="button" onClick={() => move(id, index + 1)} disabled={disabled || index === order.length - 1} aria-label={`Move ${option.label} down`}>↓</button>
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function EvidencePlate({ card }: { card: EvidenceCard }) {
   return (
     <figure className={styles.plate} aria-label={`${card.title} evidence`}>
@@ -197,6 +230,7 @@ export function StructuredInterview({ surveySlug }: Props) {
   const [panel, setPanel] = useState<Panel>(null);
   const [earlierOpen, setEarlierOpen] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
+  const [ranking, setRanking] = useState<string[]>([]);
   const [draft, setDraft] = useState("");
   const [pending, setPending] = useState<{ label: string; echo: string | null } | null>(null);
   const [error, setError] = useState<{ message: string; retry: (() => void) | null } | null>(null);
@@ -219,7 +253,10 @@ export function StructuredInterview({ surveySlug }: Props) {
   const absorb = useCallback((response: InterviewResponse, replace: boolean) => {
     const after = response.prompt.type === "question" ? response.prompt.question.id : null;
     // Returning from a side question keeps any boxes already ticked.
-    if (!after || lastQuestionRef.current !== after) setSelected([]);
+    if (!after || lastQuestionRef.current !== after) {
+      setSelected([]);
+      setRanking(response.prompt.type === "question" && response.prompt.question.kind === "rank" ? response.prompt.question.options.map(o => o.id) : []);
+    }
     lastQuestionRef.current = after;
     setData(response);
     setMessages(previous => (replace ? response.messages : [...previous, ...response.messages]));
@@ -336,6 +373,13 @@ export function StructuredInterview({ surveySlug }: Props) {
     });
   }, [question, busy, recording, draft, submit]);
 
+  const confirmRank = () => {
+    if (!question || question.kind !== "rank" || ranking.length !== question.options.length) return;
+    const comment = draft.trim();
+    void submit({ action: "select", optionIds: ranking, text: comment || undefined, source: "tap" }, "Saving your ranking…",
+      [ranking.map((id, i) => `${i + 1}. ${question.options.find(o => o.id === id)?.label ?? id}`).join("; "), comment].filter(Boolean).join(" — "));
+  };
+
   const confirmMulti = () => {
     if (!question || !selected.length) return;
     const comment = draft.trim();
@@ -357,7 +401,7 @@ export function StructuredInterview({ surveySlug }: Props) {
   // Number keys pick options when the text box is not in use.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (!question || busy || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (!question || question.kind === "rank" || busy || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT")) return;
       const index = Number(event.key) - 1;
@@ -529,6 +573,13 @@ export function StructuredInterview({ surveySlug }: Props) {
                 {prompt.question.kind === "multi" && prompt.question.maxSelect && (
                   <p className={styles.hint}>{selected.length} of up to {prompt.question.maxSelect} selected</p>
                 )}
+                {prompt.question.kind === "rank" ? (
+                  <>
+                    <p className={styles.hint}>Drag to reorder, or use the arrows. 1 is most important.</p>
+                    <RankList options={prompt.question.options} order={ranking} onChange={setRanking} disabled={recording} />
+                    <button type="button" className={styles.primary} disabled={ranking.length !== prompt.question.options.length} onClick={confirmRank}>Continue</button>
+                  </>
+                ) : (
                 <div className={styles.options} data-compact={prompt.question.options.every(option => option.label.length <= 40) && prompt.question.options.length >= 4}
                   role={prompt.question.kind === "single" ? "radiogroup" : "group"} aria-label={prompt.question.prompt}>
                   {prompt.question.options.map((option, index) => {
@@ -543,6 +594,7 @@ export function StructuredInterview({ surveySlug }: Props) {
                     );
                   })}
                 </div>
+                )}
                 {prompt.question.kind === "multi" && (
                   <button type="button" className={styles.primary} disabled={!selected.length} onClick={confirmMulti}>Continue</button>
                 )}

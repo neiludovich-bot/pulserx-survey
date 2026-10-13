@@ -63,15 +63,15 @@ function Results({ session, surveySlug }: { session: StoredAdminSession; surveyS
       {summary.questions.map(question => (
         <section key={question.id} className={styles.question}>
           <h2 className={styles.qTitle}>{question.label}</h2>
-          <p className={styles.muted}>{question.prompt} · {question.responses} {question.responses === 1 ? "response" : "responses"}{question.kind === "multi" ? " · multiple answers allowed" : ""}</p>
+          <p className={styles.muted}>{question.prompt} · {question.responses} {question.responses === 1 ? "response" : "responses"}{question.kind === "multi" ? " · multiple answers allowed" : question.kind === "rank" ? " · ranked, best average rank first" : ""}</p>
           <table className={styles.bars}>
             <tbody>
               {question.options.map(option => (
                 <tr key={option.id}>
                   <th scope="row">{option.label}</th>
                   <td className={styles.barCell}><span className={styles.bar} style={{ width: percent(option.share) }} /></td>
-                  <td className={styles.num}>{percent(option.share)}</td>
-                  <td className={styles.num}>{option.count}</td>
+                  <td className={styles.num}>{question.kind === "rank" ? (option.averageRank === undefined ? "–" : `avg #${option.averageRank}`) : percent(option.share)}</td>
+                  <td className={styles.num}>{question.kind === "rank" ? `${option.count}× first` : option.count}</td>
                 </tr>
               ))}
             </tbody>
