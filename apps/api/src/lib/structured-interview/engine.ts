@@ -117,11 +117,17 @@ export type QuestionView = {
   card: EvidenceCard | null;
 };
 
+/** The question's wording, adapted to an earlier answer when it has alternatives. */
+export function promptFor(state: InterviewState, question: StructuredQuestion) {
+  const chosen = question.promptBy ? state.answers[question.promptBy.questionId]?.optionIds ?? [] : [];
+  return chosen.map(id => question.promptBy!.prompts[id]).find(Boolean) ?? question.prompt;
+}
+
 export function questionView(survey: StructuredSurvey, state: InterviewState): QuestionView | null {
   const question = currentQuestion(survey, state);
   if (!question) return null;
   return {
-    id: question.id, section: question.section, prompt: question.prompt, narration: narrationFor(survey, state), kind: question.kind,
+    id: question.id, section: question.section, prompt: promptFor(state, question), narration: narrationFor(survey, state), kind: question.kind,
     maxSelect: question.kind === "multi" ? question.maxSelect ?? null : null,
     options: orderedOptions(question, state).map(o => ({ id: o.id, label: o.label, exclusive: Boolean(o.exclusive) })),
     card: question.card ?? null,

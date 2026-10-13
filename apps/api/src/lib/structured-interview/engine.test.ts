@@ -60,7 +60,13 @@ describe("conditional questions", () => {
     expect(currentQuestion(survey, planned)!.id).toBe("a2_volume");
     const noPlan = createInterview(survey, "mfp-noplan", t());
     tap(noPlan, ["yes"]); tap(noPlan, ["urology"]); tap(noPlan, ["heard"]); tap(noPlan, ["no"]);
-    expect(currentQuestion(survey, noPlan)!.id).toBe("a2_volume");
+    expect(currentQuestion(survey, noPlan)!.id).toBe("m3_mfp_plan_detail");
+    expect(questionView(survey, noPlan)!.prompt.startsWith("If you were to put a plan in place")).toBe(true);
+    tap(noPlan, ["other_arpi"]);
+    expect(questionView(survey, noPlan)!.prompt.startsWith("If you were to choose an alternative ARPI")).toBe(true);
+    const working = createInterview(survey, "mfp-working", t());
+    tap(working, ["yes"]); tap(working, ["urology"]); tap(working, ["heard"]); tap(working, ["in_progress"]);
+    expect(questionView(survey, working)!.prompt).toBe("Which direction is the plan most likely to take?");
   });
 
   it("opens the evidence with the NUBEQA and Xtandi orientation", () => {

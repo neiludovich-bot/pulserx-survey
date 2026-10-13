@@ -76,9 +76,15 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
       ],
     },
     {
-      id: "m3_mfp_plan_detail", section: "Reimbursement changes", kind: "single", exportLabel: "MFP plan",
-      showIf: { questionId: "m2_mfp_plan", anyOf: ["yes"] },
+      id: "m3_mfp_plan_detail", section: "Reimbursement changes", kind: "single", exportLabel: "MFP plan (actual or likely)",
+      showIf: { questionId: "m2_mfp_plan", anyOf: ["yes", "in_progress", "no", "unsure"] },
       prompt: "What is that plan?",
+      promptBy: { questionId: "m2_mfp_plan", prompts: {
+        yes: "What is that plan?",
+        in_progress: "Which direction is the plan most likely to take?",
+        no: "If you were to put a plan in place, what would it most likely be?",
+        unsure: "If you were to put a plan in place, what would it most likely be?",
+      } },
       options: [
         { id: "xtandi_no_change", label: "Continue to put new patients on Xtandi where appropriate, no changes" },
         { id: "other_arpi", label: "Put new patients on another ARPI where appropriate" },
@@ -88,8 +94,14 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
     },
     {
       id: "m4_alt_factors", section: "Reimbursement changes", kind: "rank", exportLabel: "Factors when choosing an alternative ARPI (ranked)",
-      showIf: { questionId: "m2_mfp_plan", anyOf: ["yes"] },
+      showIf: { questionId: "m2_mfp_plan", anyOf: ["yes", "in_progress", "no", "unsure"] },
       prompt: "Rank the factors you consider when choosing an alternative ARPI, most important first.",
+      promptBy: { questionId: "m2_mfp_plan", prompts: {
+        yes: "Rank the factors you consider when choosing an alternative ARPI, most important first.",
+        in_progress: "Rank the factors you'd weigh when choosing an alternative ARPI, most important first.",
+        no: "If you were to choose an alternative ARPI, rank the factors you'd consider, most important first.",
+        unsure: "If you were to choose an alternative ARPI, rank the factors you'd consider, most important first.",
+      } },
       options: [
         { id: "clinical", label: "Clinical appropriateness" },
         { id: "ddi", label: "Drug-drug interactions" },

@@ -47,6 +47,8 @@ export type StructuredQuestion = {
   maxSelect?: number;
   /** Asked only when an earlier answer included one of these options; otherwise skipped. */
   showIf?: { questionId: string; anyOf: string[] };
+  /** Alternative wording keyed by an earlier answer's option id, so one question adapts to what they said. */
+  promptBy?: { questionId: string; prompts: Record<string, string> };
   /** Shuffle the non-anchored options per participant to remove order bias. */
   shuffleOptions?: boolean;
   /** Order options to match the rotated order of the questions they reference. */
