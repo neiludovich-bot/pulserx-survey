@@ -88,7 +88,7 @@ function promptMessages(survey: StructuredSurvey, state: InterviewState, returni
 
 function respond(survey: StructuredSurvey, interview: StoredInterview, messages: InterviewMessage[], returning = false): StructuredResponse {
   return { sessionId: interview.state.sessionId, surveySlug: survey.slug, title: survey.title, brand: survey.brand,
-    messages, prompt: promptFor(survey, interview.state, returning), progress: progress(interview.state) };
+    messages, prompt: promptFor(survey, interview.state, returning), progress: progress(survey, interview.state) };
 }
 
 export async function startStructuredInterview(slug: string): Promise<StructuredResponse> {
@@ -159,13 +159,13 @@ async function answerFromSite(survey: StructuredSurvey, question: string, contex
 async function handleDetour(survey: StructuredSurvey, state: InterviewState, question: string): Promise<InterviewMessage[]> {
   const questionId = state.order[state.index] ?? null;
   if (!canAnswerDetour(survey, state)) {
-    recordDetour(state, { question, answer: null, sourceIds: [], parked: true, now: nowDate() });
+    recordDetour(survey, state, { question, answer: null, sourceIds: [], parked: true, now: nowDate() });
     return [message({ role: "interviewer", kind: "detour_answer", questionId,
       content: "Good question. I've noted it, and I'll answer it before we finish." })];
   }
   const card = currentQuestion(survey, state)?.card;
   const result = await answerFromSite(survey, question, discussionContext(survey, state));
-  recordDetour(state, { question, answer: result.text, sourceIds: result.sourceIds, parked: false, now: nowDate() });
+  recordDetour(survey, state, { question, answer: result.text, sourceIds: result.sourceIds, parked: false, now: nowDate() });
   const content = result.text
     ?? `I couldn't find a supported answer to that on the ${survey.brand} prescribing site, so I won't speculate. Your question has been recorded for the research team.`;
   return [message({ role: "interviewer", kind: "detour_answer", questionId, content,
@@ -221,8 +221,8 @@ export async function submitStructuredTurn(input: StructuredTurnRequest): Promis
         participant("I'd like to stop here.", "answer");
         stopInterview(state, nowDate());
       } else if (input.action === "skip") {
-        if (state.phase === "follow_up") { participant("(skipped)", "answer"); recordFollowUp(state, { text: null, source, now: nowDate() }); }
-        else if (state.phase === "detour_open") { participant("(no question)", "answer"); skipOpenDetour(state, nowDate()); }
+        if (state.phase === "follow_up") { participant("(skipped)", "answer"); recordFollowUp(survey, state, { text: null, source, now: nowDate() }); }
+        else if (state.phase === "detour_open") { participant("(no question)", "answer"); skipOpenDetour(survey, state, nowDate()); }
         else throw new SelectionError("Only a follow-up can be skipped.");
       } else if (input.action === "select") {
         const question = currentQuestion(survey, state);
@@ -244,7 +244,7 @@ export async function submitStructuredTurn(input: StructuredTurnRequest): Promis
             returning = true;
           } else {
             participant(text, "answer");
-            recordFollowUp(state, { text, source, now: nowDate() });
+            recordFollowUp(survey, state, { text, source, now: nowDate() });
           }
         } else {
           const previous = [...interview.messages].reverse().find(m => m.role === "interviewer" && m.kind === "question");

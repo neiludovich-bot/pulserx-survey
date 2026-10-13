@@ -32,8 +32,10 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
   rotationBlocks: [["c1_aranote", "c2_arasens", "c3_aramis"]],
   sectionLeads: {
     "About you": "Great, thank you. To start, a little about you.",
+    "Reimbursement changes": "Thanks. A few questions now about upcoming reimbursement changes.",
+    "Your practice": "Thanks. Now a couple of questions about your practice.",
     "What matters to you": "Before we look at any data, I'd like to understand what drives your choices.",
-    "The evidence": "Now let's look at the evidence. I'll walk you through three studies, one at a time, and for each one I'd like your honest reaction.",
+    "The evidence": "Before we go on, a quick orientation. NUBEQA, darolutamide, is an oral androgen receptor pathway inhibitor taken with ADT. It's approved for non-metastatic castration-resistant prostate cancer, and for metastatic castration-sensitive prostate cancer, either alone or with docetaxel. For comparison, Xtandi, enzalutamide, is also an oral ARPI taken with ADT; it's approved in nmCRPC and mCSPC, and additionally in mCRPC and high-risk biochemical recurrence. The two have not been compared in a head-to-head trial, and each has its own safety and drug-interaction profile; NUBEQA's warnings include ischemic heart disease and seizure. Now let's look at NUBEQA's own evidence. I'll walk you through three studies, one at a time, and for each one I'd like your honest reaction.",
     "Using it in practice": "Thanks. Next, a couple of questions about using it day to day.",
     "Overall": "We're nearly done.",
   },
@@ -54,7 +56,51 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
       ],
     },
     {
-      id: "a2_volume", section: "About you", kind: "single", exportLabel: "Monthly advanced prostate cancer patients",
+      id: "m1_mfp_aware", section: "Reimbursement changes", kind: "single", exportLabel: "Aware of Xtandi MFP change",
+      prompt: "Are you familiar with Medicare's Maximum Fair Price (MFP) program and the reimbursement changes for Xtandi that begin January 1, 2027?",
+      options: [
+        { id: "yes_understand", label: "Yes, and I understand the impact on my practice" },
+        { id: "heard", label: "I've heard of it but I'm not clear on the details" },
+        { id: "new", label: "No, this is new to me" },
+      ],
+    },
+    {
+      id: "m2_mfp_plan", section: "Reimbursement changes", kind: "single", exportLabel: "Practice has an MFP plan",
+      showIf: { questionId: "m1_mfp_aware", anyOf: ["yes_understand", "heard"] },
+      prompt: "Does your practice have a plan to mitigate the impact of the Xtandi MFP change?",
+      options: [
+        { id: "yes", label: "Yes, we have a plan" },
+        { id: "in_progress", label: "We're working on one" },
+        { id: "no", label: "No" },
+        { id: "unsure", label: "I'm not sure" },
+      ],
+    },
+    {
+      id: "m3_mfp_plan_detail", section: "Reimbursement changes", kind: "single", exportLabel: "MFP plan",
+      showIf: { questionId: "m2_mfp_plan", anyOf: ["yes"] },
+      prompt: "What is that plan?",
+      options: [
+        { id: "xtandi_no_change", label: "Continue to put new patients on Xtandi where appropriate, no changes" },
+        { id: "other_arpi", label: "Put new patients on another ARPI where appropriate" },
+        { id: "switch_existing", label: "Switch some existing patients off Xtandi" },
+        { id: "other", label: "Something else", anchored: true, followUp: "What does the plan involve?" },
+      ],
+    },
+    {
+      id: "m4_alt_factors", section: "Reimbursement changes", kind: "rank", exportLabel: "Factors when choosing an alternative ARPI (ranked)",
+      showIf: { questionId: "m2_mfp_plan", anyOf: ["yes"] },
+      prompt: "Rank the factors you consider when choosing an alternative ARPI, most important first.",
+      options: [
+        { id: "clinical", label: "Clinical appropriateness" },
+        { id: "ddi", label: "Drug-drug interactions" },
+        { id: "pfs", label: "PFS" },
+        { id: "os", label: "Overall survival" },
+        { id: "financials", label: "Best overall financials" },
+        { id: "contract", label: "Best financials and contract structure" },
+      ],
+    },
+    {
+      id: "a2_volume", section: "Your practice", kind: "single", exportLabel: "Monthly advanced prostate cancer patients",
       prompt: "About how many patients with advanced prostate cancer do you manage in a typical month?",
       options: [
         { id: "lt5", label: "Fewer than 5" }, { id: "5_15", label: "5 to 15" },
@@ -62,7 +108,7 @@ export const NUBEQA_STRUCTURED_SURVEY: StructuredSurvey = {
       ],
     },
     {
-      id: "a3_experience", section: "About you", kind: "single", exportLabel: "NUBEQA experience",
+      id: "a3_experience", section: "Your practice", kind: "single", exportLabel: "NUBEQA experience",
       prompt: "Which best describes your experience with NUBEQA?",
       options: [
         { id: "regular", label: "I prescribe it regularly" },

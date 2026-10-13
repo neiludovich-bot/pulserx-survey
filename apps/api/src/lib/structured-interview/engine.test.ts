@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  canAnswerDetour, createInterview, currentQuestion, followUpFor, orderedOptions, recordAnswer, recordDetour, recordFollowUp,
+  canAnswerDetour, createInterview, currentQuestion, followUpFor, orderedOptions, progress, recordAnswer, recordDetour, recordFollowUp,
   markClarifying, questionById, questionView, SelectionError, skipOpenDetour,
 } from "./engine";
 import { NUBEQA_STRUCTURED_SURVEY as survey } from "./nubeqa";
@@ -15,9 +15,10 @@ const tap = (state: ReturnType<typeof createInterview>, optionIds: string[], ver
 function runThrough(sessionId: string) {
   const state = createInterview(survey, sessionId, t());
   for (let guard = 0; guard < 60 && state.phase !== "complete" && state.phase !== "declined"; guard++) {
-    if (state.phase === "follow_up") { recordFollowUp(state, { text: null, source: "tap", now: t(9) }); continue; }
-    if (state.phase === "detour_open") { skipOpenDetour(state, t(9)); continue; }
+    if (state.phase === "follow_up") { recordFollowUp(survey, state, { text: null, source: "tap", now: t(9) }); continue; }
+    if (state.phase === "detour_open") { skipOpenDetour(survey, state, t(9)); continue; }
     const q = currentQuestion(survey, state)!;
+    if (q.kind === "rank") { tap(state, orderedOptions(q, state).map(o => o.id)); continue; }
     const first = orderedOptions(q, state).find(o => !o.ends)!;
     tap(state, [first.id]);
   }
@@ -42,6 +43,32 @@ describe("figure library", () => {
   });
 });
 
+describe("conditional questions", () => {
+  it("skips the plan questions for someone new to MFP, and asks them all after 'yes, we have a plan'", () => {
+    const fresh = createInterview(survey, "mfp-new", t());
+    tap(fresh, ["yes"]); tap(fresh, ["urology"]); tap(fresh, ["new"]);
+    expect(currentQuestion(survey, fresh)!.id).toBe("a2_volume");
+    expect(progress(survey, fresh).total).toBe(survey.questions.length - 3);
+    const planned = createInterview(survey, "mfp-plan", t());
+    tap(planned, ["yes"]); tap(planned, ["urology"]); tap(planned, ["yes_understand"]); tap(planned, ["yes"]);
+    expect(currentQuestion(survey, planned)!.id).toBe("m3_mfp_plan_detail");
+    tap(planned, ["other_arpi"]);
+    expect(currentQuestion(survey, planned)!.kind).toBe("rank");
+    expect(() => tap(planned, ["os", "pfs"])).toThrow("Put every factor in order");
+    tap(planned, ["clinical", "os", "pfs", "ddi", "contract", "financials"]);
+    expect(planned.answers.m4_alt_factors!.optionIds[0]).toBe("clinical");
+    expect(currentQuestion(survey, planned)!.id).toBe("a2_volume");
+    const noPlan = createInterview(survey, "mfp-noplan", t());
+    tap(noPlan, ["yes"]); tap(noPlan, ["urology"]); tap(noPlan, ["heard"]); tap(noPlan, ["no"]);
+    expect(currentQuestion(survey, noPlan)!.id).toBe("a2_volume");
+  });
+
+  it("opens the evidence with the NUBEQA and Xtandi orientation", () => {
+    expect(survey.sectionLeads["The evidence"]!.includes("Xtandi, enzalutamide")).toBe(true);
+    expect(survey.sectionLeads["The evidence"]!.includes("not been compared in a head-to-head trial")).toBe(true);
+  });
+});
+
 describe("structured interview engine", () => {
   it("has unique ids and every rotation id exists", () => {
     const ids = survey.questions.map(q => q.id);
@@ -52,11 +79,11 @@ describe("structured interview engine", () => {
   it("is reproducible per session and rotates the evidence cards across sessions", () => {
     const a = createInterview(survey, "session-a", t());
     expect(createInterview(survey, "session-a", t()).order).toEqual(a.order);
-    const orders = new Set(Array.from({ length: 40 }, (_, i) => createInterview(survey, `s${i}`, t()).order.slice(5, 8).join(",")));
+    const orders = new Set(Array.from({ length: 40 }, (_, i) => createInterview(survey, `s${i}`, t()).order.slice(9, 12).join(",")));
     expect(orders.size).toBeGreaterThan(3);
     // Cards stay inside their block's slots.
-    expect(a.order.slice(0, 5)).toEqual(["a0_consent", "a1_specialty", "a2_volume", "a3_experience", "b1_drivers"]);
-    expect(a.order.slice(8)).toEqual(survey.questions.slice(8).map(q => q.id));
+    expect(a.order.slice(0, 9)).toEqual(["a0_consent", "a1_specialty", "m1_mfp_aware", "m2_mfp_plan", "m3_mfp_plan_detail", "m4_alt_factors", "a2_volume", "a3_experience", "b1_drivers"]);
+    expect(a.order.slice(12)).toEqual(survey.questions.slice(12).map(q => q.id));
   });
 
   it("keeps anchored options in place when shuffling", () => {
@@ -70,7 +97,7 @@ describe("structured interview engine", () => {
 
   it("orders the most-relevant-trial options to match the rotated cards", () => {
     const state = createInterview(survey, "follow-rotation", t());
-    const cardOrder = state.order.slice(5, 8).map(id => questionById(survey, id).card!.id);
+    const cardOrder = state.order.slice(9, 12).map(id => questionById(survey, id).card!.id);
     expect(state.optionOrder.c4_most_relevant!.slice(0, 3)).toEqual(cardOrder);
     expect(state.optionOrder.c4_most_relevant!.at(-1)).toBe("none");
   });
@@ -85,7 +112,7 @@ describe("structured interview engine", () => {
   it("asks one follow-up after a bare tap on a reaction, none when they explained", () => {
     const state = runToCard("probe");
     expect(tap(state, ["concerns"])).toEqual({ kind: "follow_up", prompt: "What is your main doubt?" });
-    recordFollowUp(state, { text: "Follow-up was short.", source: "text", now: t(20) });
+    recordFollowUp(survey, state, { text: "Follow-up was short.", source: "text", now: t(20) });
     expect(state.phase).toBe("question");
     expect(Object.values(state.answers).find(a => a.optionIds.includes("concerns"))!.followUp!.response).toBe("Follow-up was short.");
     expect(tap(state, ["no_change"], "Same as other ARPIs in my experience").kind).toBe("advanced");
@@ -101,7 +128,7 @@ describe("structured interview engine", () => {
   it("narrates each trial and leads into new sections once", () => {
     const state = runToCard("narration");
     const view = questionView(survey, state)!;
-    expect(view.narration!.startsWith("Now let's look at the evidence.")).toBe(true);
+    expect(view.narration!.startsWith("Before we go on, a quick orientation. NUBEQA, darolutamide")).toBe(true);
     expect(view.narration!.includes(`The first study is ${questionById(survey, view.id).transition}.`)).toBe(true);
     expect(view.narration!.includes(questionById(survey, view.id).intro!)).toBe(true);
     tap(state, ["no_change"], "As expected");
@@ -117,7 +144,7 @@ describe("structured interview engine", () => {
     expect(() => tap(state, ["made-up"])).toThrow(SelectionError);
     expect(() => tap(state, ["yes", "no"])).toThrow(SelectionError);
     tap(state, ["yes"]);
-    tap(state, ["urology"]); tap(state, ["5_15"]); tap(state, ["regular"]);
+    tap(state, ["urology"]); tap(state, ["new"]); tap(state, ["5_15"]); tap(state, ["regular"]);
     expect(() => tap(state, ["os", "ddi", "dosing", "access"])).toThrow("Choose up to 3.");
   });
 
@@ -132,7 +159,7 @@ describe("structured interview engine", () => {
     const state = createInterview(survey, "detour", t());
     for (let i = 0; i < survey.maxDetoursPerQuestion; i++) {
       expect(canAnswerDetour(survey, state)).toBe(true);
-      recordDetour(state, { question: `Question ${i}?`, answer: i === 1 ? null : "Answer.", sourceIds: [], parked: false, now: t(3) });
+      recordDetour(survey, state, { question: `Question ${i}?`, answer: i === 1 ? null : "Answer.", sourceIds: [], parked: false, now: t(3) });
     }
     expect(canAnswerDetour(survey, state)).toBe(false);
     expect(state.index).toBe(0);
@@ -153,7 +180,7 @@ describe("structured interview engine", () => {
     state.index = state.order.indexOf("e3_open_questions");
     expect(tap(state, ["yes"]).kind).toBe("detour_open");
     expect(canAnswerDetour(survey, state)).toBe(true);
-    recordDetour(state, { question: "Any data in older men?", answer: "…", sourceIds: [], parked: false, now: t(30) });
+    recordDetour(survey, state, { question: "Any data in older men?", answer: "…", sourceIds: [], parked: false, now: t(30) });
     expect(state.phase).toBe("complete");
     expect(state.answers.e3_open_questions!.verbatim).toBe("Any data in older men?");
   });
@@ -162,6 +189,7 @@ describe("structured interview engine", () => {
     const runs = ["r1", "r2", "r3"].map(runThrough);
     for (const state of runs) {
       expect(state.phase).toBe("complete");
+      // First options: "Yes, and I understand", then "Yes, we have a plan", so every question applies.
       expect(Object.keys(state.answers)).toHaveLength(survey.questions.length);
     }
     const csv = interviewsToCsv(survey, runs.map(state => ({ state, messages: [] })));
@@ -176,7 +204,7 @@ describe("structured interview engine", () => {
 
 function runToCard(sessionId: string) {
   const state = createInterview(survey, sessionId, t());
-  tap(state, ["yes"]); tap(state, ["urology"]); tap(state, ["5_15"]); tap(state, ["regular"]);
+  tap(state, ["yes"]); tap(state, ["urology"]); tap(state, ["new"]); tap(state, ["5_15"]); tap(state, ["regular"]);
   tap(state, ["os", "ddi"]);
   expect(currentQuestion(survey, state)!.card).toBeTruthy();
   return state;

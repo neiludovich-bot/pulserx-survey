@@ -64,14 +64,29 @@ export function currentQuestion(survey: StructuredSurvey, state: InterviewState)
   return id ? questionById(survey, id) : null;
 }
 
+/** A conditional question applies only when the answer it depends on included one of its options. */
+export function applies(survey: StructuredSurvey, state: InterviewState, question: StructuredQuestion) {
+  if (!question.showIf) return true;
+  const answer = state.answers[question.showIf.questionId];
+  return Boolean(answer && answer.optionIds.some(id => question.showIf!.anyOf.includes(id)));
+}
+
+/** Questions that will actually be asked, given the answers so far (for progress). */
+export function askedOrder(survey: StructuredSurvey, state: InterviewState) {
+  return state.order.filter(id => applies(survey, state, questionById(survey, id)));
+}
+
 export function orderedOptions(question: StructuredQuestion, state: InterviewState) {
   const ids = state.optionOrder[question.id] ?? question.options.map(o => o.id);
   return ids.map(id => question.options.find(o => o.id === id)!).filter(Boolean);
 }
 
 /** Number of guide questions, and how many have been answered, for the progress bar. */
-export function progress(state: InterviewState) {
-  return { answered: Object.keys(state.answers).length, total: state.order.length, position: Math.min(state.index + 1, state.order.length) };
+export function progress(survey: StructuredSurvey, state: InterviewState) {
+  const asked = askedOrder(survey, state);
+  const current = state.order[state.index];
+  const position = current ? asked.indexOf(current) + 1 : asked.length;
+  return { answered: Object.keys(state.answers).length, total: asked.length, position: Math.max(1, Math.min(position || asked.length, asked.length)) };
 }
 
 /** Section lead (when the section changes) plus the question's own intro. */
@@ -97,7 +112,7 @@ export function narrationFor(survey: StructuredSurvey, state: InterviewState) {
 export type QuestionView = {
   id: string; section: string; prompt: string;
   /** What the interviewer says before the question: a section lead and/or the question's intro. */
-  narration: string | null; kind: "single" | "multi"; maxSelect: number | null;
+  narration: string | null; kind: "single" | "multi" | "rank"; maxSelect: number | null;
   options: Array<{ id: string; label: string; exclusive: boolean }>;
   card: EvidenceCard | null;
 };
@@ -121,6 +136,10 @@ export function validateSelection(question: StructuredQuestion, optionIds: strin
   const chosen = [...new Set(optionIds)].filter(id => known.has(id));
   if (!chosen.length) throw new SelectionError("Choose an option, or type or say your answer.");
   if (question.kind === "single" && chosen.length > 1) throw new SelectionError("Choose one option.");
+  if (question.kind === "rank") {
+    if (chosen.length !== question.options.length) throw new SelectionError("Put every factor in order before continuing.");
+    return chosen; // order carries the ranking
+  }
   const exclusive = chosen.find(id => question.options.find(o => o.id === id)?.exclusive);
   if (exclusive && chosen.length > 1) return [exclusive];
   if (question.kind === "multi" && question.maxSelect && chosen.length > question.maxSelect) {
@@ -142,8 +161,10 @@ export function followUpFor(question: StructuredQuestion, optionIds: string[], h
   return question.followUp;
 }
 
-function advance(state: InterviewState, now: Date) {
+function advance(survey: StructuredSurvey, state: InterviewState, now: Date) {
   state.index += 1;
+  // Skip questions whose condition is not met.
+  while (state.index < state.order.length && !applies(survey, state, questionById(survey, state.order[state.index]!))) state.index += 1;
   state.pendingFollowUp = null;
   state.clarifying = false;
   state.pendingVerbatim = null;
@@ -197,16 +218,16 @@ export function recordAnswer(survey: StructuredSurvey, state: InterviewState, in
     state.answers[question.id]!.followUp = { prompt, response: null, source: null, skipped: false };
     return { kind: "follow_up", prompt };
   }
-  advance(state, input.now);
+  advance(survey, state, input.now);
   return isFinished(state) ? { kind: "ended" } : { kind: "advanced" };
 }
 
-export function recordFollowUp(state: InterviewState, input: { text: string | null; source: AnswerSource; now: Date }) {
+export function recordFollowUp(survey: StructuredSurvey, state: InterviewState, input: { text: string | null; source: AnswerSource; now: Date }) {
   if (state.phase !== "follow_up" || !state.pendingFollowUp) throw new SelectionError("There is no follow-up to answer.");
   const answer = state.answers[state.pendingFollowUp.questionId];
   const text = input.text?.trim() || null;
   if (answer?.followUp) answer.followUp = { ...answer.followUp, response: text, source: text ? input.source : null, skipped: !text };
-  advance(state, input.now);
+  advance(survey, state, input.now);
   return isFinished(state) ? { kind: "ended" as const } : { kind: "advanced" as const };
 }
 
@@ -222,7 +243,7 @@ export function canAnswerDetour(survey: StructuredSurvey, state: InterviewState)
   return detoursOnQuestion(state, id) < survey.maxDetoursPerQuestion;
 }
 
-export function recordDetour(state: InterviewState, input: { question: string; answer: string | null; sourceIds: string[]; parked: boolean; now: Date }) {
+export function recordDetour(survey: StructuredSurvey, state: InterviewState, input: { question: string; answer: string | null; sourceIds: string[]; parked: boolean; now: Date }) {
   const questionId = state.order[state.index] ?? null;
   state.detours.push({ questionId, question: input.question.slice(0, 2000), answer: input.answer, sourceIds: input.sourceIds,
     answered: Boolean(input.answer) && !input.parked, parked: input.parked, at: input.now.toISOString() });
@@ -230,7 +251,7 @@ export function recordDetour(state: InterviewState, input: { question: string; a
   if (state.phase === "detour_open") {
     const answer = questionId ? state.answers[questionId] : undefined;
     if (answer && !answer.verbatim) answer.verbatim = input.question;
-    advance(state, input.now);
+    advance(survey, state, input.now);
   }
 }
 
@@ -240,9 +261,9 @@ export function markClarifying(state: InterviewState, verbatim: string) {
 }
 
 /** "Yes, I have a question" followed by nothing: move on. */
-export function skipOpenDetour(state: InterviewState, now: Date) {
+export function skipOpenDetour(survey: StructuredSurvey, state: InterviewState, now: Date) {
   if (state.phase !== "detour_open") throw new SelectionError("There is no open question to skip.");
-  advance(state, now);
+  advance(survey, state, now);
 }
 
 export function stopInterview(state: InterviewState, now: Date) {

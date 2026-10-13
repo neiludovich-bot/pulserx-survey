@@ -35,8 +35,9 @@ export function interviewsToCsv(survey: StructuredSurvey, interviews: StoredInte
 }
 
 export type QuestionSummary = {
-  id: string; section: string; prompt: string; label: string; kind: "single" | "multi"; responses: number;
-  options: Array<{ id: string; label: string; count: number; share: number }>;
+  id: string; section: string; prompt: string; label: string; kind: "single" | "multi" | "rank"; responses: number;
+  /** For rank questions: count = times ranked first, share = average position as a fraction (0 = always first). */
+  options: Array<{ id: string; label: string; count: number; share: number; averageRank?: number }>;
   verbatims: Array<{ sessionId: string; optionLabels: string; text: string }>;
 };
 
@@ -49,9 +50,15 @@ export function summarize(survey: StructuredSurvey, interviews: StoredInterview[
     return {
       id: q.id, section: q.section, prompt: q.prompt, label: q.exportLabel, kind: q.kind, responses: total,
       options: q.options.map(o => {
+        if (q.kind === "rank") {
+          const positions = answers.map(a => a.answer!.optionIds.indexOf(o.id)).filter(i => i >= 0);
+          const averageRank = positions.length ? Math.round((positions.reduce((sum, i) => sum + i + 1, 0) / positions.length) * 10) / 10 : undefined;
+          const count = positions.filter(i => i === 0).length;
+          return { id: o.id, label: o.label, count, share: averageRank ? 1 - (averageRank - 1) / Math.max(1, q.options.length - 1) : 0, averageRank };
+        }
         const count = answers.filter(a => a.answer!.optionIds.includes(o.id)).length;
         return { id: o.id, label: o.label, count, share: total ? count / total : 0 };
-      }),
+      }).sort((a, b) => (q.kind === "rank" ? (a.averageRank ?? 99) - (b.averageRank ?? 99) : 0)),
       verbatims: answers.flatMap(a => {
         const text = [a.answer!.verbatim, a.answer!.followUp?.response].filter(Boolean).join(" — ");
         return text ? [{ sessionId: a.sessionId, optionLabels: a.answer!.optionIds.map(id => questionById(survey, q.id).options.find(o => o.id === id)?.label ?? id).join("; "), text }] : [];

@@ -40,10 +40,13 @@ export type StructuredQuestion = {
   id: string;
   section: string;
   prompt: string;
-  kind: "single" | "multi";
+  /** rank: every option is chosen, in the participant's order of importance. */
+  kind: "single" | "multi" | "rank";
   options: StructuredOption[];
   /** For multi: the most options a participant may pick. */
   maxSelect?: number;
+  /** Asked only when an earlier answer included one of these options; otherwise skipped. */
+  showIf?: { questionId: string; anyOf: string[] };
   /** Shuffle the non-anchored options per participant to remove order bias. */
   shuffleOptions?: boolean;
   /** Order options to match the rotated order of the questions they reference. */
